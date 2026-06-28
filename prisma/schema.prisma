@@ -1,0 +1,168 @@
+// Skema database Ugorex Dashboard (tracker funnel AIDA + Loyalty)
+// Field "enum" sengaja disimpan sebagai String (nilainya didefinisikan di
+// lib/constants.ts) agar portable lintas database.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// Pengguna aplikasi. role: ADMIN | SALES | OWNER
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  phone        String   @unique // dipakai untuk login
+  passwordHash String
+  role         String   @default("SALES")
+  createdAt    DateTime @default(now())
+
+  // Untuk OWNER: toko yang dimilikinya
+  ownedStore   Store?   @relation("StoreOwnerUser")
+
+  // Toko yang dipegang user ini sebagai sales
+  handledStores Store[]    @relation("StoreSales")
+  prospects     Prospect[] @relation("ProspectSales")
+  stageLogs     StageLog[] @relation("StageLogSales")
+  createdSales   Sale[]   @relation("SaleCreator")
+  createdTickets Ticket[] @relation("TicketCreator")
+
+  // Siapa yang membuat akun ini (mis. sales membuat akun owner)
+  createdById  String?
+  createdBy    User?    @relation("UserCreator", fields: [createdById], references: [id])
+  createdUsers User[]   @relation("UserCreator")
+  createdRequests Request[] @relation("RequestCreator")
+}
+
+// Konter / toko yang dituju
+model Store {
+  id         String   @id @default(cuid())
+  name       String
+  area       String? // wilayah, mis. "Karawang Barat"
+  address    String?
+  ownerName  String?
+  ownerPhone String?
+  lat        Float? // koordinat untuk peta
+  lng        Float?
+  createdAt  DateTime @default(now())
+
+  // Sales penanggung jawab
+  salesId String?
+  sales   User?   @relation("StoreSales", fields: [salesId], references: [id])
+
+  // Akun owner toko (opsional, dibuat saat owner setuju)
+  ownerUserId String? @unique
+  ownerUser   User?   @relation("StoreOwnerUser", fields: [ownerUserId], references: [id])
+
+  prospects    Prospect[]
+  transactions Sale[]
+  tickets      Ticket[]
+  requests     Request[]
+}
+
+// Barang yang dijual, mis. Antigores
+model Product {
+  id          String     @id @default(cuid())
+  name        String
+  description String?
+  price       Int        @default(0) // harga satuan (Rupiah)
+  createdAt   DateTime   @default(now())
+  prospects   Prospect[]
+  transactions Sale[]
+}
+
+// Satu barang di satu konter = satu "prospek" yang ditrack lewat funnel
+model Prospect {
+  id        String   @id @default(cuid())
+  storeId   String
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  // Tahap funnel saat ini: AWARENESS | INTEREST | DESIRE | ACTION | LOYALTY
+  stage     String   @default("AWARENESS")
+
+  // Total stok barang yang sudah dikasih sales ke konter ini
+  stock     Int      @default(0)
+
+  salesId   String?
+  sales     User?    @relation("ProspectSales", fields: [salesId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  logs StageLog[]
+
+  @@unique([storeId, productId])
+}
+
+// Riwayat update tiap tahap funnel
+model StageLog {
+  id         String   @id @default(cuid())
+  prospectId String
+  prospect   Prospect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+
+  stage    String // AWARENESS | INTEREST | DESIRE | ACTION | LOYALTY
+  result   String @default("NEUTRAL") // REJECTED | NEUTRAL | POSITIVE
+  note     String // catatan (paling penting)
+  quantity Int    @default(0) // jumlah/stok terkait
+
+  salesId  String?
+  sales    User?    @relation("StageLogSales", fields: [salesId], references: [id])
+
+  createdAt DateTime @default(now())
+}
+
+// Transaksi POS (dicatat owner toko)
+model Sale {
+  id          String   @id @default(cuid())
+  storeId     String
+  store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  productId   String?
+  product     Product? @relation(fields: [productId], references: [id])
+  productName String // snapshot nama barang
+  qty         Int
+  price       Int // harga satuan (Rupiah)
+  total       Int // qty * price
+  createdById String?
+  createdBy   User?    @relation("SaleCreator", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+}
+
+// Tiket keluhan (dibuat owner toko)
+model Ticket {
+  id          String   @id @default(cuid())
+  storeId     String
+  store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  subject     String
+  message     String
+  status      String   @default("OPEN") // OPEN | IN_PROGRESS | CLOSED
+  createdById String?
+  createdBy   User?    @relation("TicketCreator", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Konfigurasi global (misal: target bulanan)
+model Config {
+  key   String @id
+  value String
+}
+
+// Permintaan dari owner/sales (misal: minta stok, minta dikunjungi)
+model Request {
+  id          String   @id @default(cuid())
+  storeId     String
+  store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  subject     String
+  message     String
+  status      String   @default("PENDING") // PENDING | COMPLETED
+  createdById String?
+  createdBy   User?    @relation("RequestCreator", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}

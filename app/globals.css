@@ -1,26 +1,118 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
+  --background: #fafafa;
   --foreground: #171717;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  /* Palet Ugorex: hitam (ink), putih (paper), lime (brand) */
+  --color-ink: #171717;
+  --color-paper: #ffffff;
+  --color-brand: #d2ec0a;
+  --color-brand-dark: #aebf08;
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+@keyframes ugfade {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.animate-ugfade {
+  animation: ugfade 0.35s ease;
+}
+
+@keyframes ugpop {
+  0% {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  60% {
+    transform: scale(1.04);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.animate-ugpop {
+  animation: ugpop 0.3s ease-out;
+}
+
+@keyframes ugcheck {
+  0% {
+    transform: scale(0) rotate(-20deg);
+  }
+  100% {
+    transform: scale(1) rotate(0);
+  }
+}
+.animate-ugcheck {
+  animation: ugcheck 0.4s cubic-bezier(0.2, 0.8, 0.2, 1.4) 0.05s both;
+}
+
+/* Success popup ala app (lingkaran + checkmark digambar) */
+@keyframes ugscalein {
+  0% {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  60% {
+    transform: scale(1.05);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.animate-ugscalein {
+  animation: ugscalein 0.3s cubic-bezier(0.2, 0.8, 0.2, 1.2) both;
+}
+@keyframes ugdraw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.ug-ring {
+  stroke-dasharray: 151;
+  stroke-dashoffset: 151;
+  animation: ugdraw 0.5s ease-out forwards;
+}
+.ug-tick {
+  stroke-dasharray: 40;
+  stroke-dashoffset: 40;
+  animation: ugdraw 0.35s ease-out 0.45s forwards;
+}
+
+/* Cetak hanya area struk */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #struk-print,
+  #struk-print * {
+    visibility: visible;
+  }
+  #struk-print {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 16px;
+  }
 }
