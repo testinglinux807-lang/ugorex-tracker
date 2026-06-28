@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -15,6 +15,12 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Ugorex Tracker",
   description: "Tracker funnel barang per konter (Awareness → Loyalty)",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  // Jangan kunci zoom (userScalable: false) demi aksesibilitas
 };
 
 export default function RootLayout({

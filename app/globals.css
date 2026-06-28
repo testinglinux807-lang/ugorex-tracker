@@ -23,6 +23,17 @@ body {
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
 
+/* iOS Safari otomatis zoom-in saat fokus input ber-font < 16px.
+   Paksa 16px di layar kecil supaya tidak nge-zoom (harus !important
+   agar menang dari utility text-sm/text-xs). */
+@media (max-width: 640px) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
 @keyframes ugfade {
   from {
     opacity: 0;
