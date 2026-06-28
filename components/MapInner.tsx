@@ -231,7 +231,7 @@ export default function MapInner({
     <MapContainer
       center={KARAWANG_CENTER}
       zoom={10}
-      scrollWheelZoom={true}
+      scrollWheelZoom={false}
       style={{ height: "100%", width: "100%" }}
     >
       <TileLayer attribution={TILE_ATTR} url={TILE_URL} subdomains="abcd" />

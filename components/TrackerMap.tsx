@@ -71,7 +71,7 @@ export function TrackerMap({ points }: { points: MapPoint[] }) {
         </div>
       </div>
 
-      <div className="h-[420px] w-full overflow-hidden rounded-xl border border-neutral-200 bg-white">
+      <div className="relative z-0 h-[420px] w-full overflow-hidden rounded-xl border border-neutral-200 bg-white">
         <MapInner points={points} filter={filter} />
       </div>
     </div>
