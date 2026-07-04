@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import { Eye, EyeOff } from "lucide-react";
 
 const rupiah = (n: number) =>
@@ -10,6 +10,22 @@ const rupiah = (n: number) =>
     maximumFractionDigits: 0,
   }).format(n);
 
+// Preferensi "sembunyikan angka" disimpan di localStorage dan dibaca lewat
+// useSyncExternalStore: aman dari hydration mismatch (server selalu "tampil")
+// dan tanpa setState di dalam effect.
+const hideListeners = new Set<() => void>();
+function subscribeHide(cb: () => void) {
+  hideListeners.add(cb);
+  return () => hideListeners.delete(cb);
+}
+function readHide() {
+  return localStorage.getItem("ug_hide_amount") === "1";
+}
+function writeHide(v: boolean) {
+  localStorage.setItem("ug_hide_amount", v ? "1" : "0");
+  hideListeners.forEach((cb) => cb());
+}
+
 export function PosSummary({
   revenue,
   units,
@@ -17,18 +33,10 @@ export function PosSummary({
   revenue: number;
   units: number;
 }) {
-  const [hidden, setHidden] = useState(false);
-
-  useEffect(() => {
-    if (localStorage.getItem("ug_hide_amount") === "1") setHidden(true);
-  }, []);
+  const hidden = useSyncExternalStore(subscribeHide, readHide, () => false);
 
   function toggle() {
-    setHidden((h) => {
-      const n = !h;
-      localStorage.setItem("ug_hide_amount", n ? "1" : "0");
-      return n;
-    });
+    writeHide(!hidden);
   }
 
   return (

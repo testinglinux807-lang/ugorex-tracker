@@ -6,7 +6,9 @@ const SECRET = new TextEncoder().encode(
   process.env.AUTH_SECRET ?? "ugorex-dev-secret",
 );
 
-const PUBLIC_PATHS = ["/login"];
+// /api/midtrans: webhook notifikasi pembayaran — tanpa sesi,
+// diamankan lewat verifikasi signature di route-nya sendiri.
+const PUBLIC_PATHS = ["/login", "/api/midtrans"];
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -31,12 +33,9 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Sudah login & buka /login -> ke landing role-aware ("/")
-  if (valid && isPublic) {
-    const url = req.nextUrl.clone();
-    url.pathname = "/";
-    return NextResponse.redirect(url);
-  }
+  // Catatan: user yang sudah login & membuka /login diarahkan ke landing
+  // oleh halaman /login sendiri (cek DB), bukan di sini — supaya cookie basi
+  // (JWT valid tapi user tak ada di DB) tidak menyebabkan loop redirect.
 
   return NextResponse.next();
 }
@@ -44,6 +43,6 @@ export async function middleware(req: NextRequest) {
 export const config = {
   // Lewati aset statis & api internal
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|webp|jpg|jpeg|svg|ico|geojson)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|sw\\.js|.*\\.(?:png|webp|jpg|jpeg|svg|ico|geojson)$).*)",
   ],
 };

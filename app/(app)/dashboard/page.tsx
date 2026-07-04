@@ -2,7 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { STAGE_LABEL, type Stage } from "@/lib/constants";
+import { type Stage } from "@/lib/constants";
 import { FunnelBar } from "@/components/FunnelBar";
 import { ActivityFeed } from "@/components/ActivityFeed";
 import { TrackerMap } from "@/components/TrackerMap";
@@ -110,18 +110,6 @@ export default async function DashboardPage() {
     ts: new Date(s.createdAt).getTime(),
     total: s.total,
   }));
-
-  // Produk terlaris
-  const byProduct = new Map<string, { units: number; revenue: number }>();
-  for (const s of sales) {
-    const r = byProduct.get(s.productName) ?? { units: 0, revenue: 0 };
-    r.units += s.qty;
-    r.revenue += s.total;
-    byProduct.set(s.productName, r);
-  }
-  const topProducts = [...byProduct.entries()]
-    .map(([name, v]) => ({ name, ...v }))
-    .sort((a, b) => b.units - a.units);
 
   // --- Map points ---
   const points: MapPoint[] = prospects

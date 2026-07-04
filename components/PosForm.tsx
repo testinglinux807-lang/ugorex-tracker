@@ -3,6 +3,8 @@
 import { useActionState, useEffect, useRef, useState } from "react";
 import { createSale } from "@/app/actions/pos";
 import { SuccessPopup } from "@/components/SuccessPopup";
+import { ProductPicker } from "@/components/ProductPicker";
+import { PendingLabel } from "@/components/SubmitButton";
 
 const inputCls = "w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm";
 
@@ -71,20 +73,11 @@ export function PosForm({
         <label className="mb-1 block text-sm font-medium text-neutral-700">
           Barang
         </label>
-        <select
-          name="productId"
-          required
+        <ProductPicker
+          products={products}
           value={productId}
-          onChange={(e) => onPickProduct(e.target.value)}
-          className={inputCls}
-        >
-          <option value="">— Pilih barang —</option>
-          {products.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name} — {rupiah(p.price)} (sisa {p.remaining})
-            </option>
-          ))}
-        </select>
+          onChange={onPickProduct}
+        />
         {picked && (
           <p
             className={`mt-1 text-xs ${
@@ -153,10 +146,10 @@ export function PosForm({
 
       <button
         type="submit"
-        disabled={pending || overStock || outOfStock}
+        disabled={pending || !picked || overStock || outOfStock}
         className="w-full rounded-lg bg-brand py-2.5 text-sm font-semibold text-neutral-900 hover:opacity-90 disabled:opacity-60"
       >
-        {pending ? "Menyimpan…" : "Catat Penjualan"}
+        {pending ? <PendingLabel text="Menyimpan…" /> : "Catat Penjualan"}
       </button>
     </form>
   );

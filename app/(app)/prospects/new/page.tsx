@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { createProspect } from "@/app/actions/tracker";
+import { SubmitButton } from "@/components/SubmitButton";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 
 export default async function NewProspectPage() {
@@ -81,12 +82,12 @@ export default async function NewProspectPage() {
               ))}
             </select>
           </div>
-          <button
-            type="submit"
-            className="w-full rounded-lg bg-neutral-900 py-2.5 text-sm font-semibold text-white hover:bg-neutral-800"
+          <SubmitButton
+            pendingText="Membuat…"
+            className="w-full rounded-lg bg-neutral-900 py-2.5 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-60"
           >
             Buat & Mulai Tracking
-          </button>
+          </SubmitButton>
         </form>
       )}
     </div>

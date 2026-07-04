@@ -127,6 +127,17 @@ export async function recordVisitMulti(storeId: string, formData: FormData) {
   return { ok: true, count };
 }
 
+// Batas ukuran foto katalog (data URL) ~500KB — foto dikompres di browser
+const MAX_IMAGE_LENGTH = 700_000;
+
+function readImageUrl(formData: FormData): string | null {
+  const raw = String(formData.get("imageUrl") ?? "").trim();
+  if (!raw) return null;
+  if (raw.length > MAX_IMAGE_LENGTH) return null;
+  if (!raw.startsWith("data:image/") && !/^https?:\/\//.test(raw)) return null;
+  return raw;
+}
+
 // Tambah barang baru
 export async function createProduct(formData: FormData) {
   const user = await getCurrentUser();
@@ -140,10 +151,148 @@ export async function createProduct(formData: FormData) {
       name,
       description: String(formData.get("description") ?? "").trim() || null,
       price,
+      imageUrl: readImageUrl(formData),
+      centralStock:
+        parseInt(String(formData.get("centralStock") ?? "0"), 10) || 0,
     },
   });
   revalidatePath("/data");
   revalidatePath("/pos");
+  revalidatePath("/katalog");
+}
+
+// Admin mengubah data barang
+export async function updateProduct(productId: string, formData: FormData) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (user.role !== "ADMIN") return { error: "Hanya admin." };
+
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) return { error: "Nama barang wajib diisi." };
+  const price = parseInt(String(formData.get("price") ?? "0"), 10) || 0;
+
+  await prisma.product.update({
+    where: { id: productId },
+    data: {
+      name,
+      price,
+      description: String(formData.get("description") ?? "").trim() || null,
+    },
+  });
+  revalidatePath("/data");
+  revalidatePath("/katalog");
+  revalidatePath("/pos");
+  revalidatePath("/request");
+  revalidatePath("/stok");
+  return { ok: true };
+}
+
+// Admin menghapus barang (ikut menghapus prospek/tracking barang itu;
+// riwayat penjualan tetap ada karena nama barang tersimpan snapshot)
+export async function deleteProduct(productId: string) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (user.role !== "ADMIN") return { error: "Hanya admin." };
+
+  await prisma.product.delete({ where: { id: productId } });
+  revalidatePath("/data");
+  revalidatePath("/katalog");
+  revalidatePath("/pos");
+  revalidatePath("/request");
+  revalidatePath("/stok");
+  return { ok: true };
+}
+
+// Admin mengubah data konter
+export async function updateStore(storeId: string, formData: FormData) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (user.role !== "ADMIN") return { error: "Hanya admin." };
+
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) return { error: "Nama konter wajib diisi." };
+
+  const latRaw = String(formData.get("lat") ?? "").trim();
+  const lngRaw = String(formData.get("lng") ?? "").trim();
+  const lat = latRaw ? parseFloat(latRaw) : null;
+  const lng = lngRaw ? parseFloat(lngRaw) : null;
+
+  await prisma.store.update({
+    where: { id: storeId },
+    data: {
+      name,
+      area: String(formData.get("area") ?? "").trim() || null,
+      address: String(formData.get("address") ?? "").trim() || null,
+      ownerName: String(formData.get("ownerName") ?? "").trim() || null,
+      ownerPhone: String(formData.get("ownerPhone") ?? "").trim() || null,
+      lat: lat != null && !Number.isNaN(lat) ? lat : null,
+      lng: lng != null && !Number.isNaN(lng) ? lng : null,
+      salesId: String(formData.get("salesId") ?? "") || null,
+    },
+  });
+  revalidatePath("/data");
+  revalidatePath("/prospects");
+  revalidatePath(`/konter/${storeId}`);
+  return { ok: true };
+}
+
+// Admin menghapus konter (ikut menghapus prospek, transaksi, tiket,
+// request, dan akun owner toko itu)
+export async function deleteStore(storeId: string) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (user.role !== "ADMIN") return { error: "Hanya admin." };
+
+  const store = await prisma.store.findUnique({ where: { id: storeId } });
+  if (!store) return { error: "Konter tidak ditemukan." };
+
+  await prisma.$transaction([
+    prisma.store.delete({ where: { id: storeId } }),
+    ...(store.ownerUserId
+      ? [prisma.user.delete({ where: { id: store.ownerUserId } })]
+      : []),
+  ]);
+  revalidatePath("/data");
+  revalidatePath("/prospects");
+  revalidatePath("/dashboard");
+  return { ok: true };
+}
+
+// Admin mengubah stok pusat/gudang sebuah barang
+export async function updateProductStock(productId: string, formData: FormData) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (user.role !== "ADMIN") return { error: "Hanya admin yang bisa ubah stok pusat." };
+
+  const raw = String(formData.get("centralStock") ?? "").trim();
+  const stock = parseInt(raw, 10);
+  if (raw === "" || Number.isNaN(stock) || stock < 0) {
+    return { error: "Isi stok yang benar (angka 0 atau lebih)." };
+  }
+
+  await prisma.product.update({
+    where: { id: productId },
+    data: { centralStock: stock },
+  });
+  revalidatePath("/data");
+  revalidatePath("/request");
+  revalidatePath("/katalog");
+  return { ok: true };
+}
+
+// Ganti/pasang foto barang (dari menu Data)
+export async function updateProductImage(productId: string, formData: FormData) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (user.role === "OWNER") return { error: "Tidak punya akses." };
+
+  const imageUrl = readImageUrl(formData);
+  if (!imageUrl) return { error: "Foto tidak valid atau terlalu besar." };
+
+  await prisma.product.update({ where: { id: productId }, data: { imageUrl } });
+  revalidatePath("/data");
+  revalidatePath("/katalog");
+  return { ok: true };
 }
 
 // Tambah konter / toko baru
@@ -189,6 +338,12 @@ export async function createProspect(formData: FormData) {
   const storeId = String(formData.get("storeId") ?? "");
   const productId = String(formData.get("productId") ?? "");
   if (!storeId || !productId) return;
+
+  // Sales hanya boleh menawarkan ke konternya sendiri
+  if (user.role === "SALES") {
+    const store = await prisma.store.findUnique({ where: { id: storeId } });
+    if (!store || store.salesId !== user.id) redirect("/katalog");
+  }
 
   const existing = await prisma.prospect.findUnique({
     where: { storeId_productId: { storeId, productId } },

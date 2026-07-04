@@ -30,12 +30,25 @@ model User {
   stageLogs     StageLog[] @relation("StageLogSales")
   createdSales   Sale[]   @relation("SaleCreator")
   createdTickets Ticket[] @relation("TicketCreator")
+  stockAdjustments StockAdjustment[] @relation("StockAdjustmentCreator")
 
   // Siapa yang membuat akun ini (mis. sales membuat akun owner)
   createdById  String?
   createdBy    User?    @relation("UserCreator", fields: [createdById], references: [id])
   createdUsers User[]   @relation("UserCreator")
   createdRequests Request[] @relation("RequestCreator")
+  pushSubscriptions PushSubscription[]
+}
+
+// Langganan Web Push per perangkat/browser (notifikasi order untuk admin/sales)
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
 }
 
 // Konter / toko yang dituju
@@ -70,9 +83,12 @@ model Product {
   name        String
   description String?
   price       Int        @default(0) // harga satuan (Rupiah)
+  imageUrl    String? // foto katalog (data URL terkompresi atau URL eksternal)
+  centralStock Int       @default(0) // stok di pusat/gudang (di-inject admin)
   createdAt   DateTime   @default(now())
   prospects   Prospect[]
   transactions Sale[]
+  requestItems RequestItem[]
 }
 
 // Satu barang di satu konter = satu "prospek" yang ditrack lewat funnel
@@ -95,7 +111,8 @@ model Prospect {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  logs StageLog[]
+  logs        StageLog[]
+  adjustments StockAdjustment[]
 
   @@unique([storeId, productId])
 }
@@ -147,6 +164,22 @@ model Ticket {
   updatedAt   DateTime @updatedAt
 }
 
+// Koreksi sisa stok oleh owner toko (angka fisik beda dengan catatan).
+// before/after = sisa stok (stok drop-an sales dikurangi terjual) saat koreksi.
+model StockAdjustment {
+  id         String   @id @default(cuid())
+  prospectId String
+  prospect   Prospect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+
+  before Int
+  after  Int
+  note   String?
+
+  createdById String?
+  createdBy   User?   @relation("StockAdjustmentCreator", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+}
+
 // Konfigurasi global (misal: target bulanan)
 model Config {
   key   String @id
@@ -165,4 +198,21 @@ model Request {
   createdBy   User?    @relation("RequestCreator", fields: [createdById], references: [id])
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  // Untuk checkout restok (persiapan payment gateway Midtrans)
+  total         Int    @default(0) // total belanja (Rupiah), gross_amount
+  paymentStatus String @default("UNPAID") // UNPAID | PAID
+
+  items RequestItem[]
+}
+
+// Barang yang diminta dalam satu request restok (checkout dari owner)
+model RequestItem {
+  id        String  @id @default(cuid())
+  requestId String
+  request   Request @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  qty       Int
+  price     Int     @default(0) // snapshot harga satuan saat checkout
 }

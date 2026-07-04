@@ -61,3 +61,54 @@ export async function createSalesAccount(formData: FormData) {
   revalidatePath("/data");
   return { ok: true };
 }
+
+// Admin mengubah akun SALES (password hanya diganti kalau diisi)
+export async function updateSalesAccount(userId: string, formData: FormData) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (user.role !== "ADMIN") return { error: "Hanya admin." };
+
+  const target = await prisma.user.findUnique({ where: { id: userId } });
+  if (!target || target.role !== "SALES") {
+    return { error: "Akun sales tidak ditemukan." };
+  }
+
+  const name = String(formData.get("name") ?? "").trim();
+  const phone = String(formData.get("phone") ?? "").trim();
+  const password = String(formData.get("password") ?? "");
+  if (!name || !phone) return { error: "Nama dan nomor HP wajib diisi." };
+
+  const existing = await prisma.user.findUnique({ where: { phone } });
+  if (existing && existing.id !== userId) {
+    return { error: "Nomor HP sudah dipakai akun lain." };
+  }
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: {
+      name,
+      phone,
+      ...(password ? { passwordHash: await bcrypt.hash(password, 10) } : {}),
+    },
+  });
+  revalidatePath("/data");
+  return { ok: true };
+}
+
+// Admin menghapus akun SALES (konter yang dia pegang jadi tanpa sales,
+// riwayat kunjungan/transaksi tetap ada)
+export async function deleteSalesAccount(userId: string) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (user.role !== "ADMIN") return { error: "Hanya admin." };
+
+  const target = await prisma.user.findUnique({ where: { id: userId } });
+  if (!target || target.role !== "SALES") {
+    return { error: "Akun sales tidak ditemukan." };
+  }
+
+  await prisma.user.delete({ where: { id: userId } });
+  revalidatePath("/data");
+  revalidatePath("/dashboard");
+  return { ok: true };
+}

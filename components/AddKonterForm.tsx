@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createStore } from "@/app/actions/tracker";
 import { MapPin, LocateFixed } from "lucide-react";
+import { PendingLabel } from "@/components/SubmitButton";
 
 const inputCls = "w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm";
 
@@ -137,7 +138,7 @@ export function AddKonterForm() {
         disabled={pending}
         className="w-full rounded-lg bg-neutral-900 py-2.5 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-60"
       >
-        {pending ? "Menyimpan…" : "Simpan Konter"}
+        {pending ? <PendingLabel text="Menyimpan…" /> : "Simpan Konter"}
       </button>
     </form>
   );

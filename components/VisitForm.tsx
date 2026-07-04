@@ -4,6 +4,7 @@ import { useActionState, useMemo, useState } from "react";
 import { recordVisitMulti } from "@/app/actions/tracker";
 import { STAGES, STAGE_LABEL, RESULTS, RESULT_LABEL } from "@/lib/constants";
 import { Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { PendingLabel } from "@/components/SubmitButton";
 
 const fieldCls = "w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm";
 const PER_PAGE = 6;
@@ -213,7 +214,7 @@ export function VisitForm({
         disabled={pending}
         className="w-full rounded-lg bg-neutral-900 py-2.5 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-60"
       >
-        {pending ? "Menyimpan…" : "Catat Kunjungan"}
+        {pending ? <PendingLabel text="Menyimpan…" /> : "Catat Kunjungan"}
       </button>
     </form>
   );

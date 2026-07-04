@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { setMonthlyTarget } from "@/app/actions/config";
 import { Pencil } from "lucide-react";
+import { PendingLabel } from "@/components/SubmitButton";
 
 const rpShort = (n: number) =>
   n >= 1_000_000
@@ -67,7 +68,7 @@ export function TargetCard({
             disabled={pending}
             className="w-full rounded-lg bg-neutral-900 py-2 text-sm font-semibold text-white disabled:opacity-60"
           >
-            {pending ? "Menyimpan…" : "Simpan Target"}
+            {pending ? <PendingLabel text="Menyimpan…" /> : "Simpan Target"}
           </button>
           {state?.ok && (
             <p className="text-xs text-neutral-500">Target tersimpan.</p>

@@ -11,6 +11,9 @@ import {
   ShoppingCart,
   Ticket,
   Inbox,
+  BookOpen,
+  Boxes,
+  ShoppingBag,
   type LucideIcon,
 } from "lucide-react";
 
@@ -20,17 +23,22 @@ const NAV: Record<string, Item[]> = {
   ADMIN: [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { href: "/prospects", label: "Tracker", icon: MapPin },
+    { href: "/order", label: "Order", icon: ShoppingBag },
     { href: "/data", label: "Data", icon: Database },
     { href: "/request", label: "Request", icon: Inbox },
   ],
   SALES: [
     { href: "/beranda", label: "Dashboard", icon: LayoutDashboard },
     { href: "/konter", label: "Konter Saya", icon: Store },
+    { href: "/katalog", label: "Katalog", icon: BookOpen },
+    { href: "/order", label: "Order", icon: ShoppingBag },
     { href: "/konter/baru", label: "Tambah", icon: PlusCircle },
     { href: "/request", label: "Request", icon: Inbox },
   ],
   OWNER: [
     { href: "/pos", label: "POS", icon: ShoppingCart },
+    { href: "/order", label: "Order", icon: ShoppingBag },
+    { href: "/stok", label: "Stok", icon: Boxes },
     { href: "/tiket", label: "Tiket", icon: Ticket },
     { href: "/request", label: "Request", icon: Inbox },
   ],
@@ -53,7 +61,23 @@ function activeHref(pathname: string, items: Item[]) {
   return best;
 }
 
-export function BottomNav({ role }: { role: string }) {
+// Badge jumlah order menunggu diproses (notifikasi di dalam web)
+function OrderBadge({ n }: { n: number }) {
+  if (n <= 0) return null;
+  return (
+    <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold leading-none text-white">
+      {n > 99 ? "99+" : n}
+    </span>
+  );
+}
+
+export function BottomNav({
+  role,
+  orderBadge = 0,
+}: {
+  role: string;
+  orderBadge?: number;
+}) {
   const pathname = usePathname();
   const items = useItems(role);
   const active = activeHref(pathname, items);
@@ -73,7 +97,14 @@ export function BottomNav({ role }: { role: string }) {
               on ? "font-semibold text-neutral-900" : "text-neutral-400"
             }`}
           >
-            <Icon className="h-5 w-5" strokeWidth={2} />
+            <span className="relative">
+              <Icon className="h-5 w-5" strokeWidth={2} />
+              {it.href === "/order" && (
+                <span className="absolute -right-2 -top-1">
+                  <OrderBadge n={orderBadge} />
+                </span>
+              )}
+            </span>
             {it.label}
           </Link>
         );
@@ -82,7 +113,13 @@ export function BottomNav({ role }: { role: string }) {
   );
 }
 
-export function SideNav({ role }: { role: string }) {
+export function SideNav({
+  role,
+  orderBadge = 0,
+}: {
+  role: string;
+  orderBadge?: number;
+}) {
   const pathname = usePathname();
   const items = useItems(role);
   const active = activeHref(pathname, items);
@@ -102,7 +139,8 @@ export function SideNav({ role }: { role: string }) {
             }`}
           >
             <Icon className="h-4 w-4" strokeWidth={2} />
-            {it.label}
+            <span className="flex-1">{it.label}</span>
+            {it.href === "/order" && <OrderBadge n={orderBadge} />}
           </Link>
         );
       })}

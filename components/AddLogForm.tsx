@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { addStageLog } from "@/app/actions/tracker";
+import { PendingLabel } from "@/components/SubmitButton";
 import {
   STAGES,
   STAGE_LABEL,
@@ -109,7 +110,7 @@ export function AddLogForm({
         disabled={pending}
         className="w-full rounded-lg bg-neutral-900 py-2.5 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-60"
       >
-        {pending ? "Menyimpan..." : "Simpan Update"}
+        {pending ? <PendingLabel text="Menyimpan…" /> : "Simpan Update"}
       </button>
     </form>
   );

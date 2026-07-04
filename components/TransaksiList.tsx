@@ -1,7 +1,31 @@
 "use client";
 
 import { useState } from "react";
-import { X, Printer, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  X,
+  Printer,
+  ChevronLeft,
+  ChevronRight,
+  CalendarDays,
+} from "lucide-react";
+
+type Preset = "all" | "today" | "7d" | "30d" | "custom";
+
+const PRESETS: { key: Exclude<Preset, "custom">; label: string }[] = [
+  { key: "all", label: "Semua" },
+  { key: "today", label: "Hari ini" },
+  { key: "7d", label: "7 hari" },
+  { key: "30d", label: "30 hari" },
+];
+
+function presetStart(preset: Preset): number | null {
+  if (preset === "all" || preset === "custom") return null;
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  if (preset === "7d") d.setDate(d.getDate() - 6);
+  if (preset === "30d") d.setDate(d.getDate() - 29);
+  return d.getTime();
+}
 
 const PER_PAGE = 5;
 
@@ -39,6 +63,7 @@ export function TransaksiList({
 }) {
   const [sel, setSel] = useState<Trx | null>(null);
   const [page, setPage] = useState(0);
+  const [preset, setPreset] = useState<Preset>("all");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
 
@@ -46,8 +71,20 @@ export function TransaksiList({
     return <p className="text-sm text-neutral-400">Belum ada transaksi.</p>;
   }
 
+  function pickPreset(p: Preset) {
+    setPreset(p);
+    setPage(0);
+    if (p !== "custom") {
+      setFrom("");
+      setTo("");
+    }
+  }
+
+  const start = presetStart(preset);
   const filtered = sales.filter((s) => {
     const t = new Date(s.createdAt).getTime();
+    if (start !== null) return t >= start;
+    if (preset !== "custom") return true;
     if (from) {
       const f = new Date(from);
       f.setHours(0, 0, 0, 0);
@@ -68,45 +105,70 @@ export function TransaksiList({
     safePage * PER_PAGE + PER_PAGE,
   );
 
-  const inputCls =
-    "rounded-lg border border-neutral-300 px-2 py-1 text-xs text-neutral-700";
-
   return (
     <>
-      {/* Filter tanggal */}
-      <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
-        <span className="text-neutral-500">Tanggal:</span>
-        <input
-          type="date"
-          value={from}
-          onChange={(e) => {
-            setFrom(e.target.value);
-            setPage(0);
-          }}
-          className={inputCls}
-        />
-        <span className="text-neutral-400">—</span>
-        <input
-          type="date"
-          value={to}
-          onChange={(e) => {
-            setTo(e.target.value);
-            setPage(0);
-          }}
-          className={inputCls}
-        />
-        {(from || to) && (
+      {/* Filter tanggal: preset sekali tap + rentang custom */}
+      <div className="mb-3 space-y-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {PRESETS.map((p) => (
+            <button
+              key={p.key}
+              type="button"
+              onClick={() => pickPreset(p.key)}
+              className={`rounded-full border px-3 py-1.5 text-xs font-medium ${
+                preset === p.key
+                  ? "border-neutral-900 bg-neutral-900 text-white"
+                  : "border-neutral-300 text-neutral-600 hover:bg-neutral-100"
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
           <button
             type="button"
-            onClick={() => {
-              setFrom("");
-              setTo("");
-              setPage(0);
-            }}
-            className="text-neutral-400 underline hover:text-neutral-700"
+            onClick={() => pickPreset(preset === "custom" ? "all" : "custom")}
+            className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-medium ${
+              preset === "custom"
+                ? "border-neutral-900 bg-neutral-900 text-white"
+                : "border-neutral-300 text-neutral-600 hover:bg-neutral-100"
+            }`}
           >
-            Reset
+            <CalendarDays className="h-3.5 w-3.5" />
+            Pilih tanggal
           </button>
+        </div>
+
+        {preset === "custom" && (
+          <div className="grid grid-cols-2 gap-2">
+            <label className="block">
+              <span className="mb-0.5 block text-[11px] text-neutral-400">
+                Dari
+              </span>
+              <input
+                type="date"
+                value={from}
+                onChange={(e) => {
+                  setFrom(e.target.value);
+                  setPage(0);
+                }}
+                className="w-full min-w-0 rounded-lg border border-neutral-300 px-2 py-1.5 text-xs text-neutral-700"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-0.5 block text-[11px] text-neutral-400">
+                Sampai
+              </span>
+              <input
+                type="date"
+                value={to}
+                onChange={(e) => {
+                  setTo(e.target.value);
+                  setPage(0);
+                }}
+                className="w-full min-w-0 rounded-lg border border-neutral-300 px-2 py-1.5 text-xs text-neutral-700"
+              />
+            </label>
+          </div>
         )}
       </div>
 

@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { createOwnerAccount, createSalesAccount } from "@/app/actions/users";
+import { PendingLabel } from "@/components/SubmitButton";
 
 const inputCls = "w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm";
 const btnCls =
@@ -39,7 +40,7 @@ export function CreateOwnerForm({ storeId }: { storeId: string }) {
         <Msg state={state} />
       </div>
       <button disabled={pending} className={`${btnCls} sm:col-span-3`}>
-        {pending ? "Membuat..." : "Buat Akun Owner"}
+        {pending ? <PendingLabel text="Membuat…" /> : "Buat Akun Owner"}
       </button>
     </form>
   );
@@ -59,7 +60,7 @@ export function CreateSalesForm() {
         <Msg state={state} />
       </div>
       <button disabled={pending} className={`${btnCls} sm:col-span-3`}>
-        {pending ? "Membuat..." : "Tambah Sales"}
+        {pending ? <PendingLabel text="Membuat…" /> : "Tambah Sales"}
       </button>
     </form>
   );

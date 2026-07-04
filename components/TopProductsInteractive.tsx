@@ -18,15 +18,10 @@ const rpShort = (n: number) =>
       ? `${Math.round(n / 1_000)}rb`
       : `${n}`;
 
-const rupiah = (n: number) =>
-  new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0,
-  }).format(n);
+type TimeFilter = "all" | "weekly" | "monthly" | "yearly";
 
 export function TopProductsInteractive({ sales }: { sales: SaleData[] }) {
-  const [timeFilter, setTimeFilter] = useState<"all" | "weekly" | "monthly" | "yearly">("all");
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
   const [areaFilter, setAreaFilter] = useState<string>("all");
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 7;
@@ -84,7 +79,7 @@ export function TopProductsInteractive({ sales }: { sales: SaleData[] }) {
   const maxUnits = Math.max(1, ...filteredData.map((d) => d.units));
 
   // Reset pagination on filter change
-  const handleTimeFilter = (val: "all" | "weekly" | "monthly" | "yearly") => {
+  const handleTimeFilter = (val: TimeFilter) => {
     setTimeFilter(val);
     setCurrentPage(1);
   };
@@ -98,7 +93,7 @@ export function TopProductsInteractive({ sales }: { sales: SaleData[] }) {
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <select
           value={timeFilter}
-          onChange={(e) => handleTimeFilter(e.target.value as any)}
+          onChange={(e) => handleTimeFilter(e.target.value as TimeFilter)}
           className="rounded-md border border-neutral-200 bg-white px-2 py-1 text-xs text-neutral-700 outline-none focus:border-brand"
         >
           <option value="all">Semua Waktu</option>

@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { createTicket } from "@/app/actions/tickets";
+import { PendingLabel } from "@/components/SubmitButton";
 
 const inputCls = "w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm";
 
@@ -57,7 +58,7 @@ export function TicketForm() {
         disabled={pending}
         className="w-full rounded-lg bg-neutral-900 py-2.5 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-60"
       >
-        {pending ? "Mengirim…" : "Kirim Tiket"}
+        {pending ? <PendingLabel text="Mengirim…" /> : "Kirim Tiket"}
       </button>
     </form>
   );

@@ -1,0 +1,237 @@
+import type { Prisma } from "@prisma/client";
+import { waLink } from "@/lib/wa";
+import { updateRequestStatus } from "@/app/actions/requests";
+import { SubmitButton } from "@/components/SubmitButton";
+import { MessageCircle, Package, Store, ChevronDown } from "lucide-react";
+
+export type OrderRequest = Prisma.RequestGetPayload<{
+  include: {
+    store: { include: { sales: true } };
+    createdBy: true;
+    items: { include: { product: true } };
+  };
+}>;
+
+const STATUS_LABEL: Record<string, string> = {
+  PENDING: "Menunggu",
+  COMPLETED: "Selesai",
+};
+const STATUS_CLS: Record<string, string> = {
+  PENDING: "border-amber-300 bg-amber-50 text-amber-700",
+  COMPLETED: "border-neutral-900 bg-neutral-900 text-white",
+};
+
+const rupiah = (n: number) =>
+  new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    maximumFractionDigits: 0,
+  }).format(n);
+
+function ItemRow({
+  item: it,
+  canRespond,
+  remaining,
+}: {
+  item: OrderRequest["items"][number];
+  canRespond: boolean;
+  remaining: number | undefined;
+}) {
+  const short = it.product.centralStock < it.qty;
+  return (
+    <div className="flex items-center gap-3">
+      {it.product.imageUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={it.product.imageUrl}
+          alt={it.product.name}
+          className="h-12 w-12 shrink-0 rounded-lg border border-neutral-200 object-cover"
+        />
+      ) : (
+        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-neutral-100">
+          <Package className="h-5 w-5 text-neutral-300" />
+        </span>
+      )}
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium">{it.product.name}</p>
+        <p className="text-xs text-neutral-500">
+          {it.qty} × {rupiah(it.price)}
+        </p>
+        {canRespond && (
+          <p
+            className={`text-[11px] ${
+              short ? "font-semibold text-red-600" : "text-neutral-400"
+            }`}
+          >
+            Stok pusat {it.product.centralStock}
+            {short ? " (kurang!)" : ""} · toko {remaining ?? 0}
+          </p>
+        )}
+      </div>
+      <span className="shrink-0 text-sm font-semibold">
+        {rupiah(it.qty * it.price)}
+      </span>
+    </div>
+  );
+}
+
+// Kartu orderan gaya marketplace: header toko + no. order, barang ringkas
+// (sisanya dilipat), footer total + aksi.
+export function OrderCard({
+  order: r,
+  canRespond,
+  remaining,
+}: {
+  order: OrderRequest;
+  canRespond: boolean;
+  remaining: Map<string, number>;
+}) {
+  const wa = waLink(
+    r.store.ownerPhone,
+    `Halo${r.store.ownerName ? " " + r.store.ownerName : ""}, soal orderan #${r.id.slice(-8).toUpperCase()} dari ${r.store.name}.`,
+  );
+  // Untuk owner: chat ke sales pemegang tokonya soal order ini
+  const waSales = waLink(
+    r.store.sales?.phone,
+    `Halo ${r.store.sales?.name ?? ""}, saya dari ${r.store.name}. Mau tanya soal orderan #${r.id.slice(-8).toUpperCase()}.`,
+  );
+  const shown = r.items.slice(0, 2);
+  const rest = r.items.slice(2);
+
+  return (
+    <li className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
+      {/* Header: toko + no. order + status */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-100 bg-neutral-50 px-4 py-2.5">
+        <div className="flex min-w-0 items-center gap-2">
+          <Store className="h-4 w-4 shrink-0 text-neutral-500" />
+          <span className="truncate text-sm font-semibold">
+            {canRespond ? r.store.name : "Order"}
+          </span>
+          <span className="shrink-0 font-mono text-xs text-neutral-400">
+            #{r.id.slice(-8).toUpperCase()}
+          </span>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <span
+            className={`rounded-full border px-2 py-0.5 text-xs font-medium ${
+              r.paymentStatus === "PAID"
+                ? "border-brand bg-brand text-neutral-900"
+                : "border-neutral-300 text-neutral-500"
+            }`}
+          >
+            {r.paymentStatus === "PAID" ? "Lunas" : "Belum bayar"}
+          </span>
+          <span
+            className={`rounded-full border px-2 py-0.5 text-xs font-medium ${
+              STATUS_CLS[r.status] ?? STATUS_CLS.PENDING
+            }`}
+          >
+            {STATUS_LABEL[r.status] ?? r.status}
+          </span>
+        </div>
+      </div>
+
+      {/* Barang: 2 pertama tampil, sisanya dilipat */}
+      <div className="space-y-2.5 px-4 py-3">
+        {shown.map((it) => (
+          <ItemRow
+            key={it.id}
+            item={it}
+            canRespond={canRespond}
+            remaining={remaining.get(`${r.storeId}:${it.productId}`)}
+          />
+        ))}
+        {rest.length > 0 && (
+          <details className="group">
+            <summary className="flex cursor-pointer list-none items-center justify-center gap-1 rounded-lg py-1 text-xs font-medium text-neutral-500 hover:bg-neutral-50 [&::-webkit-details-marker]:hidden">
+              Lihat {rest.length} produk lainnya
+              <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="space-y-2.5 pt-2.5">
+              {rest.map((it) => (
+                <ItemRow
+                  key={it.id}
+                  item={it}
+                  canRespond={canRespond}
+                  remaining={remaining.get(`${r.storeId}:${it.productId}`)}
+                />
+              ))}
+            </div>
+          </details>
+        )}
+        {r.message !== "" && (
+          <p className="rounded-lg bg-neutral-50 px-2.5 py-1.5 text-xs text-neutral-500">
+            {r.message}
+          </p>
+        )}
+      </div>
+
+      {/* Footer: info + total */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-neutral-100 px-4 py-2.5">
+        <span className="text-xs text-neutral-400">
+          {new Date(r.createdAt).toLocaleDateString("id-ID", {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+          })}{" "}
+          · {r.createdBy?.name ?? "—"} · {r.items.length} produk
+        </span>
+        <span className="flex items-baseline gap-2">
+          <span className="text-xs text-neutral-500">Total Pesanan:</span>
+          <span className="text-base font-bold">{rupiah(r.total)}</span>
+        </span>
+      </div>
+
+      {/* Aksi owner: chat sales pemegang toko */}
+      {!canRespond && waSales && (
+        <div className="flex justify-end border-t border-neutral-100 bg-neutral-50 px-4 py-2.5">
+          <a
+            href={waSales}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700"
+          >
+            <MessageCircle className="h-3.5 w-3.5" />
+            Chat Sales{r.store.sales?.name ? ` (${r.store.sales.name})` : ""}
+          </a>
+        </div>
+      )}
+
+      {/* Aksi */}
+      {canRespond && (
+        <div className="flex flex-wrap justify-end gap-2 border-t border-neutral-100 bg-neutral-50 px-4 py-2.5">
+          {wa && (
+            <a
+              href={wa}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-100"
+            >
+              <MessageCircle className="h-3.5 w-3.5" />
+              Hubungi Owner
+            </a>
+          )}
+          {r.status !== "COMPLETED" ? (
+            <form action={updateRequestStatus.bind(null, r.id, "COMPLETED")}>
+              <SubmitButton
+                pendingText="Memproses…"
+                className="rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-neutral-800 disabled:opacity-60"
+              >
+                Selesaikan & Kirim Stok
+              </SubmitButton>
+            </form>
+          ) : (
+            <form action={updateRequestStatus.bind(null, r.id, "PENDING")}>
+              <SubmitButton
+                pendingText="Memproses…"
+                className="rounded-lg border border-neutral-300 px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-100 disabled:opacity-60"
+              >
+                Buka lagi
+              </SubmitButton>
+            </form>
+          )}
+        </div>
+      )}
+    </li>
+  );
+}
