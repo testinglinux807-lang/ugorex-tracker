@@ -1,4 +1,3 @@
-import Image from "next/image";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
@@ -6,7 +5,7 @@ import { logout } from "@/app/actions/auth";
 import { ROLE_LABEL, type Role } from "@/lib/constants";
 import { BottomNav, SideNav } from "@/components/Nav";
 import { SubmitButton } from "@/components/SubmitButton";
-import { PushToggle } from "@/components/PushToggle";
+import { LogoPush } from "@/components/LogoPush";
 
 export default async function AppLayout({
   children,
@@ -33,20 +32,10 @@ export default async function AppLayout({
       {/* Header */}
       <header className="sticky top-0 z-10 flex items-center justify-between border-b border-neutral-200 bg-white px-4 py-3">
         <div className="flex min-w-0 items-center gap-2">
-          <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded-lg">
-            <Image
-              src="/logo.webp"
-              alt="Ugorex"
-              fill
-              sizes="36px"
-              className="object-cover object-top"
-              priority
-            />
-          </div>
+          <LogoPush enablePush={user.role !== "OWNER"} />
           <span className="truncate font-semibold">Ugorex Tracker</span>
         </div>
         <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-          {user.role !== "OWNER" && <PushToggle />}
           <div className="max-w-[35vw] text-right sm:max-w-none">
             <p className="truncate text-sm font-medium leading-tight">
               {user.name}

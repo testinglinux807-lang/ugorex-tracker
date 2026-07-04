@@ -43,6 +43,6 @@ export async function middleware(req: NextRequest) {
 export const config = {
   // Lewati aset statis & api internal
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|sw\\.js|.*\\.(?:png|webp|jpg|jpeg|svg|ico|geojson)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|sw\\.js|manifest\\.webmanifest|.*\\.(?:png|webp|jpg|jpeg|svg|ico|geojson)$).*)",
   ],
 };

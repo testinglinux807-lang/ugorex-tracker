@@ -1,12 +1,8 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useState } from "react";
-import {
-  savePushSubscription,
-  removePushSubscription,
-} from "@/app/actions/push";
-import { Spinner } from "@/components/SubmitButton";
-import { Bell, BellOff } from "lucide-react";
+import { savePushSubscription } from "@/app/actions/push";
 
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
 
@@ -19,13 +15,16 @@ function urlBase64ToUint8Array(base64: string) {
 
 type Status = "unsupported" | "loading" | "off" | "on";
 
-// Tombol lonceng: aktif/nonaktifkan notifikasi browser di perangkat ini
-export function PushToggle() {
+// Logo header: untuk admin/sales, klik = aktifkan notifikasi order di
+// perangkat ini (tanpa tombol lonceng terpisah yang makan tempat di mobile).
+// Titik lime kecil di pojok logo = notifikasi aktif.
+export function LogoPush({ enablePush }: { enablePush: boolean }) {
   const [status, setStatus] = useState<Status>("loading");
 
   useEffect(() => {
     async function check(): Promise<Status> {
       if (
+        !enablePush ||
         !VAPID_PUBLIC_KEY ||
         !("serviceWorker" in navigator) ||
         !("PushManager" in window) ||
@@ -40,9 +39,10 @@ export function PushToggle() {
     check()
       .then(setStatus)
       .catch(() => setStatus("off"));
-  }, []);
+  }, [enablePush]);
 
   async function enable() {
+    if (status !== "off") return;
     setStatus("loading");
     try {
       const perm = await Notification.requestPermission();
@@ -68,44 +68,40 @@ export function PushToggle() {
     }
   }
 
-  async function disable() {
-    setStatus("loading");
-    try {
-      const reg = await navigator.serviceWorker.getRegistration("/sw.js");
-      const sub = await reg?.pushManager.getSubscription();
-      if (sub) {
-        await removePushSubscription(sub.endpoint);
-        await sub.unsubscribe();
-      }
-    } finally {
-      setStatus("off");
-    }
-  }
+  const logo = (
+    <Image
+      src="/logo.webp"
+      alt="Ugorex"
+      fill
+      sizes="36px"
+      className="object-cover object-top"
+      priority
+    />
+  );
 
-  if (status === "unsupported") return null;
+  // Owner / browser tak mendukung: logo biasa tanpa perilaku klik
+  if (!enablePush || status === "unsupported") {
+    return (
+      <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded-lg">
+        {logo}
+      </div>
+    );
+  }
 
   return (
     <button
       type="button"
-      onClick={status === "on" ? disable : enable}
-      disabled={status === "loading"}
+      onClick={enable}
       title={
         status === "on"
-          ? "Notifikasi order aktif di perangkat ini — klik untuk mematikan"
-          : "Aktifkan notifikasi order di perangkat ini"
+          ? "Notifikasi order aktif di perangkat ini"
+          : "Klik logo untuk mengaktifkan notifikasi order"
       }
-      className={`flex h-8 w-8 items-center justify-center rounded-lg border ${
-        status === "on"
-          ? "border-neutral-900 bg-neutral-900 text-white"
-          : "border-neutral-200 text-neutral-500 hover:bg-neutral-100"
-      }`}
+      className="relative h-9 w-9 shrink-0 overflow-hidden rounded-lg"
     >
-      {status === "loading" ? (
-        <Spinner className="h-3.5 w-3.5" />
-      ) : status === "on" ? (
-        <Bell className="h-4 w-4" />
-      ) : (
-        <BellOff className="h-4 w-4" />
+      {logo}
+      {status === "on" && (
+        <span className="absolute bottom-0.5 right-0.5 h-2 w-2 rounded-full border border-white bg-brand" />
       )}
     </button>
   );
