@@ -8,6 +8,7 @@ import { KonterList } from "@/components/KonterList";
 import { ProductImageInput } from "@/components/ProductPhoto";
 import { SalesRow } from "@/components/DataActions";
 import { ProductTable } from "@/components/ProductTable";
+import { productImageSrc } from "@/lib/product-image";
 import { SubmitButton } from "@/components/SubmitButton";
 import { Package, Store, Users } from "lucide-react";
 
@@ -63,7 +64,7 @@ export default async function DataPage() {
             name: p.name,
             price: p.price,
             description: p.description,
-            imageUrl: p.imageUrl,
+            imageUrl: productImageSrc(p),
             centralStock: p.centralStock,
           }))}
         />

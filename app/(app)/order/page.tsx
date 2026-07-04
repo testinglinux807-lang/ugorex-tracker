@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { OrderCard } from "@/components/OrderCard";
 import { RestockCheckout } from "@/components/RequestForm";
+import { productImageSrc } from "@/lib/product-image";
 import { ShoppingBag } from "lucide-react";
 
 export default async function OrderPage() {
@@ -20,7 +21,7 @@ export default async function OrderPage() {
   }
 
   // Owner: order tokonya; sales: toko yang dia pegang; admin: semua
-  const orders = await prisma.request.findMany({
+  const rawOrders = await prisma.request.findMany({
     where: {
       items: { some: {} },
       ...(isOwner
@@ -36,6 +37,15 @@ export default async function OrderPage() {
     },
     orderBy: [{ status: "asc" }, { createdAt: "desc" }],
   });
+  // Ganti data URI foto dengan URL route API — tanpa ini, base64 yang sama
+  // tertanam ulang di tiap order dan halaman membengkak sampai belasan MB.
+  const orders = rawOrders.map((r) => ({
+    ...r,
+    items: r.items.map((it) => ({
+      ...it,
+      product: { ...it.product, imageUrl: productImageSrc(it.product) },
+    })),
+  }));
 
   // ===== Tampilan OWNER: checkout + riwayat order toko =====
   if (isOwner) {
@@ -57,7 +67,7 @@ export default async function OrderPage() {
       price: p.price,
       remaining: Math.max(0, (stockBy.get(p.id) ?? 0) - (soldBy.get(p.id) ?? 0)),
       central: p.centralStock,
-      imageUrl: p.imageUrl,
+      imageUrl: productImageSrc(p),
     }));
 
     return (

@@ -292,7 +292,13 @@ export default async function KonterPage({
                       Catat Kunjungan / Funnel
                     </summary>
                     <div className="border-t border-neutral-100 p-3">
-                      <VisitForm storeId={s.id} products={products} />
+                      <VisitForm
+                        storeId={s.id}
+                        products={products.map((p) => ({
+                          id: p.id,
+                          name: p.name,
+                        }))}
+                      />
                     </div>
                   </details>
 

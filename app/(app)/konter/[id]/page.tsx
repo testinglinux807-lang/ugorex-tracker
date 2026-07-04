@@ -154,7 +154,10 @@ export default async function StoreDetailPage({
           <p className="mb-3 text-xs text-neutral-400">
             Tandai tahap & respon toko atas barang yang ditawarkan
           </p>
-          <VisitForm storeId={store.id} products={products} />
+          <VisitForm
+            storeId={store.id}
+            products={products.map((p) => ({ id: p.id, name: p.name }))}
+          />
         </div>
 
         <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">

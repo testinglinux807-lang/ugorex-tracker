@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { KatalogGrid } from "@/components/KatalogGrid";
+import { productImageSrc } from "@/lib/product-image";
 import { ArrowRight } from "lucide-react";
 
 export default async function KatalogPage() {
@@ -45,7 +46,7 @@ export default async function KatalogPage() {
             name: p.name,
             price: p.price,
             description: p.description,
-            imageUrl: p.imageUrl,
+            imageUrl: productImageSrc(p),
             central: p.centralStock,
           }))}
           stores={stores.map((s) => ({
