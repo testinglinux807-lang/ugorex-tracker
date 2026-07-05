@@ -133,62 +133,56 @@ export function OrderCard({
           : "border-neutral-200"
       }`}
     >
-      {/* Header: toko + no. order + status */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-100 bg-neutral-50 px-4 py-2.5">
-        <div className="flex min-w-0 items-center gap-2">
-          <Store className="h-4 w-4 shrink-0 text-neutral-500" />
-          <span className="truncate text-sm font-semibold">
-            {canRespond ? r.store.name : "Order"}
-          </span>
-          <span className="shrink-0 font-mono text-xs text-neutral-400">
-            #{r.id.slice(-8).toUpperCase()}
-          </span>
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <span
-            className={`rounded-full border px-2 py-0.5 text-xs font-medium ${
-              r.paymentStatus === "PAID"
-                ? "border-brand bg-brand text-neutral-900"
-                : "border-neutral-300 text-neutral-500"
-            }`}
-          >
-            {r.paymentStatus === "PAID" ? "Lunas" : "Belum bayar"}
-          </span>
-          <span
-            className={`rounded-full border px-2 py-0.5 text-xs font-medium ${
-              STATUS_CLS[r.status] ?? STATUS_CLS.PENDING
-            }`}
-          >
-            {STATUS_LABEL[r.status] ?? r.status}
-          </span>
+      {/* Header: nama toko besar; no. order jadi subjudul kecil supaya
+          tidak berebut baris sama badge di layar sempit */}
+      <div className="border-b border-neutral-100 bg-neutral-50 px-4 py-2.5">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="flex items-center gap-1.5 truncate text-sm font-semibold">
+              <Store className="h-3.5 w-3.5 shrink-0 text-neutral-400" />
+              {canRespond ? r.store.name : "Order"}
+            </p>
+            <p className="truncate pl-5 font-mono text-[11px] text-neutral-400">
+              #{r.id.slice(-8).toUpperCase()}
+            </p>
+          </div>
+          <div className="flex shrink-0 flex-col items-end gap-1">
+            <span
+              className={`rounded-full border px-2 py-0.5 text-xs font-medium ${
+                r.paymentStatus === "PAID"
+                  ? "border-brand bg-brand text-neutral-900"
+                  : "border-neutral-300 text-neutral-500"
+              }`}
+            >
+              {r.paymentStatus === "PAID" ? "Lunas" : "Belum bayar"}
+            </span>
+            <span
+              className={`rounded-full border px-2 py-0.5 text-xs font-medium ${
+                STATUS_CLS[r.status] ?? STATUS_CLS.PENDING
+              }`}
+            >
+              {STATUS_LABEL[r.status] ?? r.status}
+            </span>
+          </div>
         </div>
       </div>
 
       {/* Barang: 2 pertama tampil, sisanya dilipat */}
       <div className="space-y-2.5 px-4 py-3">
-        {/* Lokasi tujuan antar — biar sales tidak bingung ke mana */}
+        {/* Lokasi tujuan antar — baris polos (bukan kotak) biar ringkas */}
         {canRespond && (
-          <div className="flex items-center justify-between gap-2 rounded-lg bg-neutral-50 px-2.5 py-2">
-            <div className="min-w-0 text-xs">
-              <p className="flex items-center gap-1 font-medium text-neutral-800">
-                <MapPin className="h-3.5 w-3.5 shrink-0 text-neutral-500" />
-                <span className="truncate">
-                  {r.store.address ||
-                    r.store.area ||
-                    "Alamat toko belum diisi"}
-                </span>
-              </p>
-              {hasCoords && (
-                <p className="mt-0.5 pl-4.5 font-mono text-[11px] text-neutral-400">
-                  {r.store.lat!.toFixed(6)}, {r.store.lng!.toFixed(6)}
-                </p>
-              )}
-            </div>
+          <div className="flex items-center justify-between gap-2 text-xs">
+            <p className="flex min-w-0 items-center gap-1.5 text-neutral-600">
+              <MapPin className="h-3.5 w-3.5 shrink-0 text-neutral-400" />
+              <span className="truncate">
+                {r.store.address || r.store.area || "Alamat toko belum diisi"}
+              </span>
+            </p>
             <a
               href={mapsUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-neutral-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-100"
+              className="inline-flex shrink-0 items-center gap-1 font-semibold text-neutral-700 hover:underline"
             >
               <Navigation className="h-3.5 w-3.5" />
               Rute
@@ -276,27 +270,26 @@ export function OrderCard({
         )}
       </div>
 
-      {/* Footer: info + total */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-neutral-100 px-4 py-2.5">
-        <span className="text-xs text-neutral-400">
+      {/* Footer: info ringkas + total */}
+      <div className="border-t border-neutral-100 px-4 py-2.5">
+        <p className="truncate text-xs text-neutral-400">
           {new Date(r.createdAt).toLocaleDateString("id-ID", {
             day: "numeric",
             month: "short",
-            year: "numeric",
           })}{" "}
           · {r.createdBy?.name ?? "—"} · {r.items.length} produk
-        </span>
-        <span className="flex flex-col items-end">
+        </p>
+        <div className="mt-1 flex items-baseline justify-between gap-2">
+          <span className="text-xs text-neutral-500">Total Pesanan</span>
           <span className="flex items-baseline gap-2">
-            <span className="text-xs text-neutral-500">Total Pesanan:</span>
+            {r.discount > 0 && (
+              <span className="text-[11px] text-neutral-400">
+                hemat {rupiah(r.discount)}
+              </span>
+            )}
             <span className="text-base font-bold">{rupiah(r.total)}</span>
           </span>
-          {r.discount > 0 && (
-            <span className="text-[11px] text-neutral-400">
-              Hemat {rupiah(r.discount)} — voucher {r.voucherCode}
-            </span>
-          )}
-        </span>
+        </div>
       </div>
 
       {/* Aksi owner: bayar order yang belum lunas + chat sales pemegang toko */}

@@ -9,7 +9,6 @@ import {
   updateSalesAccount,
   deleteSalesAccount,
 } from "@/app/actions/users";
-import { ProductStockForm } from "@/components/ProductStockForm";
 import { UpdateProductPhotoForm } from "@/components/ProductPhoto";
 import { SubmitButton, PendingLabel } from "@/components/SubmitButton";
 import { Package, Pencil, Trash2, X } from "lucide-react";
@@ -106,6 +105,8 @@ export function ProductRow({
 
   return (
     <div className="py-2">
+      {/* Baris utama: cuma thumb + info + 2 tombol (Edit, Hapus) — sisanya
+          (stok pusat, foto) pindah ke panel edit supaya tidak sempit di HP */}
       <div className="flex items-center justify-between gap-2 text-sm">
         {product.imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -123,7 +124,6 @@ export function ProductRow({
           <p className="truncate font-medium">{product.name}</p>
           <p className="truncate text-xs text-neutral-400">
             {rupiah(product.price)}
-            {product.description ? ` · ${product.description}` : ""}
           </p>
           <p
             className={`text-xs ${
@@ -136,8 +136,6 @@ export function ProductRow({
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          <ProductStockForm productId={product.id} stock={product.centralStock} />
-          <UpdateProductPhotoForm productId={product.id} />
           <EditToggle
             open={editing}
             onClick={() => setEditing((v) => !v)}
@@ -152,44 +150,60 @@ export function ProductRow({
       </div>
 
       {editing && (
-        <form
-          action={formAction}
-          className="mt-2 space-y-2 rounded-lg bg-neutral-50 p-2"
-        >
-          <div className="grid grid-cols-2 gap-2">
+        <div className="mt-2 space-y-2 rounded-lg bg-neutral-50 p-2">
+          <form action={formAction} className="space-y-2">
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                name="name"
+                required
+                defaultValue={product.name}
+                placeholder="Nama barang"
+                className={inputCls}
+              />
+              <input
+                name="price"
+                type="number"
+                min={0}
+                defaultValue={product.price}
+                placeholder="Harga (Rp)"
+                className={inputCls}
+              />
+            </div>
             <input
-              name="name"
-              required
-              defaultValue={product.name}
-              placeholder="Nama barang"
+              name="description"
+              defaultValue={product.description ?? ""}
+              placeholder="Deskripsi (opsional)"
               className={inputCls}
             />
-            <input
-              name="price"
-              type="number"
-              min={0}
-              defaultValue={product.price}
-              placeholder="Harga (Rp)"
-              className={inputCls}
-            />
+            <div>
+              <label className="mb-1 block text-xs text-neutral-500">
+                Stok pusat
+              </label>
+              <input
+                name="centralStock"
+                type="number"
+                min={0}
+                defaultValue={product.centralStock}
+                className={inputCls}
+              />
+            </div>
+            {state?.error && (
+              <p className="text-xs font-medium text-red-600">{state.error}</p>
+            )}
+            <button
+              type="submit"
+              disabled={pending}
+              className="w-full rounded-lg bg-neutral-900 py-1.5 text-xs font-semibold text-white hover:bg-neutral-800 disabled:opacity-60"
+            >
+              {pending ? <PendingLabel text="Menyimpan…" /> : "Simpan Perubahan"}
+            </button>
+          </form>
+
+          <div className="border-t border-neutral-200 pt-2">
+            <p className="mb-1 text-xs text-neutral-500">Foto barang</p>
+            <UpdateProductPhotoForm productId={product.id} />
           </div>
-          <input
-            name="description"
-            defaultValue={product.description ?? ""}
-            placeholder="Deskripsi (opsional)"
-            className={inputCls}
-          />
-          {state?.error && (
-            <p className="text-xs font-medium text-red-600">{state.error}</p>
-          )}
-          <button
-            type="submit"
-            disabled={pending}
-            className="w-full rounded-lg bg-neutral-900 py-1.5 text-xs font-semibold text-white hover:bg-neutral-800 disabled:opacity-60"
-          >
-            {pending ? <PendingLabel text="Menyimpan…" /> : "Simpan Perubahan"}
-          </button>
-        </form>
+        </div>
       )}
     </div>
   );

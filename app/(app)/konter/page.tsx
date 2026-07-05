@@ -16,8 +16,16 @@ import {
   UserPlus,
   MessageCircle,
   Search,
+  Trophy,
   X,
 } from "lucide-react";
+
+const rupiah = (n: number) =>
+  new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    maximumFractionDigits: 0,
+  }).format(n);
 
 export default async function KonterPage({
   searchParams,
@@ -49,9 +57,19 @@ export default async function KonterPage({
     prisma.product.findMany({ orderBy: { name: "asc" } }),
     prisma.sale.findMany({
       where: user.role === "SALES" ? { store: { salesId: user.id } } : {},
-      select: { storeId: true, productId: true, qty: true },
+      select: { storeId: true, productId: true, qty: true, total: true },
     }),
   ]);
+
+  // Terlaris: total penjualan per konter, diberi peringkat 1-3 teratas
+  const revenueByStore = new Map<string, number>();
+  for (const s of sales) {
+    revenueByStore.set(s.storeId, (revenueByStore.get(s.storeId) ?? 0) + s.total);
+  }
+  const rankByStore = new Map<string, number>();
+  [...revenueByStore.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .forEach(([storeId], i) => rankByStore.set(storeId, i + 1));
 
   // Filter pencarian (nama konter / area)
   const shown = q
@@ -198,9 +216,12 @@ export default async function KonterPage({
                       `Wassalamualaikum.\n— ${user.name}, Ugorex`,
                   )
                 : null;
+            const revenue = revenueByStore.get(s.id) ?? 0;
+            const rank = rankByStore.get(s.id);
             return {
               visited: isVisited,
               low: waRestok !== null,
+              revenue,
               node: (
               <div
                 key={s.id}
@@ -217,6 +238,20 @@ export default async function KonterPage({
                     <p className="flex items-center gap-1 truncate text-sm text-neutral-500">
                       <MapPin className="h-3 w-3 shrink-0" /> {s.area ?? "—"}
                     </p>
+                    {rank && rank <= 3 ? (
+                      <p className="mt-1 flex items-center gap-1 text-xs font-semibold text-neutral-900">
+                        <Trophy className="h-3.5 w-3.5 shrink-0 text-brand-dark" />
+                        Top {rank} Terlaris · {rupiah(revenue)}
+                      </p>
+                    ) : revenue > 0 ? (
+                      <p className="mt-1 text-xs text-neutral-500">
+                        Terjual {rupiah(revenue)}
+                      </p>
+                    ) : (
+                      <p className="mt-1 text-xs text-neutral-400">
+                        Belum ada penjualan
+                      </p>
+                    )}
                   </div>
                   {isVisited ? (
                     <span className="flex shrink-0 items-center gap-1 rounded-full border border-neutral-900 bg-neutral-900 px-2 py-0.5 text-xs text-white">

@@ -7,6 +7,7 @@ import {
   TileLayer,
   GeoJSON,
   Marker,
+  CircleMarker,
   Popup,
   useMap,
 } from "react-leaflet";
@@ -29,6 +30,24 @@ export type MapPoint = {
   lat: number;
   lng: number;
 };
+
+// Konter yang benar-benar berkontribusi ke penjualan (punya transaksi Sale)
+// — digambar sebagai bubble, ukurannya sebanding total revenue toko itu.
+export type StoreRevenuePoint = {
+  storeId: string;
+  store: string;
+  area: string | null;
+  lat: number;
+  lng: number;
+  revenue: number;
+};
+
+const rupiah = (n: number) =>
+  new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    maximumFractionDigits: 0,
+  }).format(n);
 
 const KARAWANG_CENTER: [number, number] = [-6.265, 107.364];
 
@@ -150,9 +169,11 @@ function GrayscaleSpotlight({ ring }: { ring: [number, number][] | null }) {
 export default function MapInner({
   points,
   filter,
+  storePoints = [],
 }: {
   points: MapPoint[];
   filter: InterestFilter;
+  storePoints?: StoreRevenuePoint[];
 }) {
   const [geo, setGeo] = useState<GeoJsonObject | null>(null);
   const [kec, setKec] = useState<GeoJsonObject | null>(null);
@@ -227,6 +248,12 @@ export default function MapInner({
     filter === "ALL" ? true : p.result === filter,
   );
 
+  // Radius bubble sebanding akar(revenue) — supaya konter dengan omzet 4x
+  // lipat tidak jadi 4x lebih lebar (visual tidak proporsional), cukup ~2x.
+  const maxRevenue = Math.max(1, ...storePoints.map((s) => s.revenue));
+  const radiusFor = (revenue: number) =>
+    10 + 26 * Math.sqrt(revenue / maxRevenue);
+
   return (
     <MapContainer
       center={KARAWANG_CENTER}
@@ -284,6 +311,39 @@ export default function MapInner({
           }}
         />
       )}
+
+      {/* Bubble konter yang benar-benar berkontribusi ke penjualan —
+          ukuran = besar kontribusinya, di bawah pin funnel */}
+      {storePoints.map((s) => (
+        <CircleMarker
+          key={`rev-${s.storeId}`}
+          center={[s.lat, s.lng]}
+          radius={radiusFor(s.revenue)}
+          pathOptions={{
+            color: "#7a8a02",
+            weight: 1.5,
+            fillColor: "#d2ec0a",
+            fillOpacity: 0.45,
+          }}
+        >
+          <Popup>
+            <div className="space-y-1">
+              <p className="font-semibold">{s.store}</p>
+              {s.area && <p className="text-neutral-500">{s.area}</p>}
+              <p className="text-neutral-700">
+                Kontribusi penjualan:{" "}
+                <span className="font-semibold">{rupiah(s.revenue)}</span>
+              </p>
+              <Link
+                href={`/konter/${s.storeId}`}
+                className="inline-block font-semibold underline"
+              >
+                Detail toko
+              </Link>
+            </div>
+          </Popup>
+        </CircleMarker>
+      ))}
 
       {shown.map((p) => (
         <Marker key={p.id} position={[p.lat, p.lng]} icon={pinIcon(p.result)}>

@@ -5,29 +5,38 @@ import { Paginated } from "@/components/Paginated";
 
 const TABS = [
   { key: "all", label: "Semua" },
+  { key: "top", label: "Terlaris" },
   { key: "unvisited", label: "Belum Dikunjungi" },
   { key: "low", label: "Stok Menipis" },
 ] as const;
 
 // Daftar kartu konter (halaman Konter Saya) dengan filter kerja sales:
-// mana yang belum dikunjungi, mana yang stoknya menipis — plus pagination
-// supaya HP tidak merender puluhan kartu tinggi sekaligus.
+// mana yang belum dikunjungi, mana yang stoknya menipis, mana yang terlaris
+// (diurutkan revenue tertinggi) — plus pagination supaya HP tidak merender
+// puluhan kartu tinggi sekaligus.
 export function KonterFilter({
   items,
 }: {
-  items: { visited: boolean; low: boolean; node: ReactNode }[];
+  items: { visited: boolean; low: boolean; revenue: number; node: ReactNode }[];
 }) {
   const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("all");
 
   const match = (i: (typeof items)[number]) =>
     tab === "unvisited" ? !i.visited : tab === "low" ? i.low : true;
-  const view = items.filter(match);
+  // Tab "top": hanya konter yang sudah pernah jualan, diurutkan terbesar
+  // dulu — biar kelihatan mana yang benar-benar terlaris.
+  const view =
+    tab === "top"
+      ? [...items].filter((i) => i.revenue > 0).sort((a, b) => b.revenue - a.revenue)
+      : items.filter(match);
   const countOf = (key: string) =>
     key === "unvisited"
       ? items.filter((i) => !i.visited).length
       : key === "low"
         ? items.filter((i) => i.low).length
-        : items.length;
+        : key === "top"
+          ? items.filter((i) => i.revenue > 0).length
+          : items.length;
 
   return (
     <div className="space-y-3">
@@ -72,7 +81,9 @@ export function KonterFilter({
               ? "Semua konter sudah dikunjungi."
               : tab === "low"
                 ? "Tidak ada konter dengan stok menipis."
-                : "Belum ada konter."}
+                : tab === "top"
+                  ? "Belum ada konter dengan penjualan."
+                  : "Belum ada konter."}
           </div>
         }
         items={view.map((i) => i.node)}

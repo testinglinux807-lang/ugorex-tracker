@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import dynamic from "next/dynamic";
-import type { MapPoint, InterestFilter } from "./MapInner";
+import type { MapPoint, StoreRevenuePoint, InterestFilter } from "./MapInner";
 
 // Leaflet butuh window → matikan SSR
 const MapInner = dynamic(() => import("./MapInner"), {
@@ -29,7 +29,13 @@ function Dot({ color }: { color: string }) {
   );
 }
 
-export function TrackerMap({ points }: { points: MapPoint[] }) {
+export function TrackerMap({
+  points,
+  storePoints = [],
+}: {
+  points: MapPoint[];
+  storePoints?: StoreRevenuePoint[];
+}) {
   const [filter, setFilter] = useState<InterestFilter>("ALL");
 
   const count = {
@@ -71,8 +77,15 @@ export function TrackerMap({ points }: { points: MapPoint[] }) {
         </div>
       </div>
 
+      {storePoints.length > 0 && (
+        <p className="flex items-center gap-1.5 text-xs text-neutral-500">
+          <span className="inline-block h-3 w-3 shrink-0 rounded-full border border-brand-dark bg-brand/50" />
+          Ukuran lingkaran = besar kontribusi penjualan konter itu
+        </p>
+      )}
+
       <div className="relative z-0 h-[420px] w-full overflow-hidden rounded-xl border border-neutral-200 bg-white">
-        <MapInner points={points} filter={filter} />
+        <MapInner points={points} filter={filter} storePoints={storePoints} />
       </div>
     </div>
   );

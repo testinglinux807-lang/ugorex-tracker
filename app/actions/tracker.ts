@@ -170,12 +170,15 @@ export async function updateProduct(productId: string, formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return { error: "Nama barang wajib diisi." };
   const price = parseInt(String(formData.get("price") ?? "0"), 10) || 0;
+  const centralStock =
+    parseInt(String(formData.get("centralStock") ?? "0"), 10) || 0;
 
   await prisma.product.update({
     where: { id: productId },
     data: {
       name,
       price,
+      centralStock,
       description: String(formData.get("description") ?? "").trim() || null,
     },
   });

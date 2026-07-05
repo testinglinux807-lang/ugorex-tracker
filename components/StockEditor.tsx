@@ -26,44 +26,45 @@ function StockRow({
   }
 
   return (
-    <div className="rounded-lg border border-neutral-200 px-3 py-2">
-      <div className="flex items-center justify-between gap-2">
-        <span className="min-w-0 truncate text-sm font-medium">
-          {product.name}
-        </span>
-        <div className="flex shrink-0 items-center gap-2">
-          {product.remaining > 0 && product.remaining <= 5 && (
-            <span className="rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
-              Menipis
-            </span>
-          )}
-          <span className="text-sm text-neutral-500">
-            Sisa:{" "}
-            <span
-              className={`font-semibold ${
-                product.remaining === 0
-                  ? "text-neutral-400"
-                  : product.remaining <= 5
-                    ? "text-amber-600"
-                    : "text-neutral-900"
-              }`}
-            >
-              {product.remaining}
-            </span>
-          </span>
-          <button
-            type="button"
-            onClick={() => setEditing((v) => !v)}
-            className="flex h-7 w-7 items-center justify-center rounded-lg border border-neutral-300 text-neutral-600 hover:bg-neutral-100"
-            title={editing ? "Batal" : "Koreksi sisa stok"}
-          >
-            {editing ? (
-              <X className="h-3.5 w-3.5" />
-            ) : (
-              <Pencil className="h-3.5 w-3.5" />
+    <div className="border-b border-dashed border-neutral-200 py-2 last:border-b-0">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          {/* Nama penuh, boleh 2 baris — tidak dipotong */}
+          <p className="text-sm font-medium leading-snug">{product.name}</p>
+          <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs">
+            {product.remaining > 0 && product.remaining <= 5 && (
+              <span className="rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                Menipis
+              </span>
             )}
-          </button>
+            <span className="text-neutral-500">
+              Sisa:{" "}
+              <span
+                className={`font-semibold ${
+                  product.remaining === 0
+                    ? "text-neutral-400"
+                    : product.remaining <= 5
+                      ? "text-amber-600"
+                      : "text-neutral-900"
+                }`}
+              >
+                {product.remaining}
+              </span>
+            </span>
+          </p>
         </div>
+        <button
+          type="button"
+          onClick={() => setEditing((v) => !v)}
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-neutral-300 text-neutral-600 hover:bg-neutral-100"
+          title={editing ? "Batal" : "Koreksi sisa stok"}
+        >
+          {editing ? (
+            <X className="h-3.5 w-3.5" />
+          ) : (
+            <Pencil className="h-3.5 w-3.5" />
+          )}
+        </button>
       </div>
 
       {editing && (
@@ -193,17 +194,21 @@ export function StockEditor({
         {q.trim() ? ` cocok dengan "${q.trim()}"` : ""}
       </p>
 
-      <div className="space-y-1.5">
-        {view.length === 0 ? (
-          <p className="px-1 py-2 text-sm text-neutral-400">
-            {onlyStocked && stockedCount === 0 && !q.trim()
-              ? "Belum ada barang di toko — order restok lewat menu Order."
-              : "Barang tidak ditemukan."}
-          </p>
-        ) : (
-          view.map((p) => <StockRow key={p.id} product={p} />)
-        )}
-      </div>
+      {view.length === 0 ? (
+        <p className="px-1 py-2 text-sm text-neutral-400">
+          {onlyStocked && stockedCount === 0 && !q.trim()
+            ? "Belum ada barang di toko — order restok lewat menu Order."
+            : "Barang tidak ditemukan."}
+        </p>
+      ) : (
+        // Gaya nota: baris teks tipis dipisah garis putus-putus, bukan
+        // kotak per barang — hemat tempat & nama barang tidak terpotong.
+        <div className="border-t border-dashed border-neutral-300">
+          {view.map((p) => (
+            <StockRow key={p.id} product={p} />
+          ))}
+        </div>
+      )}
 
       {pageCount > 1 && (
         <div className="flex items-center justify-between pt-1">

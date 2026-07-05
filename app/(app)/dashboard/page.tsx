@@ -40,6 +40,7 @@ export default async function DashboardPage() {
     requests,
     newStoresThisMonth,
     targetConfig,
+    paidOrders,
   ] = await Promise.all([
     prisma.prospect.findMany({ include: { store: true, product: true } }),
     prisma.sale.findMany({
@@ -67,12 +68,24 @@ export default async function DashboardPage() {
     }),
     prisma.store.count({ where: { createdAt: { gte: monthStart } } }),
     prisma.config.findUnique({ where: { key: "monthly_target" } }),
+    // Pendapatan order restok (owner checkout & bayar) — digabung ke Total
+    // Penjualan & Target Bulanan bareng transaksi POS. Ambil semua (bukan
+    // cuma 20 terbaru di atas, yang buat activity feed) supaya total akurat.
+    prisma.request.findMany({
+      where: { paymentStatus: "PAID", items: { some: {} } },
+      select: { total: true, createdAt: true },
+    }),
   ]);
 
   const monthlyTarget = parseInt(targetConfig?.value ?? "2000000", 10) || 0;
-  const monthRevenue = sales
+  const monthSalesRevenue = sales
     .filter((s) => new Date(s.createdAt) >= monthStart)
     .reduce((a, s) => a + s.total, 0);
+  const totalOrderRevenue = paidOrders.reduce((a, o) => a + o.total, 0);
+  const monthOrderRevenue = paidOrders
+    .filter((o) => new Date(o.createdAt) >= monthStart)
+    .reduce((a, o) => a + o.total, 0);
+  const monthRevenue = monthSalesRevenue + monthOrderRevenue;
 
   // Konter terbaru
   const recentStores = await prisma.store.findMany({
@@ -99,8 +112,10 @@ export default async function DashboardPage() {
   for (const p of prospects) if (p.stage in counts) counts[p.stage as Stage]++;
   const total = prospects.length;
 
-  // --- Revenue ---
-  const totalRevenue = sales.reduce((a, s) => a + s.total, 0);
+  // --- Revenue --- Total Penjualan = POS (jual ke end customer) + Order
+  // restok yang sudah dibayar owner (dua-duanya pendapatan yang masuk).
+  const totalSalesRevenue = sales.reduce((a, s) => a + s.total, 0);
+  const totalRevenue = totalSalesRevenue + totalOrderRevenue;
   const totalUnits = sales.reduce((a, s) => a + s.qty, 0);
 
   // --- Konter aktif (punya transaksi) ---

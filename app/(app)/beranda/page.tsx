@@ -7,7 +7,7 @@ import { SalesTrendChart } from "@/components/SalesTrendChart";
 import { TopProductsInteractive } from "@/components/TopProductsInteractive";
 import { ActivityFeed } from "@/components/ActivityFeed";
 import { TrackerMap } from "@/components/TrackerMap";
-import type { MapPoint } from "@/components/MapInner";
+import type { MapPoint, StoreRevenuePoint } from "@/components/MapInner";
 import { type Stage } from "@/lib/constants";
 import { rupiahShort } from "@/lib/format";
 import { DataTabs } from "@/components/DataTabs";
@@ -209,6 +209,23 @@ export default async function BerandaPage() {
       result: p.logs[0]?.result ?? "NEUTRAL",
       lat: p.store.lat as number,
       lng: p.store.lng as number,
+    }));
+
+  // Konter yang benar-benar berkontribusi ke penjualan (punya transaksi
+  // Sale) — ditampilkan sebagai bubble di peta, ukuran = besar revenue-nya.
+  const revenueByStore = new Map<string, number>();
+  for (const s of sales) {
+    revenueByStore.set(s.storeId, (revenueByStore.get(s.storeId) ?? 0) + s.total);
+  }
+  const storePoints: StoreRevenuePoint[] = stores
+    .filter((s) => s.lat != null && s.lng != null && (revenueByStore.get(s.id) ?? 0) > 0)
+    .map((s) => ({
+      storeId: s.id,
+      store: s.name,
+      area: s.area,
+      lat: s.lat as number,
+      lng: s.lng as number,
+      revenue: revenueByStore.get(s.id) ?? 0,
     }));
 
   // Aktivitas: funnel + penjualan
@@ -443,7 +460,7 @@ export default async function BerandaPage() {
                   <MapPin className="h-4 w-4" />
                   Sebaran Konter — Karawang
                 </div>
-                <TrackerMap points={points} />
+                <TrackerMap points={points} storePoints={storePoints} />
               </div>
             ),
           },
