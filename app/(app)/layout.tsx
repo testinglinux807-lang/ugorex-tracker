@@ -1,11 +1,11 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
-import { logout } from "@/app/actions/auth";
 import { ROLE_LABEL, type Role } from "@/lib/constants";
 import { BottomNav, SideNav } from "@/components/Nav";
-import { SubmitButton } from "@/components/SubmitButton";
 import { LogoPush } from "@/components/LogoPush";
+import { NotifBell } from "@/components/NotifBell";
+import { UserMenu } from "@/components/UserMenu";
 
 export default async function AppLayout({
   children,
@@ -27,31 +27,39 @@ export default async function AppLayout({
     });
   }
 
+  // Riwayat notifikasi in-app untuk lonceng di header
+  const notifs = await prisma.notification.findMany({
+    where: { userId: user.id },
+    orderBy: { createdAt: "desc" },
+    take: 20,
+  });
+
   return (
     <div className="flex flex-1 flex-col overflow-x-hidden">
       {/* Header */}
       <header className="sticky top-0 z-10 flex items-center justify-between border-b border-neutral-200 bg-white px-4 py-3">
         <div className="flex min-w-0 items-center gap-2">
-          <LogoPush enablePush={user.role !== "OWNER"} />
+          {/* Klik logo = aktifkan izin push di perangkat ini */}
+          <LogoPush />
           <span className="truncate font-semibold">Ugorex Tracker</span>
         </div>
-        <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-          <div className="max-w-[35vw] text-right sm:max-w-none">
-            <p className="truncate text-sm font-medium leading-tight">
-              {user.name}
-            </p>
-            <p className="hidden text-xs leading-tight text-neutral-400 sm:block">
-              {ROLE_LABEL[user.role as Role] ?? user.role}
-            </p>
-          </div>
-          <form action={logout}>
-            <SubmitButton
-              pendingText="Keluar…"
-              className="rounded-lg border border-neutral-200 px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-100 disabled:opacity-60"
-            >
-              Keluar
-            </SubmitButton>
-          </form>
+        <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+          {/* Klik nama = dropdown akun (Keluar pindah ke sini) */}
+          <UserMenu
+            name={user.name}
+            role={ROLE_LABEL[user.role as Role] ?? user.role}
+          />
+          {/* Lonceng riwayat notifikasi — paling kanan */}
+          <NotifBell
+            items={notifs.map((n) => ({
+              id: n.id,
+              title: n.title,
+              body: n.body,
+              url: n.url,
+              read: n.readAt !== null,
+              createdAt: n.createdAt.toISOString(),
+            }))}
+          />
         </div>
       </header>
 

@@ -11,7 +11,7 @@ import {
   ShoppingCart,
   Ticket,
   Inbox,
-  BookOpen,
+  ListTodo,
   Boxes,
   ShoppingBag,
   type LucideIcon,
@@ -29,8 +29,8 @@ const NAV: Record<string, Item[]> = {
   ],
   SALES: [
     { href: "/beranda", label: "Dashboard", icon: LayoutDashboard },
-    { href: "/konter", label: "Konter Saya", icon: Store },
-    { href: "/katalog", label: "Katalog", icon: BookOpen },
+    { href: "/konter", label: "Konter", icon: Store },
+    { href: "/tugas", label: "Tugas", icon: ListTodo },
     { href: "/order", label: "Order", icon: ShoppingBag },
     { href: "/konter/baru", label: "Tambah", icon: PlusCircle },
     { href: "/request", label: "Request", icon: Inbox },
@@ -93,9 +93,8 @@ export function BottomNav({
           <Link
             key={it.href}
             href={it.href}
-            className={`flex flex-col items-center gap-0.5 py-2.5 text-xs ${
-              on ? "font-semibold text-neutral-900" : "text-neutral-400"
-            }`}
+            className={`flex flex-col items-center gap-0.5 py-2.5 text-xs ${on ? "font-semibold text-neutral-900" : "text-neutral-400"
+              }`}
           >
             <span className="relative">
               <Icon className="h-5 w-5" strokeWidth={2} />
@@ -132,11 +131,10 @@ export function SideNav({
           <Link
             key={it.href}
             href={it.href}
-            className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${
-              on
-                ? "bg-neutral-900 text-white"
-                : "text-neutral-600 hover:bg-neutral-100"
-            }`}
+            className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${on
+              ? "bg-neutral-900 text-white"
+              : "text-neutral-600 hover:bg-neutral-100"
+              }`}
           >
             <Icon className="h-4 w-4" strokeWidth={2} />
             <span className="flex-1">{it.label}</span>

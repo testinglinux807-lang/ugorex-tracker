@@ -11,6 +11,7 @@ import { TopProductsInteractive } from "@/components/TopProductsInteractive";
 import { SalesTrendChart } from "@/components/SalesTrendChart";
 import { TargetCard } from "@/components/TargetCard";
 import { KonterTerbaru } from "@/components/KonterTerbaru";
+import { DataTabs } from "@/components/DataTabs";
 import { MapPin, ArrowRight } from "lucide-react";
 
 const rupiah = (n: number) =>
@@ -234,70 +235,107 @@ export default async function DashboardPage() {
         </div>
       </section>
 
-      {/* ===== BARIS 2: Aktivitas · Produk · Map ===== */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Aktivitas Terbaru */}
-        <div className="flex flex-col rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="font-semibold">Aktivitas Terbaru</h2>
-            <Link
-              href="/prospects"
-              className="flex items-center gap-1 text-sm text-neutral-500 hover:underline"
-            >
-              Lihat semua
-              <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
-          </div>
-          <ActivityFeed activities={activities} />
-        </div>
-
-        {/* Produk Terlaris */}
-        <div className="flex flex-col rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-          <h2 className="mb-3 font-semibold">Produk Terlaris</h2>
-          <div className="flex-1">
-            <TopProductsInteractive sales={sales} />
-          </div>
-        </div>
-
-        {/* Peta */}
-        <div className="flex flex-col">
-          <div className="mb-2 flex items-center gap-2 text-sm font-medium text-neutral-700">
-            <MapPin className="h-4 w-4" />
-            Sebaran Konter — Karawang
-          </div>
-          <TrackerMap points={points} />
-        </div>
-      </div>
-
-      {/* ===== BARIS 3: Funnel · Grafik · Konter Terbaru (tinggi sama) ===== */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="flex flex-col rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="font-semibold">Funnel Konter</h2>
-            <span className="text-xs text-neutral-400">{total} prospek aktif</span>
-          </div>
-          <div className="flex flex-1 flex-col justify-center">
-            <FunnelBar counts={counts} total={total} />
-          </div>
-        </div>
-
-        <div className="flex flex-col rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-          <h2 className="mb-3 font-semibold">Grafik Penjualan</h2>
-          <div className="flex-1">
-            <SalesTrendChart sales={salesPoints} />
-          </div>
-        </div>
-
-        <div className="flex flex-col rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="font-semibold">Konter Terbaru</h2>
-            <span className="text-xs text-neutral-400">Area Karawang</span>
-          </div>
-          <div className="flex-1">
-            <KonterTerbaru stores={recentStoreItems} />
-          </div>
-        </div>
-      </div>
+      {/* Di HP panel-panel dipisah 3 tab; desktop tetap 2 baris × 3 kolom.
+          Urutan section = urutan desktop: Aktivitas · Produk · Peta lalu
+          Funnel · Grafik · Konter. */}
+      <DataTabs
+        gridClassName="lg:grid-cols-3"
+        tabs={[
+          { key: "statistik", label: "Statistik" },
+          { key: "aktivitas", label: "Aktivitas" },
+          { key: "peta", label: "Peta & Konter" },
+        ]}
+        sections={[
+          {
+            tab: "aktivitas",
+            className: "h-full",
+            node: (
+              <div className="flex h-full flex-col rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="font-semibold">Aktivitas Terbaru</h2>
+                  <Link
+                    href="/prospects"
+                    className="flex items-center gap-1 text-sm text-neutral-500 hover:underline"
+                  >
+                    Lihat semua
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </Link>
+                </div>
+                <ActivityFeed activities={activities} />
+              </div>
+            ),
+          },
+          {
+            tab: "statistik",
+            className: "h-full",
+            node: (
+              <div className="flex h-full flex-col rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+                <h2 className="mb-3 font-semibold">Produk Terlaris</h2>
+                <div className="flex-1">
+                  <TopProductsInteractive sales={sales} />
+                </div>
+              </div>
+            ),
+          },
+          {
+            tab: "peta",
+            className: "h-full",
+            node: (
+              <div className="flex h-full flex-col">
+                <div className="mb-2 flex items-center gap-2 text-sm font-medium text-neutral-700">
+                  <MapPin className="h-4 w-4" />
+                  Sebaran Konter — Karawang
+                </div>
+                <TrackerMap points={points} />
+              </div>
+            ),
+          },
+          {
+            tab: "statistik",
+            className: "h-full",
+            node: (
+              <div className="flex h-full flex-col rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="font-semibold">Funnel Konter</h2>
+                  <span className="text-xs text-neutral-400">
+                    {total} prospek aktif
+                  </span>
+                </div>
+                <div className="flex flex-1 flex-col justify-center">
+                  <FunnelBar counts={counts} total={total} />
+                </div>
+              </div>
+            ),
+          },
+          {
+            tab: "statistik",
+            className: "h-full",
+            node: (
+              <div className="flex h-full flex-col rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+                <h2 className="mb-3 font-semibold">Grafik Penjualan</h2>
+                <div className="flex-1">
+                  <SalesTrendChart sales={salesPoints} />
+                </div>
+              </div>
+            ),
+          },
+          {
+            tab: "peta",
+            className: "h-full",
+            node: (
+              <div className="flex h-full flex-col rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="font-semibold">Konter Terbaru</h2>
+                  <span className="text-xs text-neutral-400">Area Karawang</span>
+                </div>
+                <div className="flex-1">
+                  <KonterTerbaru stores={recentStoreItems} />
+                </div>
+              </div>
+            ),
+          },
+        ]}
+      />
     </div>
   );
 }

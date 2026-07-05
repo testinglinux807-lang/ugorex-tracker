@@ -15,16 +15,16 @@ function urlBase64ToUint8Array(base64: string) {
 
 type Status = "unsupported" | "loading" | "off" | "on";
 
-// Logo header: untuk admin/sales, klik = aktifkan notifikasi order di
-// perangkat ini (tanpa tombol lonceng terpisah yang makan tempat di mobile).
-// Titik lime kecil di pojok logo = notifikasi aktif.
-export function LogoPush({ enablePush }: { enablePush: boolean }) {
+// Logo header: klik = minta izin & aktifkan push di perangkat ini (semua
+// role; admin/sales dapat kabar order baru/lunas, owner dikirim/sampai).
+// Titik lime kecil di pojok logo = push aktif. Riwayat notifikasinya
+// sendiri dibuka lewat lonceng (NotifBell) di kanan header.
+export function LogoPush() {
   const [status, setStatus] = useState<Status>("loading");
 
   useEffect(() => {
     async function check(): Promise<Status> {
       if (
-        !enablePush ||
         !VAPID_PUBLIC_KEY ||
         !("serviceWorker" in navigator) ||
         !("PushManager" in window) ||
@@ -34,12 +34,24 @@ export function LogoPush({ enablePush }: { enablePush: boolean }) {
       }
       const reg = await navigator.serviceWorker.getRegistration("/sw.js");
       const sub = await reg?.pushManager.getSubscription();
+      if (sub) {
+        // Klaim subscription perangkat ini untuk akun yang sedang login —
+        // device yang dulu diaktifkan saat login akun lain masih tercatat
+        // atas nama akun itu di DB, notifnya nyasar.
+        const json = sub.toJSON();
+        if (json.keys?.p256dh && json.keys?.auth) {
+          savePushSubscription({
+            endpoint: sub.endpoint,
+            keys: { p256dh: json.keys.p256dh, auth: json.keys.auth },
+          }).catch(() => {});
+        }
+      }
       return sub ? "on" : "off";
     }
     check()
       .then(setStatus)
       .catch(() => setStatus("off"));
-  }, [enablePush]);
+  }, []);
 
   async function enable() {
     if (status !== "off") return;
@@ -79,8 +91,8 @@ export function LogoPush({ enablePush }: { enablePush: boolean }) {
     />
   );
 
-  // Owner / browser tak mendukung: logo biasa tanpa perilaku klik
-  if (!enablePush || status === "unsupported") {
+  // Browser tak mendukung / izin diblokir: logo biasa tanpa perilaku klik
+  if (status === "unsupported") {
     return (
       <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded-lg">
         {logo}
@@ -94,8 +106,8 @@ export function LogoPush({ enablePush }: { enablePush: boolean }) {
       onClick={enable}
       title={
         status === "on"
-          ? "Notifikasi order aktif di perangkat ini"
-          : "Klik logo untuk mengaktifkan notifikasi order"
+          ? "Notifikasi aktif di perangkat ini"
+          : "Klik logo untuk mengaktifkan notifikasi"
       }
       className="relative h-9 w-9 shrink-0 overflow-hidden rounded-lg"
     >

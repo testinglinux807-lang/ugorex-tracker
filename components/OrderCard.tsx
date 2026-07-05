@@ -2,7 +2,18 @@ import type { Prisma } from "@prisma/client";
 import { waLink } from "@/lib/wa";
 import { updateRequestStatus } from "@/app/actions/requests";
 import { SubmitButton } from "@/components/SubmitButton";
-import { MessageCircle, Package, Store, ChevronDown } from "lucide-react";
+import { PayOrderButton } from "@/components/PayOrderButton";
+import { DeliveryReportForm } from "@/components/DeliveryReportForm";
+import {
+  MessageCircle,
+  MapPin,
+  Navigation,
+  Package,
+  PackageCheck,
+  Store,
+  Truck,
+  ChevronDown,
+} from "lucide-react";
 
 export type OrderRequest = Prisma.RequestGetPayload<{
   include: {
@@ -14,10 +25,14 @@ export type OrderRequest = Prisma.RequestGetPayload<{
 
 const STATUS_LABEL: Record<string, string> = {
   PENDING: "Menunggu",
-  COMPLETED: "Selesai",
+  SHIPPED: "Dikirim",
+  COMPLETED: "Sampai",
 };
+// Gradasi monokrom mengikuti progres: abu tipis → outline hitam → hitam
+// solid — biar kartu tidak jadi pelangi (gaya app: monokrom + aksen lime).
 const STATUS_CLS: Record<string, string> = {
-  PENDING: "border-amber-300 bg-amber-50 text-amber-700",
+  PENDING: "border-neutral-300 bg-white text-neutral-500",
+  SHIPPED: "border-neutral-900 bg-white text-neutral-900",
   COMPLETED: "border-neutral-900 bg-neutral-900 text-white",
 };
 
@@ -81,10 +96,12 @@ export function OrderCard({
   order: r,
   canRespond,
   remaining,
+  highlighted = false,
 }: {
   order: OrderRequest;
   canRespond: boolean;
   remaining: Map<string, number>;
+  highlighted?: boolean; // datang dari klik notifikasi — kartu disorot
 }) {
   const wa = waLink(
     r.store.ownerPhone,
@@ -98,8 +115,24 @@ export function OrderCard({
   const shown = r.items.slice(0, 2);
   const rest = r.items.slice(2);
 
+  // Lokasi toko untuk sales/admin yang mengantar: koordinat (kalau ada)
+  // membuka rute Google Maps langsung ke titiknya; tanpa koordinat,
+  // fallback cari berdasarkan nama + wilayah.
+  const hasCoords = r.store.lat != null && r.store.lng != null;
+  const mapsUrl = hasCoords
+    ? `https://www.google.com/maps/dir/?api=1&destination=${r.store.lat},${r.store.lng}`
+    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+        [r.store.name, r.store.area].filter(Boolean).join(" "),
+      )}`;
+
   return (
-    <li className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
+    <div
+      className={`overflow-hidden rounded-xl border bg-white ${
+        highlighted
+          ? "border-brand-dark ring-2 ring-brand"
+          : "border-neutral-200"
+      }`}
+    >
       {/* Header: toko + no. order + status */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-100 bg-neutral-50 px-4 py-2.5">
         <div className="flex min-w-0 items-center gap-2">
@@ -133,6 +166,35 @@ export function OrderCard({
 
       {/* Barang: 2 pertama tampil, sisanya dilipat */}
       <div className="space-y-2.5 px-4 py-3">
+        {/* Lokasi tujuan antar — biar sales tidak bingung ke mana */}
+        {canRespond && (
+          <div className="flex items-center justify-between gap-2 rounded-lg bg-neutral-50 px-2.5 py-2">
+            <div className="min-w-0 text-xs">
+              <p className="flex items-center gap-1 font-medium text-neutral-800">
+                <MapPin className="h-3.5 w-3.5 shrink-0 text-neutral-500" />
+                <span className="truncate">
+                  {r.store.address ||
+                    r.store.area ||
+                    "Alamat toko belum diisi"}
+                </span>
+              </p>
+              {hasCoords && (
+                <p className="mt-0.5 pl-4.5 font-mono text-[11px] text-neutral-400">
+                  {r.store.lat!.toFixed(6)}, {r.store.lng!.toFixed(6)}
+                </p>
+              )}
+            </div>
+            <a
+              href={mapsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-neutral-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-100"
+            >
+              <Navigation className="h-3.5 w-3.5" />
+              Rute
+            </a>
+          </div>
+        )}
         {shown.map((it) => (
           <ItemRow
             key={it.id}
@@ -164,6 +226,54 @@ export function OrderCard({
             {r.message}
           </p>
         )}
+
+        {/* Status pengiriman berjalan */}
+        {r.status === "SHIPPED" && (
+          <div className="flex items-center gap-2 rounded-lg bg-neutral-50 px-2.5 py-2 text-xs font-medium text-neutral-600">
+            <Truck className="h-4 w-4 shrink-0" />
+            Barang sedang dikirim — mohon ditunggu
+          </div>
+        )}
+
+        {/* Bukti pengiriman (report sales saat barang sampai) */}
+        {r.status === "COMPLETED" && (r.deliveryPhoto || r.deliveredAt) && (
+          <div className="flex items-start gap-2.5 rounded-lg border border-neutral-200 bg-neutral-50 p-2.5">
+            {r.deliveryPhoto ? (
+              <a href={r.deliveryPhoto} target="_blank" rel="noopener noreferrer">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={r.deliveryPhoto}
+                  alt="Bukti barang sampai"
+                  className="h-16 w-16 shrink-0 rounded-lg border border-neutral-200 object-cover"
+                />
+              </a>
+            ) : (
+              <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-neutral-100">
+                <PackageCheck className="h-5 w-5 text-neutral-300" />
+              </span>
+            )}
+            <div className="min-w-0 text-xs">
+              <p className="flex items-center gap-1 font-semibold text-neutral-800">
+                <PackageCheck className="h-3.5 w-3.5" />
+                Barang sampai
+              </p>
+              {r.deliveryNote && (
+                <p className="mt-0.5 text-neutral-600">{r.deliveryNote}</p>
+              )}
+              <p className="mt-0.5 text-neutral-400">
+                {r.deliveredBy ? `Oleh ${r.deliveredBy}` : ""}
+                {r.deliveredBy && r.deliveredAt ? " · " : ""}
+                {r.deliveredAt
+                  ? new Date(r.deliveredAt).toLocaleDateString("id-ID", {
+                      day: "numeric",
+                      month: "short",
+                      year: "numeric",
+                    })
+                  : ""}
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Footer: info + total */}
@@ -176,26 +286,39 @@ export function OrderCard({
           })}{" "}
           · {r.createdBy?.name ?? "—"} · {r.items.length} produk
         </span>
-        <span className="flex items-baseline gap-2">
-          <span className="text-xs text-neutral-500">Total Pesanan:</span>
-          <span className="text-base font-bold">{rupiah(r.total)}</span>
+        <span className="flex flex-col items-end">
+          <span className="flex items-baseline gap-2">
+            <span className="text-xs text-neutral-500">Total Pesanan:</span>
+            <span className="text-base font-bold">{rupiah(r.total)}</span>
+          </span>
+          {r.discount > 0 && (
+            <span className="text-[11px] text-neutral-400">
+              Hemat {rupiah(r.discount)} — voucher {r.voucherCode}
+            </span>
+          )}
         </span>
       </div>
 
-      {/* Aksi owner: chat sales pemegang toko */}
-      {!canRespond && waSales && (
-        <div className="flex justify-end border-t border-neutral-100 bg-neutral-50 px-4 py-2.5">
-          <a
-            href={waSales}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700"
-          >
-            <MessageCircle className="h-3.5 w-3.5" />
-            Chat Sales{r.store.sales?.name ? ` (${r.store.sales.name})` : ""}
-          </a>
-        </div>
-      )}
+      {/* Aksi owner: bayar order yang belum lunas + chat sales pemegang toko */}
+      {!canRespond &&
+        (waSales || (r.paymentStatus !== "PAID" && r.status !== "COMPLETED")) && (
+          <div className="flex flex-wrap justify-end gap-2 border-t border-neutral-100 bg-neutral-50 px-4 py-2.5">
+            {waSales && (
+              <a
+                href={waSales}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-100"
+              >
+                <MessageCircle className="h-3.5 w-3.5 text-green-600" />
+                Chat Sales{r.store.sales?.name ? ` (${r.store.sales.name})` : ""}
+              </a>
+            )}
+            {r.paymentStatus !== "PAID" && r.status !== "COMPLETED" && (
+              <PayOrderButton orderId={r.id} />
+            )}
+          </div>
+        )}
 
       {/* Aksi */}
       {canRespond && (
@@ -207,23 +330,29 @@ export function OrderCard({
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-100"
             >
-              <MessageCircle className="h-3.5 w-3.5" />
+              <MessageCircle className="h-3.5 w-3.5 text-green-600" />
               Hubungi Owner
             </a>
           )}
-          {r.status !== "COMPLETED" ? (
-            <form action={updateRequestStatus.bind(null, r.id, "COMPLETED")}>
+          {/* Alur: Menunggu → Tandai Dikirim (notif owner) → report sampai */}
+          {r.status === "PENDING" && (
+            <form action={updateRequestStatus.bind(null, r.id, "SHIPPED")}>
               <SubmitButton
                 pendingText="Memproses…"
-                className="rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-neutral-800 disabled:opacity-60"
+                overlayText="Menandai order dikirim…"
+                className="inline-flex items-center gap-1 rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-neutral-800 disabled:opacity-60"
               >
-                Selesaikan & Kirim Stok
+                <Truck className="h-3.5 w-3.5" />
+                Tandai Dikirim
               </SubmitButton>
             </form>
-          ) : (
+          )}
+          {r.status === "SHIPPED" && <DeliveryReportForm orderId={r.id} />}
+          {r.status === "COMPLETED" && (
             <form action={updateRequestStatus.bind(null, r.id, "PENDING")}>
               <SubmitButton
                 pendingText="Memproses…"
+                overlayText="Membuka order lagi…"
                 className="rounded-lg border border-neutral-300 px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-100 disabled:opacity-60"
               >
                 Buka lagi
@@ -232,6 +361,6 @@ export function OrderCard({
           )}
         </div>
       )}
-    </li>
+    </div>
   );
 }

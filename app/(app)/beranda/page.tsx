@@ -10,7 +10,17 @@ import { TrackerMap } from "@/components/TrackerMap";
 import type { MapPoint } from "@/components/MapInner";
 import { type Stage } from "@/lib/constants";
 import { rupiahShort } from "@/lib/format";
-import { MapPin, ArrowRight } from "lucide-react";
+import { DataTabs } from "@/components/DataTabs";
+import { Paginated } from "@/components/Paginated";
+import {
+  MapPin,
+  ArrowRight,
+  Truck,
+  PlusCircle,
+  Navigation,
+  Route,
+  CheckCircle2,
+} from "lucide-react";
 
 const rupiah = (n: number) =>
   new Intl.NumberFormat("id-ID", {
@@ -27,7 +37,7 @@ export default async function BerandaPage() {
 
   const where = { store: { salesId: user.id } };
 
-  const [stores, prospects, sales, recentLogs] = await Promise.all([
+  const [stores, prospects, sales, recentLogs, openOrders] = await Promise.all([
     prisma.store.findMany({
       where: { salesId: user.id },
       include: { _count: { select: { transactions: true, prospects: true } } },
@@ -53,6 +63,16 @@ export default async function BerandaPage() {
       },
       orderBy: { createdAt: "desc" },
       take: 30,
+    }),
+    // Order restok yang belum selesai — bahan "rute harian" (antar barang)
+    prisma.request.findMany({
+      where: {
+        items: { some: {} },
+        status: { not: "COMPLETED" },
+        store: { salesId: user.id },
+      },
+      include: { store: true },
+      orderBy: { createdAt: "asc" },
     }),
   ]);
 
@@ -93,6 +113,8 @@ export default async function BerandaPage() {
       return {
         storeId: p.storeId,
         store: p.store.name,
+        lat: p.store.lat,
+        lng: p.store.lng,
         product: p.product.name,
         remaining: p.stock - sold,
         stock: p.stock,
@@ -102,6 +124,77 @@ export default async function BerandaPage() {
     .sort((a, b) => a.remaining - b.remaining);
   const lowStock = lowStockItems.length;
   const lowStockStores = new Set(lowStockItems.map((x) => x.storeId)).size;
+
+  // ===== Rute harian: gabungan logistik (antar restok) & hunting =====
+  // RESTOK (kuning) = order dibayar/di jalan yang harus diantar;
+  // RUTIN (biru)    = konter existing yang stoknya menipis, layak disambangi;
+  // CLOSING (hijau) = konter tanpa prospek, target kunjungan closing.
+  type RuteStop = {
+    key: string;
+    type: "RESTOK" | "RUTIN" | "CLOSING";
+    store: string;
+    sub: string;
+    href: string;
+    lat: number | null;
+    lng: number | null;
+  };
+  const antarCount = openOrders.filter(
+    (o) => o.status === "PENDING" && o.paymentStatus === "PAID",
+  ).length;
+  const ruteRestok: RuteStop[] = openOrders
+    .filter(
+      (o) =>
+        (o.status === "PENDING" && o.paymentStatus === "PAID") ||
+        o.status === "SHIPPED",
+    )
+    .map((o) => ({
+      key: `order-${o.id}`,
+      type: "RESTOK",
+      store: o.store.name,
+      sub:
+        o.status === "SHIPPED"
+          ? `#${o.id.slice(-8).toUpperCase()} · di jalan — report saat sampai`
+          : `#${o.id.slice(-8).toUpperCase()} · ${rupiah(o.total)} · siap diantar`,
+      href: `/order?focus=${o.id}`,
+      lat: o.store.lat,
+      lng: o.store.lng,
+    }));
+  const lowByStore = new Map<
+    string,
+    { store: string; n: number; lat: number | null; lng: number | null }
+  >();
+  for (const x of lowStockItems) {
+    const cur = lowByStore.get(x.storeId);
+    if (cur) cur.n += 1;
+    else lowByStore.set(x.storeId, { store: x.store, n: 1, lat: x.lat, lng: x.lng });
+  }
+  const ruteRutin: RuteStop[] = [...lowByStore].map(([storeId, v]) => ({
+    key: `rutin-${storeId}`,
+    type: "RUTIN",
+    store: v.store,
+    sub: `${v.n} barang menipis — tawarkan restok`,
+    href: `/konter/${storeId}`,
+    lat: v.lat,
+    lng: v.lng,
+  }));
+  const ruteClosing: RuteStop[] = stores
+    .filter((s) => s._count.prospects === 0)
+    .map((s) => ({
+      key: `closing-${s.id}`,
+      type: "CLOSING",
+      store: s.name,
+      sub: `${s.area ?? "Area belum diisi"} · belum ada prospek`,
+      href: `/konter/${s.id}`,
+      lat: s.lat,
+      lng: s.lng,
+    }));
+  const ruteStops = [...ruteRestok, ...ruteRutin, ...ruteClosing];
+
+  const STOP_BADGE: Record<RuteStop["type"], { label: string; cls: string }> = {
+    RESTOK: { label: "Restok", cls: "border-amber-300 bg-amber-50 text-amber-700" },
+    RUTIN: { label: "Rutin", cls: "border-sky-300 bg-sky-50 text-sky-700" },
+    CLOSING: { label: "Closing", cls: "border-green-300 bg-green-50 text-green-700" },
+  };
 
   // Map points
   const points: MapPoint[] = prospects
@@ -208,56 +301,173 @@ export default async function BerandaPage() {
         </div>
       </section>
 
-      {/* Funnel · Grafik · Produk */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="flex flex-col rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="font-semibold">Funnel Konter</h2>
-            <span className="text-xs text-neutral-400">
-              {totalProspek} prospek
+      {/* ===== Rute Hari Ini: logistik + hunting dalam satu daftar ===== */}
+      <section className="rounded-2xl border border-neutral-200 bg-white p-5">
+        <div className="mb-1 flex items-center gap-2">
+          <Route className="h-4 w-4 text-neutral-500" />
+          <h2 className="font-semibold">Rute Hari Ini</h2>
+          {ruteStops.length > 0 && (
+            <span className="rounded-full bg-brand px-2 py-0.5 text-xs font-bold text-neutral-900">
+              {ruteStops.length}
             </span>
-          </div>
-          <div className="flex flex-1 flex-col justify-center">
-            <FunnelBar counts={counts} total={totalProspek} />
-          </div>
+          )}
         </div>
-        <div className="flex flex-col rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-          <h2 className="mb-3 font-semibold">Grafik Penjualan</h2>
-          <div className="flex-1">
-            <SalesTrendChart sales={salesPoints} />
-          </div>
-        </div>
-        <div className="flex flex-col rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-          <h2 className="mb-3 font-semibold">Produk Terlaris</h2>
-          <div className="flex-1">
-            <TopProductsInteractive sales={sales} />
-          </div>
-        </div>
-      </div>
+        <p className="mb-3 text-xs text-neutral-400">
+          Antar restok, kunjungan rutin, dan target closing — sekali lihat
+          sebelum berangkat
+        </p>
 
-      {/* Peta + Aktivitas */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="flex flex-col lg:col-span-2">
-          <div className="mb-2 flex items-center gap-2 text-sm font-medium text-neutral-700">
-            <MapPin className="h-4 w-4" />
-            Sebaran Konter — Karawang
-          </div>
-          <TrackerMap points={points} />
+        {/* CTA utama: kerjaan paling sering & paling gampang lupa dikonfirmasi */}
+        <div className="mb-3 flex gap-2">
+          <Link
+            href="/tugas"
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-brand py-2.5 text-sm font-semibold text-neutral-900 hover:opacity-90"
+          >
+            <Truck className="h-4 w-4" />
+            Antar Restok{antarCount > 0 ? ` (${antarCount})` : ""}
+          </Link>
+          <Link
+            href="/konter/baru"
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-neutral-300 py-2.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-50"
+          >
+            <PlusCircle className="h-4 w-4" />
+            Konter Baru
+          </Link>
         </div>
-        <div className="flex flex-col rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="font-semibold">Aktivitas Terbaru</h2>
-            <Link
-              href="/konter"
-              className="flex items-center gap-1 text-sm text-neutral-500 hover:underline"
-            >
-              Konter Saya
-              <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
+
+        {ruteStops.length === 0 ? (
+          <div className="flex items-center justify-center gap-2 rounded-lg bg-neutral-50 py-6 text-sm text-neutral-400">
+            <CheckCircle2 className="h-4 w-4 text-brand-dark" />
+            Tidak ada rute hari ini — semua beres.
           </div>
-          <ActivityFeed activities={activities} />
-        </div>
-      </div>
+        ) : (
+          <Paginated
+            perPage={5}
+            className="divide-y divide-neutral-100"
+            items={ruteStops.map((stop) => {
+              const badge = STOP_BADGE[stop.type];
+              const maps =
+                stop.lat != null && stop.lng != null
+                  ? `https://www.google.com/maps/dir/?api=1&destination=${stop.lat},${stop.lng}`
+                  : null;
+              return (
+                <div key={stop.key} className="flex items-center gap-2 py-2.5">
+                  <span
+                    className={`w-16 shrink-0 rounded-full border px-2 py-0.5 text-center text-[10px] font-bold ${badge.cls}`}
+                  >
+                    {badge.label}
+                  </span>
+                  <Link href={stop.href} className="min-w-0 flex-1 hover:underline">
+                    <span className="block truncate text-sm font-medium">
+                      {stop.store}
+                    </span>
+                    <span className="block truncate text-xs text-neutral-400">
+                      {stop.sub}
+                    </span>
+                  </Link>
+                  {maps && (
+                    <a
+                      href={maps}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={`Rute ke ${stop.store}`}
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-neutral-200 text-neutral-500 hover:bg-neutral-100"
+                    >
+                      <Navigation className="h-3.5 w-3.5" />
+                    </a>
+                  )}
+                </div>
+              );
+            })}
+          />
+        )}
+      </section>
+
+      {/* Di HP panel-panel dipisah 3 tab; desktop tetap grid seperti biasa:
+          Funnel · Grafik · Produk lalu Peta (2 kolom) + Aktivitas. */}
+      <DataTabs
+        gridClassName="lg:grid-cols-3"
+        tabs={[
+          { key: "statistik", label: "Statistik" },
+          { key: "peta", label: "Peta" },
+          { key: "aktivitas", label: "Aktivitas" },
+        ]}
+        sections={[
+          {
+            tab: "statistik",
+            className: "h-full",
+            node: (
+              <div className="flex h-full flex-col rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="font-semibold">Funnel Konter</h2>
+                  <span className="text-xs text-neutral-400">
+                    {totalProspek} prospek
+                  </span>
+                </div>
+                <div className="flex flex-1 flex-col justify-center">
+                  <FunnelBar counts={counts} total={totalProspek} />
+                </div>
+              </div>
+            ),
+          },
+          {
+            tab: "statistik",
+            className: "h-full",
+            node: (
+              <div className="flex h-full flex-col rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+                <h2 className="mb-3 font-semibold">Grafik Penjualan</h2>
+                <div className="flex-1">
+                  <SalesTrendChart sales={salesPoints} />
+                </div>
+              </div>
+            ),
+          },
+          {
+            tab: "statistik",
+            className: "h-full",
+            node: (
+              <div className="flex h-full flex-col rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+                <h2 className="mb-3 font-semibold">Produk Terlaris</h2>
+                <div className="flex-1">
+                  <TopProductsInteractive sales={sales} />
+                </div>
+              </div>
+            ),
+          },
+          {
+            tab: "peta",
+            className: "h-full lg:col-span-2",
+            node: (
+              <div className="flex h-full flex-col">
+                <div className="mb-2 flex items-center gap-2 text-sm font-medium text-neutral-700">
+                  <MapPin className="h-4 w-4" />
+                  Sebaran Konter — Karawang
+                </div>
+                <TrackerMap points={points} />
+              </div>
+            ),
+          },
+          {
+            tab: "aktivitas",
+            className: "h-full",
+            node: (
+              <div className="flex h-full flex-col rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="font-semibold">Aktivitas Terbaru</h2>
+                  <Link
+                    href="/konter"
+                    className="flex items-center gap-1 text-sm text-neutral-500 hover:underline"
+                  >
+                    Konter Saya
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </Link>
+                </div>
+                <ActivityFeed activities={activities} />
+              </div>
+            ),
+          },
+        ]}
+      />
     </div>
   );
 }

@@ -82,6 +82,7 @@ export default async function PosPage() {
               productName: s.productName,
               qty: s.qty,
               price: s.price,
+              discount: s.discount,
               total: s.total,
               createdAt: s.createdAt,
             }))}

@@ -34,6 +34,7 @@ export type Trx = {
   productName: string;
   qty: number;
   price: number;
+  discount?: number; // bagian diskon voucher (0 = tanpa diskon)
   total: number;
   createdAt: string | Date;
 };
@@ -273,8 +274,16 @@ export function TransaksiList({
                   <span>
                     {sel.qty} × {rupiah(sel.price)}
                   </span>
-                  <span className="text-neutral-800">{rupiah(sel.total)}</span>
+                  <span className="text-neutral-800">
+                    {rupiah(sel.qty * sel.price)}
+                  </span>
                 </div>
+                {(sel.discount ?? 0) > 0 && (
+                  <div className="mt-1 flex justify-between text-neutral-500">
+                    <span>Diskon voucher</span>
+                    <span>−{rupiah(sel.discount!)}</span>
+                  </div>
+                )}
               </div>
 
               <div className="my-3 border-t border-dashed border-neutral-300" />

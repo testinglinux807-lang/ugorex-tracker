@@ -7,7 +7,11 @@ import { Spinner } from "@/components/SubmitButton";
 
 // Kompres foto di browser (maks 512px, WebP) supaya muat disimpan sebagai
 // data URL di database tanpa perlu layanan storage terpisah.
-async function compressToDataUrl(file: File, maxSize = 512): Promise<string> {
+// Diekspor: dipakai juga form report pengiriman order.
+export async function compressToDataUrl(
+  file: File,
+  maxSize = 512,
+): Promise<string> {
   const bitmap = await createImageBitmap(file);
   const scale = Math.min(1, maxSize / Math.max(bitmap.width, bitmap.height));
   const w = Math.max(1, Math.round(bitmap.width * scale));

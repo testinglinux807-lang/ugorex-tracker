@@ -29,6 +29,19 @@ export async function savePushSubscription(sub: {
   return { ok: true };
 }
 
+// Tandai semua notifikasi in-app user ini sudah dibaca — dipanggil saat
+// dropdown lonceng dibuka; badge angka di lonceng ikut hilang.
+export async function markNotificationsRead() {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+
+  await prisma.notification.updateMany({
+    where: { userId: user.id, readAt: null },
+    data: { readAt: new Date() },
+  });
+  return { ok: true };
+}
+
 // Hapus langganan saat user mematikan notifikasi di perangkat ini
 export async function removePushSubscription(endpoint: string) {
   const user = await getCurrentUser();

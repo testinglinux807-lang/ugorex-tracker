@@ -32,11 +32,20 @@ function StockRow({
           {product.name}
         </span>
         <div className="flex shrink-0 items-center gap-2">
+          {product.remaining > 0 && product.remaining <= 5 && (
+            <span className="rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+              Menipis
+            </span>
+          )}
           <span className="text-sm text-neutral-500">
             Sisa:{" "}
             <span
               className={`font-semibold ${
-                product.remaining === 0 ? "text-neutral-400" : "text-neutral-900"
+                product.remaining === 0
+                  ? "text-neutral-400"
+                  : product.remaining <= 5
+                    ? "text-amber-600"
+                    : "text-neutral-900"
               }`}
             >
               {product.remaining}
@@ -98,8 +107,15 @@ export function StockEditor({
   products: { id: string; name: string; remaining: number }[];
 }) {
   const [q, setQ] = useState("");
-  const [onlyStocked, setOnlyStocked] = useState(false);
+  // Default: barang yang ADA di toko saja — daftar katalog lengkap (ratusan
+  // barang bersisa 0) cuma bikin owner mengubek pagination.
+  const [onlyStocked, setOnlyStocked] = useState(true);
   const [page, setPage] = useState(0);
+
+  const stockedCount = useMemo(
+    () => products.filter((p) => p.remaining > 0).length,
+    [products],
+  );
 
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
@@ -139,32 +155,50 @@ export function StockEditor({
             className="w-full rounded-lg border border-neutral-300 py-2 pl-8 pr-3 text-sm"
           />
         </div>
-        <button
-          type="button"
-          onClick={() => {
-            setOnlyStocked((v) => !v);
-            setPage(0);
-          }}
-          className={`shrink-0 rounded-lg border px-3 py-2 text-xs font-medium ${
-            onlyStocked
-              ? "border-neutral-900 bg-neutral-900 text-white"
-              : "border-neutral-300 text-neutral-600 hover:bg-neutral-100"
-          }`}
-        >
-          Hanya ada stok
-        </button>
+        <div className="flex shrink-0 gap-1.5">
+          <button
+            type="button"
+            onClick={() => {
+              setOnlyStocked(true);
+              setPage(0);
+            }}
+            className={`rounded-full border px-3 py-1.5 text-xs font-medium ${
+              onlyStocked
+                ? "border-neutral-900 bg-neutral-900 text-white"
+                : "border-neutral-300 text-neutral-600 hover:bg-neutral-100"
+            }`}
+          >
+            Di Toko ({stockedCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setOnlyStocked(false);
+              setPage(0);
+            }}
+            className={`rounded-full border px-3 py-1.5 text-xs font-medium ${
+              !onlyStocked
+                ? "border-neutral-900 bg-neutral-900 text-white"
+                : "border-neutral-300 text-neutral-600 hover:bg-neutral-100"
+            }`}
+          >
+            Semua ({products.length})
+          </button>
+        </div>
       </div>
 
       <p className="text-xs text-neutral-400">
         {filtered.length} barang
-        {onlyStocked ? " dengan stok" : ""}
+        {onlyStocked ? " di toko" : " (termasuk katalog tanpa stok)"}
         {q.trim() ? ` cocok dengan "${q.trim()}"` : ""}
       </p>
 
       <div className="space-y-1.5">
         {view.length === 0 ? (
           <p className="px-1 py-2 text-sm text-neutral-400">
-            Barang tidak ditemukan.
+            {onlyStocked && stockedCount === 0 && !q.trim()
+              ? "Belum ada barang di toko — order restok lewat menu Order."
+              : "Barang tidak ditemukan."}
           </p>
         ) : (
           view.map((p) => <StockRow key={p.id} product={p} />)

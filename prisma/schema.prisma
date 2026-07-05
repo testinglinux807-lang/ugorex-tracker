@@ -38,9 +38,39 @@ model User {
   createdUsers User[]   @relation("UserCreator")
   createdRequests Request[] @relation("RequestCreator")
   pushSubscriptions PushSubscription[]
+  notifications     Notification[]
 }
 
 // Langganan Web Push per perangkat/browser (notifikasi order untuk admin/sales)
+// Kode voucher diskon — dibuat admin (menu Data), dipakai owner saat
+// order restok (/order) dan catat penjualan (/pos).
+model Voucher {
+  id        String    @id @default(cuid())
+  code      String    @unique // disimpan UPPERCASE
+  type      String    @default("PERCENT") // PERCENT (persen) | FIXED (Rupiah)
+  value     Int // persen 1-100 atau potongan Rupiah
+  maxUses   Int? // batas total pemakaian; null = tanpa batas
+  usedCount Int       @default(0)
+  expiresAt DateTime? // null = tanpa kadaluarsa
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+}
+
+// Riwayat notifikasi in-app per user (inbox lonceng di header) —
+// dicatat bersamaan dengan push/WA di notifyOrder.
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String
+  url       String? // tujuan saat item diklik, mis. /order
+  readAt    DateTime? // null = belum dibaca (badge lonceng)
+  createdAt DateTime  @default(now())
+
+  @@index([userId, createdAt])
+}
+
 model PushSubscription {
   id        String   @id @default(cuid())
   userId    String
@@ -144,7 +174,8 @@ model Sale {
   productName String // snapshot nama barang
   qty         Int
   price       Int // harga satuan (Rupiah)
-  total       Int // qty * price
+  discount    Int      @default(0) // bagian diskon voucher untuk baris ini
+  total       Int // qty * price - discount
   createdById String?
   createdBy   User?    @relation("SaleCreator", fields: [createdById], references: [id])
   createdAt   DateTime @default(now())
@@ -200,8 +231,17 @@ model Request {
   updatedAt   DateTime @updatedAt
 
   // Untuk checkout restok (persiapan payment gateway Midtrans)
-  total         Int    @default(0) // total belanja (Rupiah), gross_amount
-  paymentStatus String @default("UNPAID") // UNPAID | PAID
+  total         Int     @default(0) // total belanja SETELAH diskon (gross_amount)
+  discount      Int     @default(0) // potongan voucher (Rupiah)
+  voucherCode   String? // kode voucher yang dipakai
+  paymentStatus String  @default("UNPAID") // UNPAID | PAID
+  snapToken     String? // token Snap Midtrans — dipakai tombol "Bayar" di riwayat order
+
+  // Bukti pengiriman (report sales saat barang sampai ke owner)
+  deliveryPhoto String?   // data URL foto barang — disajikan via /api/delivery-photo
+  deliveryNote  String?   // keterangan dari sales
+  deliveredAt   DateTime? // kapan barang diserahkan
+  deliveredBy   String?   // nama pengantar (snapshot, bukan relasi)
 
   items RequestItem[]
 }

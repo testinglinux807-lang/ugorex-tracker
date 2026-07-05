@@ -3,7 +3,11 @@
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import Script from "next/script";
 import { useRouter } from "next/navigation";
-import { createRequest, createRestockRequest } from "@/app/actions/requests";
+import {
+  createRequest,
+  createRestockRequest,
+  syncOrderPayment,
+} from "@/app/actions/requests";
 import {
   Search,
   ChevronLeft,
@@ -14,6 +18,8 @@ import {
   Package,
 } from "lucide-react";
 import { PendingLabel } from "@/components/SubmitButton";
+import { VoucherInput, type AppliedVoucher } from "@/components/VoucherInput";
+import { voucherDiscount } from "@/lib/voucher-calc";
 
 // Popup pembayaran Midtrans Snap (dimuat lewat <Script> di bawah)
 declare global {
@@ -98,6 +104,7 @@ function RestockForm({ products }: { products: RestockProduct[] }) {
   const [q, setQ] = useState("");
   const [page, setPage] = useState(0);
   const [showReceipt, setShowReceipt] = useState(false);
+  const [voucher, setVoucher] = useState<AppliedVoucher | null>(null);
   const router = useRouter();
 
   // Setelah order berhasil: tutup kwitansi & kosongkan keranjang
@@ -108,18 +115,35 @@ function RestockForm({ products }: { products: RestockProduct[] }) {
     if (state?.ok) {
       setShowReceipt(false);
       setQtys({});
+      setVoucher(null);
     }
   }
 
-  // Begitu Snap token diterima, buka popup pembayaran Midtrans
+  // Begitu Snap token diterima: di HP langsung pindah ke halaman Snap
+  // full-page (popup iframe Snap sering tidak bisa di-tap di browser HP,
+  // dan e-wallet butuh deeplink yang diblokir dari iframe); di desktop
+  // buka popup. Setelah bayar via popup, sinkronkan status ke server
+  // (verifikasi + notif lunas) — webhook tidak sampai ke localhost.
   const handledToken = useRef<string | null>(null);
   useEffect(() => {
     const token = state?.ok ? state.snapToken : null;
     if (!token || handledToken.current === token) return;
     handledToken.current = token;
+
+    const redirectUrl = state?.ok ? state.snapRedirectUrl : null;
+    if (redirectUrl && window.matchMedia("(max-width: 768px)").matches) {
+      window.location.assign(redirectUrl);
+      return;
+    }
+
+    const requestId = state?.ok ? state.requestId : null;
+    const sync = () => {
+      if (requestId) syncOrderPayment(requestId).finally(() => router.refresh());
+      else router.refresh();
+    };
     window.snap?.pay(token, {
-      onSuccess: () => router.refresh(),
-      onPending: () => router.refresh(),
+      onSuccess: sync,
+      onPending: sync,
       onClose: () => router.refresh(),
     });
   }, [state, router]);
@@ -138,10 +162,12 @@ function RestockForm({ products }: { products: RestockProduct[] }) {
     safePage * PER_PAGE + PER_PAGE,
   );
   const chosen = Object.entries(qtys).filter(([, n]) => n > 0);
-  const cartTotal = chosen.reduce((a, [id, n]) => {
+  const cartSubtotal = chosen.reduce((a, [id, n]) => {
     const p = products.find((x) => x.id === id);
     return a + (p ? p.price * n : 0);
   }, 0);
+  const discount = voucher ? voucherDiscount(voucher, cartSubtotal) : 0;
+  const cartTotal = cartSubtotal - discount;
 
   // Jumlah order dibatasi stok pusat
   function setQty(id: string, n: number) {
@@ -165,86 +191,114 @@ function RestockForm({ products }: { products: RestockProduct[] }) {
         />
       </div>
 
-      <div className="space-y-1.5">
-        {view.length === 0 ? (
-          <p className="px-1 py-2 text-sm text-neutral-400">
-            Barang tidak ditemukan.
-          </p>
-        ) : (
-          view.map((p) => {
+      {/* Kartu produk ala marketplace (Shopee/Tokopedia) — pola yang sudah
+          akrab buat owner: foto besar, harga, lalu tombol Tambah / stepper */}
+      {view.length === 0 ? (
+        <p className="px-1 py-2 text-sm text-neutral-400">
+          Barang tidak ditemukan.
+        </p>
+      ) : (
+        <div className="grid grid-cols-2 gap-2">
+          {view.map((p) => {
             const n = qtys[p.id] ?? 0;
             const empty = p.central === 0;
             return (
               <div
                 key={p.id}
-                className={`flex items-center justify-between gap-2 rounded-lg border px-3 py-2 ${
-                  n > 0
-                    ? "border-neutral-400 bg-neutral-50"
-                    : "border-neutral-200"
-                } ${empty ? "opacity-60" : ""}`}
+                className={`overflow-hidden rounded-xl border bg-white ${
+                  n > 0 ? "border-neutral-900" : "border-neutral-200"
+                }`}
               >
-                <Thumb src={p.imageUrl} alt={p.name} />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{p.name}</p>
-                  <p className="text-xs font-semibold text-neutral-900">
-                    {rupiah(p.price)}
+                <div className="relative aspect-square w-full bg-neutral-100">
+                  {p.imageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={p.imageUrl}
+                      alt={p.name}
+                      className={`h-full w-full object-cover ${empty ? "opacity-40" : ""}`}
+                    />
+                  ) : (
+                    <span className="flex h-full w-full items-center justify-center">
+                      <Package className="h-8 w-8 text-neutral-300" />
+                    </span>
+                  )}
+                  {empty && (
+                    <span className="absolute inset-x-0 top-1/2 -translate-y-1/2 bg-neutral-900/70 py-1 text-center text-[11px] font-bold text-white">
+                      STOK PUSAT HABIS
+                    </span>
+                  )}
+                  {n > 0 && (
+                    <span className="absolute right-1.5 top-1.5 rounded-full bg-brand px-2 py-0.5 text-xs font-bold text-neutral-900">
+                      ×{n}
+                    </span>
+                  )}
+                </div>
+                <div className="space-y-1 p-2">
+                  <p className="line-clamp-2 min-h-8 text-xs font-medium leading-4">
+                    {p.name}
                   </p>
-                  <p className="text-xs">
+                  <p className="text-sm font-bold">{rupiah(p.price)}</p>
+                  <p className="text-[10px]">
                     <span
                       className={
                         empty
                           ? "font-semibold text-red-600"
                           : p.central <= 10
                             ? "font-semibold text-amber-600"
-                            : "text-neutral-500"
+                            : "text-neutral-400"
                       }
                     >
-                      Stok pusat: {p.central}
-                      {empty ? " (kosong)" : ""}
+                      Pusat: {p.central}
                     </span>
-                    <span className="text-neutral-400">
-                      {" "}
-                      · di toko: {p.remaining}
-                    </span>
+                    <span className="text-neutral-400"> · toko: {p.remaining}</span>
                   </p>
-                </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setQty(p.id, n - 1)}
-                    disabled={n === 0}
-                    className="flex h-7 w-7 items-center justify-center rounded-lg border border-neutral-300 text-neutral-600 hover:bg-neutral-100 disabled:opacity-40"
-                    aria-label={`Kurangi ${p.name}`}
-                  >
-                    <Minus className="h-3.5 w-3.5" />
-                  </button>
-                  <input
-                    type="number"
-                    min={0}
-                    max={p.central}
-                    value={n}
-                    disabled={empty}
-                    onChange={(e) =>
-                      setQty(p.id, parseInt(e.target.value, 10) || 0)
-                    }
-                    aria-label={`Jumlah ${p.name}`}
-                    className="h-7 w-14 rounded-lg border border-neutral-300 px-1 text-center text-sm disabled:bg-neutral-100"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setQty(p.id, n + 1)}
-                    disabled={empty || n >= p.central}
-                    className="flex h-7 w-7 items-center justify-center rounded-lg border border-neutral-300 text-neutral-600 hover:bg-neutral-100 disabled:opacity-40"
-                    aria-label={`Tambah ${p.name}`}
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                  </button>
+                  {n === 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => setQty(p.id, 1)}
+                      disabled={empty}
+                      className="w-full rounded-lg bg-neutral-900 py-1.5 text-xs font-semibold text-white hover:bg-neutral-800 disabled:opacity-40"
+                    >
+                      + Keranjang
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setQty(p.id, n - 1)}
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-neutral-300 text-neutral-600 hover:bg-neutral-100"
+                        aria-label={`Kurangi ${p.name}`}
+                      >
+                        <Minus className="h-3.5 w-3.5" />
+                      </button>
+                      <input
+                        type="number"
+                        min={0}
+                        max={p.central}
+                        value={n}
+                        onChange={(e) =>
+                          setQty(p.id, parseInt(e.target.value, 10) || 0)
+                        }
+                        aria-label={`Jumlah ${p.name}`}
+                        className="h-7 w-full min-w-0 rounded-lg border border-neutral-300 px-1 text-center text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setQty(p.id, n + 1)}
+                        disabled={n >= p.central}
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-neutral-300 text-neutral-600 hover:bg-neutral-100 disabled:opacity-40"
+                        aria-label={`Tambah ${p.name}`}
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             );
-          })
-        )}
-      </div>
+          })}
+        </div>
+      )}
 
       {pageCount > 1 && (
         <div className="flex items-center justify-between">
@@ -289,7 +343,23 @@ function RestockForm({ products }: { products: RestockProduct[] }) {
               </div>
             );
           })}
-          <div className="flex items-center justify-between border-t border-neutral-200 pt-1">
+          {discount > 0 && (
+            <>
+              <div className="flex items-center justify-between border-t border-neutral-200 pt-1">
+                <span>Subtotal</span>
+                <span>{rupiah(cartSubtotal)}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Diskon ({voucher!.code})</span>
+                <span>−{rupiah(discount)}</span>
+              </div>
+            </>
+          )}
+          <div
+            className={`flex items-center justify-between pt-1 ${
+              discount > 0 ? "" : "border-t border-neutral-200"
+            }`}
+          >
             <span className="font-semibold text-neutral-900">Total</span>
             <span className="text-sm font-bold text-neutral-900">
               {rupiah(cartTotal)}
@@ -300,6 +370,11 @@ function RestockForm({ products }: { products: RestockProduct[] }) {
       {chosen.map(([id, n]) => (
         <input key={id} type="hidden" name={`qty__${id}`} value={n} />
       ))}
+
+      {/* Voucher toko (opsional, dibuat admin) */}
+      {chosen.length > 0 && (
+        <VoucherInput applied={voucher} onApplied={setVoucher} />
+      )}
 
       <input
         name="note"
@@ -385,6 +460,18 @@ function RestockForm({ products }: { products: RestockProduct[] }) {
 
             <div className="my-3 border-t border-dashed border-neutral-300" />
 
+            {discount > 0 && (
+              <div className="mb-1 space-y-0.5 text-xs text-neutral-500">
+                <div className="flex items-center justify-between">
+                  <span>Subtotal</span>
+                  <span>{rupiah(cartSubtotal)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Diskon ({voucher!.code})</span>
+                  <span>−{rupiah(discount)}</span>
+                </div>
+              </div>
+            )}
             <div className="flex items-center justify-between">
               <span className="text-sm font-semibold">TOTAL</span>
               <span className="text-xl font-extrabold text-brand">

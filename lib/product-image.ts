@@ -12,3 +12,13 @@ export function productImageSrc(p: {
   if (!p.imageUrl.startsWith("data:")) return p.imageUrl; // URL eksternal biasa
   return `/api/product-image/${p.id}?v=${p.imageUrl.length}`;
 }
+
+// URL foto bukti pengiriman order — pola sama dengan productImageSrc.
+export function deliveryPhotoSrc(r: {
+  id: string;
+  deliveryPhoto: string | null;
+}): string | null {
+  if (!r.deliveryPhoto) return null;
+  if (!r.deliveryPhoto.startsWith("data:")) return r.deliveryPhoto;
+  return `/api/delivery-photo/${r.id}?v=${r.deliveryPhoto.length}`;
+}

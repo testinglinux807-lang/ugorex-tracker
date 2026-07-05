@@ -10,7 +10,9 @@ import { SalesRow } from "@/components/DataActions";
 import { ProductTable } from "@/components/ProductTable";
 import { productImageSrc } from "@/lib/product-image";
 import { SubmitButton } from "@/components/SubmitButton";
-import { Package, Store, Users } from "lucide-react";
+import { DataTabs } from "@/components/DataTabs";
+import { VoucherManager } from "@/components/VoucherManager";
+import { Package, Store, TicketPercent, Users } from "lucide-react";
 
 const inputCls = "w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm";
 const btnCls =
@@ -32,7 +34,7 @@ export default async function DataPage() {
 
   const isAdmin = user.role === "ADMIN";
 
-  const [products, stores, salesList] = await Promise.all([
+  const [products, stores, salesList, vouchers] = await Promise.all([
     prisma.product.findMany({ orderBy: { name: "asc" } }),
     prisma.store.findMany({
       where: isAdmin ? {} : { salesId: user.id },
@@ -40,6 +42,9 @@ export default async function DataPage() {
       orderBy: { name: "asc" },
     }),
     prisma.user.findMany({ where: { role: "SALES" }, orderBy: { name: "asc" } }),
+    isAdmin
+      ? prisma.voucher.findMany({ orderBy: { createdAt: "desc" } })
+      : Promise.resolve([]),
   ]);
 
   return (
@@ -51,7 +56,24 @@ export default async function DataPage() {
         </p>
       </div>
 
-      {/* Barang — full width: cari + pagination (katalog ratusan item) */}
+      {/* Di HP tiap bagian jadi tab (DataTabs); di desktop grid seperti biasa */}
+      <DataTabs
+        tabs={[
+          { key: "barang", label: "Barang", count: products.length },
+          ...(isAdmin
+            ? [
+                { key: "voucher", label: "Voucher", count: vouchers.length },
+                { key: "sales", label: "Akun Sales", count: salesList.length },
+              ]
+            : []),
+          { key: "konter", label: "Konter", count: stores.length },
+        ]}
+        sections={[
+          {
+            tab: "barang",
+            className: "lg:col-span-2",
+            node: (
+      /* Barang — full width: cari + pagination (katalog ratusan item) */
       <section className="rounded-xl border border-neutral-200 bg-white p-5">
         <div className="mb-3 flex items-center gap-2">
           <Package className="h-4 w-4 text-neutral-500" />
@@ -69,9 +91,11 @@ export default async function DataPage() {
           }))}
         />
       </section>
-
-      {/* Tambah Barang + Akun Sales sejajar */}
-      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
+            ),
+          },
+          {
+            tab: "barang",
+            node: (
         <section className="rounded-xl border border-neutral-200 bg-white p-5">
           <div className="mb-3 flex items-center gap-2">
             <Package className="h-4 w-4 text-neutral-500" />
@@ -109,9 +133,41 @@ export default async function DataPage() {
             </SubmitButton>
           </form>
         </section>
-
-        {/* Sales (admin) */}
-        {isAdmin && (
+            ),
+          },
+          ...(isAdmin
+            ? [
+                {
+                  tab: "voucher",
+                  node: (
+          <section className="rounded-xl border border-neutral-200 bg-white p-5">
+            <div className="mb-3 flex items-center gap-2">
+              <TicketPercent className="h-4 w-4 text-neutral-500" />
+              <h2 className="font-semibold">Voucher Toko</h2>
+              <Count n={vouchers.length} />
+            </div>
+            <p className="mb-3 text-xs text-neutral-400">
+              Kode diskon untuk owner — bisa dipakai saat order restok dan
+              catat penjualan di POS.
+            </p>
+            <VoucherManager
+              vouchers={vouchers.map((v) => ({
+                id: v.id,
+                code: v.code,
+                type: v.type,
+                value: v.value,
+                maxUses: v.maxUses,
+                usedCount: v.usedCount,
+                expiresAt: v.expiresAt ? v.expiresAt.toISOString() : null,
+                active: v.active,
+              }))}
+            />
+          </section>
+                  ),
+                },
+                {
+                  tab: "sales",
+                  node: (
           <section className="flex flex-col rounded-xl border border-neutral-200 bg-white p-5">
             <div className="mb-3 flex items-center gap-2">
               <Users className="h-4 w-4 text-neutral-500" />
@@ -140,10 +196,14 @@ export default async function DataPage() {
               <CreateSalesForm />
             </div>
           </section>
-        )}
-      </div>
-
-      {/* Konter — full width */}
+                  ),
+                },
+              ]
+            : []),
+          {
+            tab: "konter",
+            className: "lg:col-span-2",
+            node: (
       <section className="rounded-xl border border-neutral-200 bg-white p-5">
         <div className="mb-3 flex items-center gap-2">
           <Store className="h-4 w-4 text-neutral-500" />
@@ -199,6 +259,10 @@ export default async function DataPage() {
           </form>
         </div>
       </section>
+            ),
+          },
+        ]}
+      />
     </div>
   );
 }

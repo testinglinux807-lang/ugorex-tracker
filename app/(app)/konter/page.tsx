@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { StageBadge } from "@/components/Badge";
 import { VisitForm } from "@/components/VisitForm";
 import { CreateOwnerForm } from "@/components/AccountForms";
+import { KonterFilter } from "@/components/KonterFilter";
 import { waLink } from "@/lib/wa";
 import {
   Plus,
@@ -162,8 +163,8 @@ export default async function KonterPage({
           </Link>
         </div>
       ) : (
-        <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {shown.map((s) => {
+        <KonterFilter
+          items={shown.map((s) => {
             const isVisited = s.prospects.length > 0;
             const lastLog = s.prospects
               .flatMap((p) => p.logs)
@@ -197,8 +198,11 @@ export default async function KonterPage({
                       `Wassalamualaikum.\n— ${user.name}, Ugorex`,
                   )
                 : null;
-            return (
-              <li
+            return {
+              visited: isVisited,
+              low: waRestok !== null,
+              node: (
+              <div
                 key={s.id}
                 className="flex flex-col rounded-xl border border-neutral-200 bg-white p-4"
               >
@@ -318,10 +322,11 @@ export default async function KonterPage({
                     </details>
                   )}
                 </div>
-              </li>
-            );
+              </div>
+              ),
+            };
           })}
-        </ul>
+        />
       )}
     </div>
   );

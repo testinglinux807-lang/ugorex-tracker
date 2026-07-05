@@ -11,6 +11,12 @@ const BASE = () =>
     ? "https://app.midtrans.com"
     : "https://app.sandbox.midtrans.com";
 
+// Core API (cek status transaksi) pakai host berbeda dari Snap
+const API_BASE = () =>
+  process.env.MIDTRANS_IS_PRODUCTION === "true"
+    ? "https://api.midtrans.com"
+    : "https://api.sandbox.midtrans.com";
+
 export type SnapItem = {
   id: string;
   price: number;
@@ -18,14 +24,27 @@ export type SnapItem = {
   name: string; // maks 50 karakter
 };
 
-// Buat transaksi Snap; mengembalikan token popup, atau null kalau
-// Midtrans belum dikonfigurasi / gagal.
+export type SnapTransaction = {
+  token: string;
+  redirectUrl: string; // halaman Snap full-page — dipakai di HP (popup iframe rewel di mobile)
+};
+
+// URL halaman Snap full-page untuk token yang sudah tersimpan.
+// Format sama dengan redirect_url yang dikembalikan API Snap saat ini.
+export function snapRedirectUrl(token: string) {
+  return `${BASE()}/snap/v4/redirection/${token}`;
+}
+
+// Buat transaksi Snap; mengembalikan token popup + redirect URL, atau null
+// kalau Midtrans belum dikonfigurasi / gagal. finishUrl (opsional) = tujuan
+// balik setelah bayar lewat halaman redirect (popup pakai callback JS).
 export async function createSnapTransaction(params: {
   orderId: string;
   grossAmount: number;
   customerName: string;
   items: SnapItem[];
-}): Promise<string | null> {
+  finishUrl?: string;
+}): Promise<SnapTransaction | null> {
   const serverKey = process.env.MIDTRANS_SERVER_KEY;
   if (!serverKey) return null;
 
@@ -48,6 +67,9 @@ export async function createSnapTransaction(params: {
           name: i.name.slice(0, 50),
         })),
         customer_details: { first_name: params.customerName.slice(0, 50) },
+        ...(params.finishUrl
+          ? { callbacks: { finish: params.finishUrl } }
+          : {}),
       }),
       cache: "no-store",
     });
@@ -55,10 +77,49 @@ export async function createSnapTransaction(params: {
       console.error("Midtrans error:", res.status, await res.text());
       return null;
     }
-    const data = (await res.json()) as { token?: string };
-    return data.token ?? null;
+    const data = (await res.json()) as {
+      token?: string;
+      redirect_url?: string;
+    };
+    if (!data.token) return null;
+    return {
+      token: data.token,
+      redirectUrl: data.redirect_url ?? snapRedirectUrl(data.token),
+    };
   } catch (err) {
     console.error("Midtrans unreachable:", err);
     return null;
+  }
+}
+
+// Cek ke Midtrans apakah transaksi order ini sudah lunas.
+// Sumber kebenaran server-side — dipakai callback Snap onSuccess
+// (webhook tidak sampai ke localhost / sebelum notification URL diset).
+export async function isTransactionPaid(orderId: string): Promise<boolean> {
+  const serverKey = process.env.MIDTRANS_SERVER_KEY;
+  if (!serverKey) return false;
+
+  try {
+    const res = await fetch(`${API_BASE()}/v2/${orderId}/status`, {
+      headers: {
+        Accept: "application/json",
+        Authorization:
+          "Basic " + Buffer.from(`${serverKey}:`).toString("base64"),
+      },
+      cache: "no-store",
+    });
+    if (!res.ok) return false;
+    const data = (await res.json()) as {
+      transaction_status?: string;
+      fraud_status?: string;
+    };
+    return (
+      data.transaction_status === "settlement" ||
+      (data.transaction_status === "capture" &&
+        data.fraud_status === "accept")
+    );
+  } catch (err) {
+    console.error("Midtrans status unreachable:", err);
+    return false;
   }
 }

@@ -8,6 +8,7 @@ import { SalesTrendChart } from "@/components/SalesTrendChart";
 import { VisitForm } from "@/components/VisitForm";
 import { CreateOwnerForm } from "@/components/AccountForms";
 import { Paginated } from "@/components/Paginated";
+import { DataTabs } from "@/components/DataTabs";
 import { waLink } from "@/lib/wa";
 import { rupiahShort } from "@/lib/format";
 import { ArrowLeft, MapPin, MessageCircle } from "lucide-react";
@@ -147,8 +148,18 @@ export default async function StoreDetailPage({
         </div>
       </div>
 
-      {/* Catat kunjungan / funnel + akun owner */}
-      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
+      {/* Di HP panel dipisah tab; desktop tetap 3 baris × 2 kolom */}
+      <DataTabs
+        tabs={[
+          { key: "kunjungan", label: "Kunjungan" },
+          { key: "prospek", label: "Prospek", count: store.prospects.length },
+          { key: "statistik", label: "Statistik" },
+          { key: "tiket", label: "Tiket", count: store.tickets.length },
+        ]}
+        sections={[
+          {
+            tab: "kunjungan",
+            node: (
         <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
           <h2 className="mb-1 font-semibold">Catat Kunjungan / Update Funnel</h2>
           <p className="mb-3 text-xs text-neutral-400">
@@ -159,7 +170,11 @@ export default async function StoreDetailPage({
             products={products.map((p) => ({ id: p.id, name: p.name }))}
           />
         </div>
-
+            ),
+          },
+          {
+            tab: "kunjungan",
+            node: (
         <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
           <h2 className="mb-3 font-semibold">Akun Owner Toko</h2>
           {store.ownerUser ? (
@@ -176,22 +191,29 @@ export default async function StoreDetailPage({
             </>
           )}
         </div>
-      </div>
-
-      {/* Grafik penjualan + produk terlaris */}
-      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
+            ),
+          },
+          {
+            tab: "statistik",
+            node: (
         <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
           <h2 className="mb-3 font-semibold">Grafik Penjualan</h2>
           <SalesTrendChart sales={salesPoints} />
         </div>
+            ),
+          },
+          {
+            tab: "statistik",
+            node: (
         <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
           <h2 className="mb-4 font-semibold">Produk Terlaris</h2>
           <TopProductsChart data={topProducts} />
         </div>
-      </div>
-
-      {/* Prospek + tiket */}
-      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
+            ),
+          },
+          {
+            tab: "prospek",
+            node: (
         <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
           <h2 className="mb-3 font-semibold">
             Prospek ({store.prospects.length})
@@ -242,7 +264,11 @@ export default async function StoreDetailPage({
             })}
           />
         </div>
-
+            ),
+          },
+          {
+            tab: "tiket",
+            node: (
         <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
           <h2 className="mb-3 font-semibold">Tiket ({store.tickets.length})</h2>
           <Paginated
@@ -282,7 +308,10 @@ export default async function StoreDetailPage({
             })}
           />
         </div>
-      </div>
+            ),
+          },
+        ]}
+      />
     </div>
   );
 }
