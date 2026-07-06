@@ -8,7 +8,7 @@ import {
   CreditCard,
   Banknote,
 } from "lucide-react";
-import { PAYMENT_FEE } from "@/lib/payment-fee";
+import { paymentFee } from "@/lib/payment-fee";
 
 export type PaymentMethod =
   | "VA_BCA"
@@ -63,9 +63,11 @@ function groupOf(m: PaymentMethod | null): Group | null {
 export function PaymentMethodPicker({
   method,
   onChange,
+  amount,
 }: {
   method: PaymentMethod | null;
   onChange: (m: PaymentMethod) => void;
+  amount: number; // total produk — untuk hitung fee per metode
 }) {
   const activeGroup = groupOf(method);
 
@@ -98,7 +100,7 @@ export function PaymentMethodPicker({
               <span
                 className={`shrink-0 text-[10px] ${on ? "text-white/70" : "text-neutral-400"}`}
               >
-                {m.hasFee ? `+${rupiah(PAYMENT_FEE)}` : "Gratis"}
+                {m.hasFee ? `+${rupiah(paymentFee(m.key, amount))}` : "Gratis"}
               </span>
             </button>
           );

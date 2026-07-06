@@ -15,7 +15,7 @@ import {
 import { PendingLabel } from "@/components/SubmitButton";
 import { VoucherInput, type AppliedVoucher } from "@/components/VoucherInput";
 import { voucherDiscount } from "@/lib/voucher-calc";
-import { PAYMENT_FEE } from "@/lib/payment-fee";
+import { paymentFee } from "@/lib/payment-fee";
 import {
   PaymentMethodPicker,
   CardFieldsInline,
@@ -189,7 +189,7 @@ function RestockForm({ products }: { products: RestockProduct[] }) {
   }, 0);
   const discount = voucher ? voucherDiscount(voucher, cartSubtotal) : 0;
   const cartTotal = cartSubtotal - discount;
-  const fee = method === "CASH" ? 0 : PAYMENT_FEE;
+  const fee = method === "CASH" ? 0 : paymentFee(method, cartTotal);
   const grandTotal = cartTotal + fee;
 
   // Jumlah order dibatasi stok pusat
@@ -512,7 +512,11 @@ function RestockForm({ products }: { products: RestockProduct[] }) {
             <div className="my-3 border-t border-dashed border-neutral-300" />
 
             {paymentEnabled ? (
-              <PaymentMethodPicker method={method} onChange={setMethod} />
+              <PaymentMethodPicker
+                method={method}
+                onChange={setMethod}
+                amount={cartTotal}
+              />
             ) : (
               <p className="text-xs text-neutral-400">
                 Pembayaran online belum aktif — order dicatat sebagai cash.

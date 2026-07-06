@@ -16,7 +16,7 @@ import {
   isTransactionPaid,
   type ChargeItem,
 } from "@/lib/midtrans";
-import { PAYMENT_FEE } from "@/lib/payment-fee";
+import { paymentFee } from "@/lib/payment-fee";
 import { findUsableVoucher, consumeVoucher } from "@/lib/voucher";
 import { voucherDiscount } from "@/lib/voucher-calc";
 
@@ -140,7 +140,7 @@ export async function createRestockRequest(formData: FormData) {
   // Diskon penuh (total 0) = tidak ada yang perlu dibayar → langsung lunas,
   // metode/fee tidak relevan karena tidak ada yang dicharge ke Midtrans.
   const freeOrder = total === 0;
-  const fee = freeOrder || method === "CASH" ? 0 : PAYMENT_FEE;
+  const fee = freeOrder || method === "CASH" ? 0 : paymentFee(method, total);
   const grandTotal = total + fee;
 
   // ID order dibuat di muka supaya charge Midtrans + insert DB cukup dua
