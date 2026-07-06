@@ -1,6 +1,13 @@
 "use client";
 
-import { Landmark, QrCode, Wallet, CreditCard, Banknote } from "lucide-react";
+import {
+  Landmark,
+  QrCode,
+  Wallet,
+  WalletCards,
+  CreditCard,
+  Banknote,
+} from "lucide-react";
 import { PAYMENT_FEE } from "@/lib/payment-fee";
 
 export type PaymentMethod =
@@ -10,6 +17,7 @@ export type PaymentMethod =
   | "VA_PERMATA"
   | "QRIS"
   | "GOPAY"
+  | "DANA"
   | "CARD"
   | "CASH";
 
@@ -27,7 +35,7 @@ const VA_BANKS: { method: PaymentMethod; label: string }[] = [
   { method: "VA_PERMATA", label: "Permata" },
 ];
 
-type Group = "VA" | "QRIS" | "GOPAY" | "CARD" | "CASH";
+type Group = "VA" | "QRIS" | "GOPAY" | "DANA" | "CARD" | "CASH";
 
 const METHODS: {
   key: Group;
@@ -38,6 +46,7 @@ const METHODS: {
   { key: "VA", label: "Transfer Bank", icon: Landmark, hasFee: true },
   { key: "QRIS", label: "QRIS", icon: QrCode, hasFee: true },
   { key: "GOPAY", label: "GoPay", icon: Wallet, hasFee: true },
+  { key: "DANA", label: "DANA", icon: WalletCards, hasFee: true },
   { key: "CARD", label: "Kartu", icon: CreditCard, hasFee: true },
   { key: "CASH", label: "Cash", icon: Banknote, hasFee: false },
 ];

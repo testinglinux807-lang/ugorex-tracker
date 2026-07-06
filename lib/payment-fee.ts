@@ -11,6 +11,7 @@ export const PAYMENT_METHOD_LABEL: Record<string, string> = {
   VA_PERMATA: "Transfer Permata",
   QRIS: "QRIS",
   GOPAY: "GoPay",
+  DANA: "DANA",
   CARD: "Kartu",
   CASH: "Cash",
 };

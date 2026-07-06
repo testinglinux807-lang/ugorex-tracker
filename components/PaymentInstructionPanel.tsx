@@ -168,7 +168,9 @@ export function PaymentInstructionPanel({
                   Scan pakai aplikasi{" "}
                   {info.paymentMethod === "GOPAY"
                     ? "Gojek / e-wallet"
-                    : "m-banking / e-wallet"}{" "}
+                    : info.paymentMethod === "DANA"
+                      ? "DANA"
+                      : "m-banking / e-wallet"}{" "}
                   apa saja
                 </p>
               </div>

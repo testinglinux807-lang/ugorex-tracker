@@ -27,6 +27,7 @@ const PAYMENT_METHODS = new Set([
   "VA_PERMATA",
   "QRIS",
   "GOPAY",
+  "DANA",
   "CARD",
   "CASH",
 ]);
@@ -52,7 +53,10 @@ async function chargeByMethod(
     items: ChargeItem[];
   },
 ) {
-  if (method === "QRIS") return chargeQris(params);
+  // DANA di Midtrans tidak punya payment_type sendiri — dibayar via QRIS
+  // (app DANA scan QR yang sama). Jadi charge-nya QRIS, cuma label metodenya
+  // yang "DANA" biar jelas di UI.
+  if (method === "QRIS" || method === "DANA") return chargeQris(params);
   if (method === "GOPAY") return chargeGopay(params);
   if (method === "CARD") {
     if (!cardToken) return null;
