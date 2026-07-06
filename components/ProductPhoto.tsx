@@ -8,29 +8,51 @@ import { Spinner } from "@/components/SubmitButton";
 // Kompres foto di browser (maks 512px, WebP) supaya muat disimpan sebagai
 // data URL di database tanpa perlu layanan storage terpisah.
 // Diekspor: dipakai juga form report pengiriman order.
+// Pakai elemen <img> (bukan createImageBitmap) untuk decode — createImageBitmap
+// sering gagal diam-diam di Safari/iOS untuk foto dari kamera.
 export async function compressToDataUrl(
   file: File,
   maxSize = 512,
 ): Promise<string> {
-  const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, maxSize / Math.max(bitmap.width, bitmap.height));
-  const w = Math.max(1, Math.round(bitmap.width * scale));
-  const h = Math.max(1, Math.round(bitmap.height * scale));
-  const canvas = document.createElement("canvas");
-  canvas.width = w;
-  canvas.height = h;
-  canvas.getContext("2d")!.drawImage(bitmap, 0, 0, w, h);
-  return canvas.toDataURL("image/webp", 0.8);
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () =>
+        reject(new Error("Foto gagal dibaca, coba pilih foto lain."));
+      el.src = url;
+    });
+    const scale = Math.min(
+      1,
+      maxSize / Math.max(img.naturalWidth, img.naturalHeight),
+    );
+    const w = Math.max(1, Math.round(img.naturalWidth * scale));
+    const h = Math.max(1, Math.round(img.naturalHeight * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    canvas.getContext("2d")!.drawImage(img, 0, 0, w, h);
+    return canvas.toDataURL("image/webp", 0.8);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 // Dipakai di dalam <form>: pilih file -> preview + hidden input "imageUrl"
 export function ProductImageInput() {
   const [preview, setPreview] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   async function onPick(file: File | undefined) {
     if (!file) return;
-    setPreview(await compressToDataUrl(file));
+    setError(null);
+    try {
+      setPreview(await compressToDataUrl(file));
+    } catch {
+      setError("Foto gagal diproses, coba pilih foto lain.");
+    }
   }
 
   return (
@@ -73,6 +95,7 @@ export function ProductImageInput() {
           Foto barang (opsional)
         </button>
       )}
+      {error && <span className="text-xs text-red-600">{error}</span>}
     </div>
   );
 }
@@ -85,11 +108,17 @@ export function UpdateProductPhotoForm({ productId }: { productId: string }) {
     null,
   );
   const [preview, setPreview] = useState<string | null>(null);
+  const [pickError, setPickError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   async function onPick(file: File | undefined) {
     if (!file) return;
-    setPreview(await compressToDataUrl(file));
+    setPickError(null);
+    try {
+      setPreview(await compressToDataUrl(file));
+    } catch {
+      setPickError("Foto gagal diproses, coba pilih foto lain.");
+    }
   }
 
   return (
@@ -119,8 +148,10 @@ export function UpdateProductPhotoForm({ productId }: { productId: string }) {
           {pending ? <Spinner className="h-3 w-3" /> : "Simpan"}
         </button>
       )}
-      {state?.error && (
-        <span className="text-xs text-red-600">{state.error}</span>
+      {(pickError || state?.error) && (
+        <span className="text-xs text-red-600">
+          {pickError || state?.error}
+        </span>
       )}
     </form>
   );

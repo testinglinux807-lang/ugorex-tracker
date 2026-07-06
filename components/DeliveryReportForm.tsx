@@ -17,11 +17,17 @@ export function DeliveryReportForm({ orderId }: { orderId: string }) {
   );
   const [open, setOpen] = useState(false);
   const [photo, setPhoto] = useState<string | null>(null);
+  const [pickError, setPickError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   async function onPick(file: File | undefined) {
     if (!file) return;
-    setPhoto(await compressToDataUrl(file, 800));
+    setPickError(null);
+    try {
+      setPhoto(await compressToDataUrl(file, 800));
+    } catch {
+      setPickError("Foto gagal diproses, coba pilih foto lain.");
+    }
   }
 
   if (!open) {
@@ -105,9 +111,9 @@ export function DeliveryReportForm({ orderId }: { orderId: string }) {
         className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
       />
 
-      {state?.error && (
+      {(pickError || state?.error) && (
         <p className="rounded-lg border border-neutral-300 bg-neutral-100 px-3 py-2 text-xs font-medium text-neutral-900">
-          {state.error}
+          {pickError || state?.error}
         </p>
       )}
 
