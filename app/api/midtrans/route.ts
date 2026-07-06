@@ -35,17 +35,25 @@ export async function POST(req: Request) {
     (status === "capture" && body.fraud_status === "accept");
 
   if (body.order_id && paid) {
-    const orderId = body.order_id;
-    // updateMany: idempoten — Midtrans bisa mengirim notifikasi berulang,
-    // WA hanya dikirim saat transisi pertama ke PAID.
-    const res = await prisma.request.updateMany({
-      where: { id: orderId, paymentStatus: { not: "PAID" } },
-      data: { paymentStatus: "PAID" },
+    // order_id dari Midtrans bisa berupa txnId (charge diulang setelah
+    // kedaluwarsa punya suffix "-rXXXX", beda dari Request.id aslinya) —
+    // cari dulu row aslinya sebelum menandai PAID.
+    const req = await prisma.request.findFirst({
+      where: { OR: [{ id: body.order_id }, { txnId: body.order_id }] },
+      select: { id: true },
     });
-    if (res.count > 0) {
-      after(() => notifyOrder(orderId, "paid"));
-      revalidatePath("/order");
-      revalidatePath("/request");
+    if (req) {
+      // updateMany: idempoten — Midtrans bisa mengirim notifikasi berulang,
+      // WA hanya dikirim saat transisi pertama ke PAID.
+      const res = await prisma.request.updateMany({
+        where: { id: req.id, paymentStatus: { not: "PAID" } },
+        data: { paymentStatus: "PAID" },
+      });
+      if (res.count > 0) {
+        after(() => notifyOrder(req.id, "paid"));
+        revalidatePath("/order");
+        revalidatePath("/request");
+      }
     }
   }
 

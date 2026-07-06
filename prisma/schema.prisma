@@ -230,12 +230,22 @@ model Request {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  // Untuk checkout restok (persiapan payment gateway Midtrans)
-  total         Int     @default(0) // total belanja SETELAH diskon (gross_amount)
+  // Untuk checkout restok (payment gateway Midtrans Core API)
+  total         Int     @default(0) // total belanja produk SETELAH diskon (belum termasuk fee)
   discount      Int     @default(0) // potongan voucher (Rupiah)
   voucherCode   String? // kode voucher yang dipakai
   paymentStatus String  @default("UNPAID") // UNPAID | PAID
-  snapToken     String? // token Snap Midtrans — dipakai tombol "Bayar" di riwayat order
+
+  // Metode & instruksi pembayaran (charge Core API, bukan Snap — instruksi
+  // dirender sendiri di UI kita, bukan redirect ke halaman Midtrans)
+  paymentMethod   String?   // VA_BCA | VA_BNI | VA_BRI | VA_PERMATA | QRIS | GOPAY | CARD | CASH
+  paymentFee      Int       @default(0) // biaya layanan flat, 0 untuk CASH
+  txnId           String?   // order_id aktual yang dipakai ke Midtrans (beda dari id kalau charge diulang)
+  vaNumber        String?   // nomor VA (bank transfer)
+  vaBank          String?   // bca | bni | bri | permata
+  qrUrl           String?   // URL gambar QR (QRIS/GoPay)
+  paymentDeeplink String?   // deeplink app GoPay (mobile)
+  paymentExpiry   DateTime? // kedaluwarsa charge saat ini
 
   // Bukti pengiriman (report sales saat barang sampai ke owner)
   deliveryPhoto String?   // data URL foto barang — disajikan via /api/delivery-photo

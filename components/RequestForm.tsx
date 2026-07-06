@@ -1,13 +1,8 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useRef, useState } from "react";
+import { useActionState, useMemo, useState, useTransition } from "react";
 import Script from "next/script";
-import { useRouter } from "next/navigation";
-import {
-  createRequest,
-  createRestockRequest,
-  syncOrderPayment,
-} from "@/app/actions/requests";
+import { createRequest, createRestockRequest } from "@/app/actions/requests";
 import {
   Search,
   ChevronLeft,
@@ -20,29 +15,43 @@ import {
 import { PendingLabel } from "@/components/SubmitButton";
 import { VoucherInput, type AppliedVoucher } from "@/components/VoucherInput";
 import { voucherDiscount } from "@/lib/voucher-calc";
-
-// Popup pembayaran Midtrans Snap (dimuat lewat <Script> di bawah)
-declare global {
-  interface Window {
-    snap?: {
-      pay: (
-        token: string,
-        callbacks?: {
-          onSuccess?: () => void;
-          onPending?: () => void;
-          onError?: () => void;
-          onClose?: () => void;
-        },
-      ) => void;
-    };
-  }
-}
+import { PAYMENT_FEE } from "@/lib/payment-fee";
+import {
+  PaymentMethodPicker,
+  CardFieldsInline,
+  EMPTY_CARD,
+  type PaymentMethod,
+  type CardFields,
+} from "@/components/PaymentMethodPicker";
+import {
+  PaymentInstructionPanel,
+  type PaymentInfo,
+} from "@/components/PaymentInstructionPanel";
 
 const MIDTRANS_CLIENT_KEY = process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY;
-const SNAP_URL =
+const MIDTRANS_3DS_URL =
   process.env.NEXT_PUBLIC_MIDTRANS_IS_PRODUCTION === "true"
-    ? "https://app.midtrans.com/snap/snap.js"
-    : "https://app.sandbox.midtrans.com/snap/snap.js";
+    ? "https://api.midtrans.com/v2/assets/js/midtrans-new-3ds.min.js"
+    : "https://api.sandbox.midtrans.com/v2/assets/js/midtrans-new-3ds.min.js";
+
+function tokenizeCard(card: CardFields): Promise<string | null> {
+  return new Promise((resolve) => {
+    if (!window.MidtransNew3ds) return resolve(null);
+    window.MidtransNew3ds.getCardToken(
+      {
+        card_number: card.number,
+        card_exp_month: card.expMonth,
+        card_exp_year:
+          card.expYear.length === 2 ? `20${card.expYear}` : card.expYear,
+        card_cvv: card.cvv,
+      },
+      {
+        onSuccess: (res) => resolve(res.token_id),
+        onFailure: () => resolve(null),
+      },
+    );
+  });
+}
 
 const inputCls = "w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm";
 const PER_PAGE = 6;
@@ -99,16 +108,22 @@ function RestockForm({ products }: { products: RestockProduct[] }) {
       (await createRestockRequest(fd)) ?? null,
     null,
   );
+  const [, startTransition] = useTransition();
 
   const [qtys, setQtys] = useState<Record<string, number>>({});
   const [q, setQ] = useState("");
   const [page, setPage] = useState(0);
   const [showReceipt, setShowReceipt] = useState(false);
   const [voucher, setVoucher] = useState<AppliedVoucher | null>(null);
-  const router = useRouter();
+  const [method, setMethod] = useState<PaymentMethod>("CASH");
+  const [card, setCard] = useState<CardFields>(EMPTY_CARD);
+  const [cardBusy, setCardBusy] = useState(false);
+  const [cardError, setCardError] = useState<string | null>(null);
+  const [paymentInfo, setPaymentInfo] = useState<PaymentInfo | null>(null);
+  const paymentEnabled = !!MIDTRANS_CLIENT_KEY;
 
-  // Setelah order berhasil: tutup kwitansi & kosongkan keranjang
-  // (reset saat render, tanpa effect)
+  // Setelah order berhasil: tutup kwitansi, kosongkan keranjang, dan buka
+  // panel instruksi pembayaran (reset saat render, tanpa effect)
   const [seenState, setSeenState] = useState(state);
   if (state !== seenState) {
     setSeenState(state);
@@ -116,37 +131,43 @@ function RestockForm({ products }: { products: RestockProduct[] }) {
       setShowReceipt(false);
       setQtys({});
       setVoucher(null);
+      setCard(EMPTY_CARD);
+      setPaymentInfo({
+        requestId: state.requestId,
+        paymentMethod: state.paymentMethod,
+        grandTotal: state.grandTotal,
+        vaNumber: state.vaNumber,
+        vaBank: state.vaBank,
+        qrUrl: state.qrUrl,
+        deeplink: state.deeplink,
+        paymentExpiry: state.paymentExpiry,
+        redirectUrl: state.redirectUrl,
+      });
     }
   }
 
-  // Begitu Snap token diterima: di HP langsung pindah ke halaman Snap
-  // full-page (popup iframe Snap sering tidak bisa di-tap di browser HP,
-  // dan e-wallet butuh deeplink yang diblokir dari iframe); di desktop
-  // buka popup. Setelah bayar via popup, sinkronkan status ke server
-  // (verifikasi + notif lunas) — webhook tidak sampai ke localhost.
-  const handledToken = useRef<string | null>(null);
-  useEffect(() => {
-    const token = state?.ok ? state.snapToken : null;
-    if (!token || handledToken.current === token) return;
-    handledToken.current = token;
-
-    const redirectUrl = state?.ok ? state.snapRedirectUrl : null;
-    if (redirectUrl && window.matchMedia("(max-width: 768px)").matches) {
-      window.location.assign(redirectUrl);
+  // Submit manual (bukan lewat action= form native) supaya kartu bisa
+  // ditokenisasi dulu (async) sebelum data dikirim ke server action.
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const formEl = e.currentTarget;
+    if (method === "CARD") {
+      setCardError(null);
+      setCardBusy(true);
+      const token = await tokenizeCard(card);
+      setCardBusy(false);
+      if (!token) {
+        setCardError("Kartu tidak valid, coba periksa lagi.");
+        return;
+      }
+      const fd = new FormData(formEl);
+      fd.set("cardToken", token);
+      startTransition(() => formAction(fd));
       return;
     }
-
-    const requestId = state?.ok ? state.requestId : null;
-    const sync = () => {
-      if (requestId) syncOrderPayment(requestId).finally(() => router.refresh());
-      else router.refresh();
-    };
-    window.snap?.pay(token, {
-      onSuccess: sync,
-      onPending: sync,
-      onClose: () => router.refresh(),
-    });
-  }, [state, router]);
+    const fd = new FormData(formEl);
+    startTransition(() => formAction(fd));
+  }
 
   const filtered = useMemo(
     () =>
@@ -168,6 +189,8 @@ function RestockForm({ products }: { products: RestockProduct[] }) {
   }, 0);
   const discount = voucher ? voucherDiscount(voucher, cartSubtotal) : 0;
   const cartTotal = cartSubtotal - discount;
+  const fee = method === "CASH" ? 0 : PAYMENT_FEE;
+  const grandTotal = cartTotal + fee;
 
   // Jumlah order dibatasi stok pusat
   function setQty(id: string, n: number) {
@@ -176,7 +199,7 @@ function RestockForm({ products }: { products: RestockProduct[] }) {
   }
 
   return (
-    <form action={formAction} className="space-y-3">
+    <form onSubmit={handleSubmit} className="space-y-3">
       <div className="relative">
         <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
         <input
@@ -355,14 +378,22 @@ function RestockForm({ products }: { products: RestockProduct[] }) {
               </div>
             </>
           )}
+          {fee > 0 && (
+            <div className="flex items-center justify-between border-t border-neutral-200 pt-1">
+              <span>Biaya layanan</span>
+              <span>{rupiah(fee)}</span>
+            </div>
+          )}
           <div
             className={`flex items-center justify-between pt-1 ${
-              discount > 0 ? "" : "border-t border-neutral-200"
+              discount > 0 || fee > 0 ? "" : "border-t border-neutral-200"
             }`}
           >
-            <span className="font-semibold text-neutral-900">Total</span>
+            <span className="font-semibold text-neutral-900">
+              {fee > 0 ? "Total Bayar" : "Total"}
+            </span>
             <span className="text-sm font-bold text-neutral-900">
-              {rupiah(cartTotal)}
+              {rupiah(grandTotal)}
             </span>
           </div>
         </div>
@@ -387,13 +418,6 @@ function RestockForm({ products }: { products: RestockProduct[] }) {
           {state.error}
         </p>
       )}
-      {state?.ok && (
-        <p className="rounded-lg border border-neutral-900 bg-neutral-900 px-3 py-2 text-sm text-white">
-          {state.snapToken
-            ? "Order dibuat — selesaikan pembayaran di popup Midtrans."
-            : "Order restok terkirim ke sales & admin."}
-        </p>
-      )}
 
       <button
         type="button"
@@ -403,7 +427,7 @@ function RestockForm({ products }: { products: RestockProduct[] }) {
       >
         {chosen.length === 0
           ? "Checkout"
-          : `Checkout — ${rupiah(cartTotal)}`}
+          : `Checkout — ${rupiah(grandTotal)}`}
       </button>
 
       {/* Popup kwitansi: rincian order sebelum bayar */}
@@ -472,32 +496,75 @@ function RestockForm({ products }: { products: RestockProduct[] }) {
                 </div>
               </div>
             )}
-            <div className="flex items-center justify-between">
+            {fee > 0 && (
+              <div className="mb-1 flex items-center justify-between text-xs text-neutral-500">
+                <span>Biaya layanan</span>
+                <span>{rupiah(fee)}</span>
+              </div>
+            )}
+            <div className="mb-3 flex items-center justify-between">
               <span className="text-sm font-semibold">TOTAL</span>
               <span className="text-xl font-extrabold text-brand">
-                {rupiah(cartTotal)}
+                {rupiah(grandTotal)}
               </span>
             </div>
+
+            <div className="my-3 border-t border-dashed border-neutral-300" />
+
+            {paymentEnabled ? (
+              <PaymentMethodPicker method={method} onChange={setMethod} />
+            ) : (
+              <p className="text-xs text-neutral-400">
+                Pembayaran online belum aktif — order dicatat sebagai cash.
+              </p>
+            )}
+            {method === "CARD" && (
+              <div className="mt-2">
+                <CardFieldsInline value={card} onChange={setCard} />
+              </div>
+            )}
+            {cardError && (
+              <p className="mt-1 text-xs font-medium text-red-600">
+                {cardError}
+              </p>
+            )}
+            {state?.error && (
+              <p className="mt-2 rounded-lg border border-neutral-300 bg-neutral-100 px-3 py-2 text-xs font-medium text-neutral-900">
+                {state.error}
+              </p>
+            )}
 
             <div className="mt-4 flex gap-2">
               <button
                 type="button"
                 onClick={() => setShowReceipt(false)}
-                disabled={pending}
+                disabled={pending || cardBusy}
                 className="flex flex-1 items-center justify-center gap-1 rounded-lg border border-neutral-300 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-100 disabled:opacity-60"
               >
                 <X className="h-4 w-4" /> Batal
               </button>
               <button
                 type="submit"
-                disabled={pending}
+                disabled={pending || cardBusy}
                 className="flex-1 rounded-lg bg-brand py-2 text-sm font-semibold text-neutral-900 hover:opacity-90 disabled:opacity-60"
               >
-                {pending ? <PendingLabel text="Memproses…" /> : "Bayar Sekarang"}
+                {pending || cardBusy ? (
+                  <PendingLabel text="Memproses…" />
+                ) : method === "CASH" ? (
+                  "Buat Order"
+                ) : (
+                  "Bayar Sekarang"
+                )}
               </button>
             </div>
           </div>
         </div>
+      )}
+      {paymentInfo && (
+        <PaymentInstructionPanel
+          info={paymentInfo}
+          onClose={() => setPaymentInfo(null)}
+        />
       )}
     </form>
   );
@@ -564,7 +631,12 @@ export function RestockCheckout({ products }: { products: RestockProduct[] }) {
     <div className="space-y-3 rounded-2xl border border-neutral-200 bg-white p-5">
       {MIDTRANS_CLIENT_KEY && (
         <Script
-          src={SNAP_URL}
+          src={MIDTRANS_3DS_URL}
+          data-environment={
+            process.env.NEXT_PUBLIC_MIDTRANS_IS_PRODUCTION === "true"
+              ? "production"
+              : "sandbox"
+          }
           data-client-key={MIDTRANS_CLIENT_KEY}
           strategy="afterInteractive"
         />

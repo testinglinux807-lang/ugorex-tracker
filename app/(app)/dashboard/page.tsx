@@ -12,6 +12,7 @@ import { SalesTrendChart } from "@/components/SalesTrendChart";
 import { TargetCard } from "@/components/TargetCard";
 import { KonterTerbaru } from "@/components/KonterTerbaru";
 import { DataTabs } from "@/components/DataTabs";
+import { wibMonthStart } from "@/lib/date";
 import { MapPin, ArrowRight } from "lucide-react";
 
 const rupiah = (n: number) =>
@@ -27,9 +28,9 @@ export default async function DashboardPage() {
   if (user.role === "OWNER") redirect("/pos");
   if (user.role === "SALES") redirect("/prospects");
 
-  const monthStart = new Date();
-  monthStart.setDate(1);
-  monthStart.setHours(0, 0, 0, 0);
+  // Awal bulan di zona WIB (server produksi UTC — tanpa ini "bulan ini"
+  // bisa meleset di tanggal awal/akhir bulan).
+  const monthStart = wibMonthStart();
 
   const [
     prospects,

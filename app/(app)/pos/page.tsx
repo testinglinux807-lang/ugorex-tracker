@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { PosForm } from "@/components/PosForm";
 import { TransaksiList } from "@/components/TransaksiList";
 import { PosSummary } from "@/components/PosSummary";
+import { wibDayStart } from "@/lib/date";
 
 export default async function PosPage() {
   const user = await getCurrentUser();
@@ -50,8 +51,7 @@ export default async function PosPage() {
     ),
   }));
 
-  const startOfDay = new Date();
-  startOfDay.setHours(0, 0, 0, 0);
+  const startOfDay = wibDayStart();
   const todaySales = sales.filter((s) => new Date(s.createdAt) >= startOfDay);
   const todayTotal = todaySales.reduce((a, s) => a + s.total, 0);
   const todayQty = todaySales.reduce((a, s) => a + s.qty, 0);

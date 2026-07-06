@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "./prisma";
 import { waNumber } from "./wa";
 import { sendPushToUsers } from "./push";
+import { PAYMENT_METHOD_LABEL } from "./payment-fee";
 
 // Notifikasi WhatsApp otomatis via gateway Fonnte (fonnte.com).
 // Isi FONNTE_TOKEN di .env untuk mengaktifkan; kosong = tidak kirim apa-apa.
@@ -86,6 +87,9 @@ export async function notifyOrder(
 
   const appUrl = process.env.APP_URL?.replace(/\/$/, "");
   const no = order.id.slice(-8).toUpperCase();
+  const methodLabel = order.paymentMethod
+    ? (PAYMENT_METHOD_LABEL[order.paymentMethod] ?? order.paymentMethod)
+    : null;
 
   const message =
     kind === "shipped"
@@ -122,6 +126,7 @@ export async function notifyOrder(
           ...lines,
           ``,
           `Total: ${rupiah(order.total)}${kind === "paid" ? " (lunas)" : " (belum dibayar)"}`,
+          ...(methodLabel ? [`Metode: ${methodLabel}`] : []),
           ...(appUrl ? [``, `Proses: ${appUrl}/order`] : []),
         ].join("\n");
 
@@ -146,7 +151,7 @@ export async function notifyOrder(
             kind === "paid"
               ? `Order #${no} sudah dibayar`
               : `Order restok baru #${no}`,
-          body: `${order.store.name} — ${rupiah(order.total)} (${order.items.length} barang)`,
+          body: `${order.store.name} — ${rupiah(order.total)}${methodLabel ? ` · ${methodLabel}` : ""} (${order.items.length} barang)`,
           url: orderUrl,
         };
 

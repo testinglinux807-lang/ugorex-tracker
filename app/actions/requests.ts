@@ -9,12 +9,57 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import {
-  createSnapTransaction,
+  chargeCard,
+  chargeGopay,
+  chargeQris,
+  chargeVA,
   isTransactionPaid,
-  snapRedirectUrl,
+  type ChargeItem,
 } from "@/lib/midtrans";
+import { PAYMENT_FEE } from "@/lib/payment-fee";
 import { findUsableVoucher, consumeVoucher } from "@/lib/voucher";
 import { voucherDiscount } from "@/lib/voucher-calc";
+
+const PAYMENT_METHODS = new Set([
+  "VA_BCA",
+  "VA_BNI",
+  "VA_BRI",
+  "VA_PERMATA",
+  "QRIS",
+  "GOPAY",
+  "CARD",
+  "CASH",
+]);
+
+function bankOf(method: string): "bca" | "bni" | "bri" | "permata" {
+  return method.replace("VA_", "").toLowerCase() as
+    | "bca"
+    | "bni"
+    | "bri"
+    | "permata";
+}
+
+// Charge Core API sesuai metode yang dipilih. CARD butuh token kartu yang
+// sudah ditokenisasi di client (MidtransNew3ds.getCardToken) — dikirim lewat
+// formData "cardToken". CASH tidak melalui Midtrans sama sekali.
+async function chargeByMethod(
+  method: string,
+  cardToken: string | null,
+  params: {
+    orderId: string;
+    grossAmount: number;
+    customerName: string;
+    items: ChargeItem[];
+  },
+) {
+  if (method === "QRIS") return chargeQris(params);
+  if (method === "GOPAY") return chargeGopay(params);
+  if (method === "CARD") {
+    if (!cardToken) return null;
+    return chargeCard({ ...params, tokenId: cardToken });
+  }
+  return chargeVA({ ...params, bank: bankOf(method) });
+}
 
 // Owner mengajukan request restok: pilih barang + jumlah langsung (checkout)
 export async function createRestockRequest(formData: FormData) {
@@ -66,62 +111,85 @@ export async function createRestockRequest(formData: FormData) {
   }));
   const subtotal = itemRows.reduce((a, i) => a + i.qty * i.price, 0);
 
-  // Voucher (opsional) — validasi ulang & konsumsi kuota di server,
-  // preview di client tidak dipercaya.
+  // Voucher (opsional) — validasi ulang di server, preview di client tidak
+  // dipercaya. Kuota BELUM dikonsumsi di sini — baru dikonsumsi setelah
+  // charge Midtrans berhasil (di bawah), supaya charge yang gagal tidak
+  // membakar kuota voucher untuk order yang batal.
   const voucherCodeRaw = String(formData.get("voucherCode") ?? "").trim();
   let discount = 0;
   let voucherCode: string | null = null;
+  let voucher: { id: string; maxUses: number | null } | null = null;
   if (voucherCodeRaw) {
     const found = await findUsableVoucher(voucherCodeRaw);
     if ("error" in found) return { error: found.error };
     discount = voucherDiscount(found.voucher!, subtotal);
-    if (!(await consumeVoucher(found.voucher!))) {
-      return { error: "Kuota voucher sudah habis." };
-    }
     voucherCode = found.voucher!.code;
+    voucher = found.voucher!;
   }
   const total = subtotal - discount;
 
-  // ID order dibuat di muka supaya transaksi Snap + insert DB cukup dua
+  const method = String(formData.get("paymentMethod") ?? "");
+  if (!PAYMENT_METHODS.has(method)) {
+    return { error: "Pilih metode pembayaran." };
+  }
+
+  // Diskon penuh (total 0) = tidak ada yang perlu dibayar → langsung lunas,
+  // metode/fee tidak relevan karena tidak ada yang dicharge ke Midtrans.
+  const freeOrder = total === 0;
+  const fee = freeOrder || method === "CASH" ? 0 : PAYMENT_FEE;
+  const grandTotal = total + fee;
+
+  // ID order dibuat di muka supaya charge Midtrans + insert DB cukup dua
   // network call berurutan (Midtrans lalu Neon) — tanpa update terpisah
-  // untuk menyimpan token. Latensi checkout didominasi dua call ini.
+  // untuk menyimpan hasilnya. Latensi checkout didominasi dua call ini.
   const orderId = randomUUID();
 
-  // Buat transaksi Midtrans Snap (null kalau kunci belum dikonfigurasi;
-  // dilewati juga saat total 0 karena diskon penuh — Midtrans menolak
-  // gross_amount 0). Diskon dikirim sebagai item bernilai minus supaya
-  // jumlah item = gross_amount. Token disimpan supaya order yang popup-nya
-  // keburu ditutup masih bisa dibayar lewat tombol "Bayar" di riwayat.
-  const snap =
-    total > 0
-      ? await createSnapTransaction({
-          orderId,
-          grossAmount: total,
-          customerName: user.name,
-          items: [
-            ...itemRows.map((i) => ({
-              id: i.productId,
-              price: i.price,
-              quantity: i.qty,
-              name: productOf.get(i.productId)!.name,
-            })),
-            ...(discount > 0
-              ? [
-                  {
-                    id: "VOUCHER",
-                    price: -discount,
-                    quantity: 1,
-                    name: `Diskon voucher ${voucherCode}`,
-                  },
-                ]
-              : []),
-          ],
-          finishUrl: orderFinishUrl(orderId),
-        })
-      : null;
+  const chargeItems: ChargeItem[] = [
+    ...itemRows.map((i) => ({
+      id: i.productId,
+      price: i.price,
+      quantity: i.qty,
+      name: productOf.get(i.productId)!.name,
+    })),
+    ...(discount > 0
+      ? [
+          {
+            id: "VOUCHER",
+            price: -discount,
+            quantity: 1,
+            name: `Diskon voucher ${voucherCode}`,
+          },
+        ]
+      : []),
+    ...(fee > 0
+      ? [{ id: "FEE", price: fee, quantity: 1, name: "Biaya layanan" }]
+      : []),
+  ];
 
-  // Diskon penuh (total 0) = tidak ada yang perlu dibayar → langsung lunas
-  const freeOrder = total === 0;
+  // Charge langsung ke metode yang dipilih (null kalau Midtrans belum
+  // dikonfigurasi, gagal, CASH, atau order gratis penuh).
+  const charge =
+    !freeOrder && method !== "CASH"
+      ? await chargeByMethod(
+          method,
+          String(formData.get("cardToken") ?? "") || null,
+          {
+            orderId,
+            grossAmount: grandTotal,
+            customerName: user.name,
+            items: chargeItems,
+          },
+        )
+      : null;
+  if (!freeOrder && method !== "CASH" && !charge) {
+    return { error: "Gagal membuat tagihan pembayaran, coba lagi." };
+  }
+
+  // Charge (atau fallback CASH/gratis) berhasil — baru sekarang konsumsi
+  // kuota voucher, atomik terhadap pemakaian bersamaan.
+  if (voucher && !(await consumeVoucher(voucher))) {
+    return { error: "Kuota voucher sudah habis." };
+  }
 
   await prisma.request.create({
     data: {
@@ -134,16 +202,23 @@ export async function createRestockRequest(formData: FormData) {
       discount,
       voucherCode,
       paymentStatus: freeOrder ? "PAID" : "UNPAID",
-      snapToken: snap?.token ?? null,
+      paymentMethod: method,
+      paymentFee: fee,
+      txnId: orderId,
+      vaNumber: charge?.vaNumber ?? null,
+      vaBank: charge?.vaBank ?? null,
+      qrUrl: charge?.qrUrl ?? null,
+      paymentDeeplink: charge?.deeplink ?? null,
+      paymentExpiry: charge?.expiryTime ? new Date(charge.expiryTime) : null,
       items: { create: itemRows },
     },
   });
 
-  // Kalau Midtrans aktif, notifikasi dikirim saat pembayaran LUNAS
-  // (webhook / syncOrderPayment). Tanpa Midtrans / order gratis penuh,
-  // kabari sekarang.
+  // Order gratis penuh atau CASH: tidak ada yang perlu ditunggu dari
+  // Midtrans, kabari sekarang. Metode online lain menunggu konfirmasi
+  // pembayaran (polling / getOrderPaymentInfo self-heal).
   if (freeOrder) after(() => notifyOrder(orderId, "paid"));
-  else if (!snap) after(() => notifyOrder(orderId, "new"));
+  else if (method === "CASH") after(() => notifyOrder(orderId, "new"));
 
   revalidatePath("/request");
   revalidatePath("/dashboard");
@@ -151,23 +226,22 @@ export async function createRestockRequest(formData: FormData) {
   revalidatePath("/", "layout");
   return {
     ok: true,
-    snapToken: snap?.token ?? null,
-    snapRedirectUrl: snap?.redirectUrl ?? null,
     requestId: orderId,
+    paymentMethod: method,
+    freeOrder,
+    grandTotal,
+    vaNumber: charge?.vaNumber ?? null,
+    vaBank: charge?.vaBank ?? null,
+    qrUrl: charge?.qrUrl ?? null,
+    deeplink: charge?.deeplink ?? null,
+    redirectUrl: charge?.redirectUrl ?? null,
+    paymentExpiry: charge?.expiryTime ?? null,
   };
 }
 
-// Tujuan balik dari halaman Snap: /order?sync=<id> — param sync dipakai
-// halaman Order untuk langsung mencocokkan status bayar ke Midtrans.
-function orderFinishUrl(orderId: string) {
-  const appUrl = process.env.APP_URL?.replace(/\/$/, "");
-  return appUrl ? `${appUrl}/order?sync=${orderId}` : undefined;
-}
-
-// Dipanggil callback Snap (onSuccess/onPending) setelah owner bayar:
-// verifikasi status ke Midtrans (jangan percaya client), tandai PAID,
-// lalu kirim notif "lunas". Pengganti webhook di localhost; di produksi
-// webhook tetap jalan — idempoten, notif cuma sekali (updateMany guard).
+// Dipanggil client setelah owner bayar / saat polling instruksi pembayaran:
+// verifikasi status ke Midtrans (jangan percaya client), tandai PAID, lalu
+// kirim notif "lunas". Idempoten (updateMany guard) — aman dipanggil berkali.
 export async function syncOrderPayment(requestId: string) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
@@ -177,7 +251,7 @@ export async function syncOrderPayment(requestId: string) {
   if (!req || req.storeId !== user.ownedStore.id) return;
   if (req.paymentStatus === "PAID") return;
 
-  if (!(await isTransactionPaid(requestId))) return;
+  if (!(await isTransactionPaid(req.txnId ?? req.id))) return;
 
   const res = await prisma.request.updateMany({
     where: { id: requestId, paymentStatus: { not: "PAID" } },
@@ -185,16 +259,28 @@ export async function syncOrderPayment(requestId: string) {
   });
   if (res.count > 0) {
     after(() => notifyOrder(requestId, "paid"));
-    revalidatePath("/order");
-    revalidatePath("/request");
-    revalidatePath("/", "layout");
+    revalidateOrderPaths(req.storeId);
   }
 }
 
-// Owner membayar order yang masih UNPAID dari riwayat order.
-// Mengembalikan token Snap tersimpan; kalau belum ada (order dibuat sebelum
-// Midtrans dikonfigurasi), buatkan transaksi baru lalu simpan tokennya.
-export async function getOrderPayToken(requestId: string) {
+// Cek ringan status lunas — dipakai polling di panel instruksi pembayaran
+// setelah syncOrderPayment supaya UI tahu kapan harus berhenti & tutup panel.
+export async function getOrderPaidStatus(requestId: string): Promise<boolean> {
+  const user = await getCurrentUser();
+  if (!user || !user.ownedStore) return false;
+  const req = await prisma.request.findUnique({
+    where: { id: requestId },
+    select: { paymentStatus: true, storeId: true },
+  });
+  if (!req || req.storeId !== user.ownedStore.id) return false;
+  return req.paymentStatus === "PAID";
+}
+
+// Owner membuka instruksi pembayaran order yang masih UNPAID dari riwayat
+// order. Kalau charge sebelumnya masih berlaku, tampilkan ulang info yang
+// sama; kalau kedaluwarsa, buat ulang tagihan (order_id Midtrans baru —
+// tidak bisa dipakai ulang bebas begitu charge pertama kedaluwarsa/gagal).
+export async function getOrderPaymentInfo(requestId: string) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (user.role !== "OWNER" || !user.ownedStore) {
@@ -209,72 +295,132 @@ export async function getOrderPayToken(requestId: string) {
     return { error: "Order tidak ditemukan." };
   }
   if (req.paymentStatus === "PAID") return { error: "Order sudah lunas." };
+  if (!req.paymentMethod || req.paymentMethod === "CASH") {
+    return { error: "Order ini dibayar cash, tidak ada pembayaran online." };
+  }
   if (req.items.length === 0 || req.total <= 0) {
     return { error: "Order ini tidak punya tagihan." };
   }
 
-  // Self-heal: mungkin sudah dibayar tapi callback/webhook tidak sampai
-  // (mis. popup ditutup setelah sukses, atau bayar VA yang lunasnya nyusul).
-  // Cek dulu ke Midtrans sebelum buka popup — kalau lunas, tandai + notif.
-  if (await isTransactionPaid(req.id)) {
+  // Self-heal: mungkin sudah dibayar tapi status belum sempat sinkron.
+  if (await isTransactionPaid(req.txnId ?? req.id)) {
     const res = await prisma.request.updateMany({
       where: { id: req.id, paymentStatus: { not: "PAID" } },
       data: { paymentStatus: "PAID" },
     });
     if (res.count > 0) {
       after(() => notifyOrder(req.id, "paid"));
-      revalidatePath("/order");
-      revalidatePath("/request");
-      revalidatePath("/", "layout");
+      revalidateOrderPaths(req.storeId);
     }
     return { paid: true as const };
   }
 
-  if (req.snapToken) {
+  const grandTotal = req.total + req.paymentFee;
+
+  // Charge sebelumnya masih berlaku → tampilkan ulang instruksi yang sama,
+  // tanpa memanggil Midtrans lagi.
+  if (req.paymentExpiry && req.paymentExpiry > new Date()) {
     return {
       ok: true as const,
-      snapToken: req.snapToken,
-      snapRedirectUrl: snapRedirectUrl(req.snapToken),
+      paymentMethod: req.paymentMethod,
+      vaNumber: req.vaNumber,
+      vaBank: req.vaBank,
+      qrUrl: req.qrUrl,
+      deeplink: req.paymentDeeplink,
+      paymentExpiry: req.paymentExpiry.toISOString(),
+      grandTotal,
     };
   }
 
-  const snap = await createSnapTransaction({
-    orderId: req.id,
-    grossAmount: req.total,
+  if (req.paymentMethod === "CARD") {
+    return { error: "Tagihan kartu kedaluwarsa, checkout ulang dari awal." };
+  }
+
+  const newTxnId = `${req.id}-r${Date.now().toString(36)}`;
+  const chargeItems: ChargeItem[] = [
+    ...req.items.map((i) => ({
+      id: i.productId,
+      price: i.price,
+      quantity: i.qty,
+      name: i.product.name,
+    })),
+    ...(req.discount > 0
+      ? [
+          {
+            id: "VOUCHER",
+            price: -req.discount,
+            quantity: 1,
+            name: `Diskon voucher ${req.voucherCode ?? ""}`.trim(),
+          },
+        ]
+      : []),
+    ...(req.paymentFee > 0
+      ? [{ id: "FEE", price: req.paymentFee, quantity: 1, name: "Biaya layanan" }]
+      : []),
+  ];
+  const charge = await chargeByMethod(req.paymentMethod, null, {
+    orderId: newTxnId,
+    grossAmount: grandTotal,
     customerName: user.name,
-    items: [
-      ...req.items.map((i) => ({
-        id: i.productId,
-        price: i.price,
-        quantity: i.qty,
-        name: i.product.name,
-      })),
-      // Diskon voucher ikut sebagai item minus agar jumlah = gross_amount
-      ...(req.discount > 0
-        ? [
-            {
-              id: "VOUCHER",
-              price: -req.discount,
-              quantity: 1,
-              name: `Diskon voucher ${req.voucherCode ?? ""}`.trim(),
-            },
-          ]
-        : []),
-    ],
-    finishUrl: orderFinishUrl(req.id),
+    items: chargeItems,
   });
-  if (!snap) {
+  if (!charge) {
     return { error: "Pembayaran online belum tersedia, hubungi sales." };
   }
+
   await prisma.request.update({
     where: { id: req.id },
-    data: { snapToken: snap.token },
+    data: {
+      txnId: newTxnId,
+      vaNumber: charge.vaNumber ?? null,
+      vaBank: charge.vaBank ?? null,
+      qrUrl: charge.qrUrl ?? null,
+      paymentDeeplink: charge.deeplink ?? null,
+      paymentExpiry: charge.expiryTime ? new Date(charge.expiryTime) : null,
+    },
   });
   return {
     ok: true as const,
-    snapToken: snap.token,
-    snapRedirectUrl: snap.redirectUrl,
+    paymentMethod: req.paymentMethod,
+    vaNumber: charge.vaNumber ?? null,
+    vaBank: charge.vaBank ?? null,
+    qrUrl: charge.qrUrl ?? null,
+    deeplink: charge.deeplink ?? null,
+    paymentExpiry: charge.expiryTime ?? null,
+    grandTotal,
   };
+}
+
+// Sales/admin menandai order CASH sebagai lunas — dipakai saat owner
+// membayar tunai langsung ke sales pas barang sampai.
+export async function markOrderPaidCash(id: string) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+
+  const req = await prisma.request.findUnique({
+    where: { id },
+    include: { store: true },
+  });
+  if (!req) return { error: "Order tidak ditemukan." };
+
+  const allowed =
+    user.role === "ADMIN" ||
+    (user.role === "SALES" && req.store.salesId === user.id);
+  if (!allowed) return { error: "Order ini bukan dari toko yang kamu pegang." };
+  if (req.paymentMethod !== "CASH") {
+    return { error: "Order ini bukan pembayaran cash." };
+  }
+  if (req.paymentStatus === "PAID") return { error: "Order sudah lunas." };
+
+  const res = await prisma.request.updateMany({
+    where: { id, paymentStatus: { not: "PAID" } },
+    data: { paymentStatus: "PAID" },
+  });
+  if (res.count > 0) {
+    after(() => notifyOrder(id, "paid"));
+    revalidateOrderPaths(req.storeId);
+  }
+  return { ok: true };
 }
 
 // Owner mengajukan request bebas (mis. minta dikunjungi)

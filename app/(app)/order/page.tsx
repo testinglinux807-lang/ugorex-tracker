@@ -21,32 +21,13 @@ const rupiah = (n: number) =>
 export default async function OrderPage({
   searchParams,
 }: {
-  searchParams: Promise<{ sync?: string; focus?: string }>;
+  searchParams: Promise<{ focus?: string }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
   const isOwner = user.role === "OWNER";
-
-  // Balik dari halaman pembayaran Snap (alur redirect di HP): cocokkan
-  // status order ini ke Midtrans dulu supaya badge "Lunas" langsung benar —
-  // webhook belum tentu sampai (localhost / notification URL belum diset).
-  const { sync, focus } = await searchParams;
-  if (isOwner && user.ownedStore && typeof sync === "string") {
-    const target = await prisma.request.findUnique({ where: { id: sync } });
-    if (
-      target &&
-      target.storeId === user.ownedStore.id &&
-      target.paymentStatus !== "PAID" &&
-      (await isTransactionPaid(target.id))
-    ) {
-      const res = await prisma.request.updateMany({
-        where: { id: target.id, paymentStatus: { not: "PAID" } },
-        data: { paymentStatus: "PAID" },
-      });
-      if (res.count > 0) after(() => notifyOrder(target.id, "paid"));
-    }
-  }
+  const { focus } = await searchParams;
 
   if (isOwner && !user.ownedStore) {
     return (
@@ -84,17 +65,10 @@ export default async function OrderPage({
       product: { ...it.product, imageUrl: productImageSrc(it.product) },
     })),
   }));
-  // Urutan kerja: Dikirim (barang di jalan, butuh report sampai) paling
-  // atas, lalu Menunggu, Selesai paling bawah. Sort alfabetis status di DB
-  // malah menaruh SHIPPED di ekor — kartu "hilang" habis ditandai dikirim.
-  const STATUS_RANK: Record<string, number> = {
-    SHIPPED: 0,
-    PENDING: 1,
-    COMPLETED: 2,
-  };
-  orders.sort(
-    (a, b) => (STATUS_RANK[a.status] ?? 9) - (STATUS_RANK[b.status] ?? 9),
-  );
+  // Urutan: yang terbaru paling atas (createdAt desc dari DB) supaya order
+  // baru / checkout langsung kelihatan di pucuk. Untuk mencari order yang
+  // butuh aksi (mis. Dikirim yang perlu report sampai), pakai tab filter
+  // status di OrderList — jadi tidak perlu menaikkan status tertentu ke atas.
 
   // Datang dari klik notifikasi (?focus=<id>): order yang dimaksud ditaruh
   // paling atas + di-highlight supaya langsung ketemu tanpa mengubek
@@ -173,17 +147,20 @@ export default async function OrderPage({
 
   // Badge "Belum bayar" bisa basi kalau webhook Midtrans tidak sampai
   // (localhost / notification URL belum diset). Cocokkan dulu beberapa
-  // order UNPAID terbaru yang punya transaksi Snap langsung ke Midtrans.
+  // order UNPAID terbaru yang punya charge online (VA/QRIS/GoPay/Kartu).
   const staleCandidates = orders
     .filter(
       (r) =>
-        r.paymentStatus !== "PAID" && r.snapToken && r.status !== "COMPLETED",
+        r.paymentStatus !== "PAID" &&
+        r.paymentMethod &&
+        r.paymentMethod !== "CASH" &&
+        r.status !== "COMPLETED",
     )
     .slice(0, 5);
   const paidNow = (
     await Promise.all(
       staleCandidates.map(async (r) =>
-        (await isTransactionPaid(r.id)) ? r.id : null,
+        (await isTransactionPaid(r.txnId ?? r.id)) ? r.id : null,
       ),
     )
   ).filter((id): id is string => id !== null);

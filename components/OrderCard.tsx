@@ -1,9 +1,11 @@
 import type { Prisma } from "@prisma/client";
 import { waLink } from "@/lib/wa";
-import { updateRequestStatus } from "@/app/actions/requests";
+import { markOrderPaidCash, updateRequestStatus } from "@/app/actions/requests";
 import { SubmitButton } from "@/components/SubmitButton";
 import { PayOrderButton } from "@/components/PayOrderButton";
 import { DeliveryReportForm } from "@/components/DeliveryReportForm";
+import { PAYMENT_METHOD_LABEL } from "@/lib/payment-fee";
+import { fmtDate } from "@/lib/date";
 import {
   MessageCircle,
   MapPin,
@@ -13,6 +15,7 @@ import {
   Store,
   Truck,
   ChevronDown,
+  Banknote,
 } from "lucide-react";
 
 export type OrderRequest = Prisma.RequestGetPayload<{
@@ -155,6 +158,9 @@ export function OrderCard({
               }`}
             >
               {r.paymentStatus === "PAID" ? "Lunas" : "Belum bayar"}
+              {r.paymentMethod
+                ? ` · ${PAYMENT_METHOD_LABEL[r.paymentMethod] ?? r.paymentMethod}`
+                : ""}
             </span>
             <span
               className={`rounded-full border px-2 py-0.5 text-xs font-medium ${
@@ -258,7 +264,7 @@ export function OrderCard({
                 {r.deliveredBy ? `Oleh ${r.deliveredBy}` : ""}
                 {r.deliveredBy && r.deliveredAt ? " · " : ""}
                 {r.deliveredAt
-                  ? new Date(r.deliveredAt).toLocaleDateString("id-ID", {
+                  ? fmtDate(r.deliveredAt, {
                       day: "numeric",
                       month: "short",
                       year: "numeric",
@@ -273,11 +279,8 @@ export function OrderCard({
       {/* Footer: info ringkas + total */}
       <div className="border-t border-neutral-100 px-4 py-2.5">
         <p className="truncate text-xs text-neutral-400">
-          {new Date(r.createdAt).toLocaleDateString("id-ID", {
-            day: "numeric",
-            month: "short",
-          })}{" "}
-          · {r.createdBy?.name ?? "—"} · {r.items.length} produk
+          {fmtDate(r.createdAt)} · {r.createdBy?.name ?? "—"} ·{" "}
+          {r.items.length} produk
         </p>
         <div className="mt-1 flex items-baseline justify-between gap-2">
           <span className="text-xs text-neutral-500">Total Pesanan</span>
@@ -290,11 +293,30 @@ export function OrderCard({
             <span className="text-base font-bold">{rupiah(r.total)}</span>
           </span>
         </div>
+        {r.paymentFee > 0 && (
+          <>
+            <div className="mt-0.5 flex items-baseline justify-between gap-2 text-xs text-neutral-500">
+              <span>Biaya layanan</span>
+              <span>{rupiah(r.paymentFee)}</span>
+            </div>
+            <div className="mt-0.5 flex items-baseline justify-between gap-2">
+              <span className="text-xs font-medium text-neutral-600">
+                Total Bayar
+              </span>
+              <span className="text-sm font-bold">
+                {rupiah(r.total + r.paymentFee)}
+              </span>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Aksi owner: bayar order yang belum lunas + chat sales pemegang toko */}
       {!canRespond &&
-        (waSales || (r.paymentStatus !== "PAID" && r.status !== "COMPLETED")) && (
+        (waSales ||
+          (r.paymentStatus !== "PAID" &&
+            r.paymentMethod !== "CASH" &&
+            r.status !== "COMPLETED")) && (
           <div className="flex flex-wrap justify-end gap-2 border-t border-neutral-100 bg-neutral-50 px-4 py-2.5">
             {waSales && (
               <a
@@ -307,9 +329,14 @@ export function OrderCard({
                 Chat Sales{r.store.sales?.name ? ` (${r.store.sales.name})` : ""}
               </a>
             )}
-            {r.paymentStatus !== "PAID" && r.status !== "COMPLETED" && (
-              <PayOrderButton orderId={r.id} />
-            )}
+            {r.paymentStatus !== "PAID" &&
+              r.paymentMethod !== "CASH" &&
+              r.status !== "COMPLETED" && (
+                <PayOrderButton
+                  orderId={r.id}
+                  grandTotal={r.total + r.paymentFee}
+                />
+              )}
           </div>
         )}
 
@@ -341,6 +368,25 @@ export function OrderCard({
             </form>
           )}
           {r.status === "SHIPPED" && <DeliveryReportForm orderId={r.id} />}
+          {r.paymentMethod === "CASH" &&
+            r.paymentStatus !== "PAID" &&
+            r.status === "COMPLETED" && (
+              <form
+                action={async () => {
+                  "use server";
+                  await markOrderPaidCash(r.id);
+                }}
+              >
+                <SubmitButton
+                  pendingText="Memproses…"
+                  overlayText="Menandai lunas…"
+                  className="inline-flex items-center gap-1 rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-neutral-900 hover:opacity-90 disabled:opacity-60"
+                >
+                  <Banknote className="h-3.5 w-3.5" />
+                  Tandai Lunas (Cash)
+                </SubmitButton>
+              </form>
+            )}
           {r.status === "COMPLETED" && (
             <form action={updateRequestStatus.bind(null, r.id, "PENDING")}>
               <SubmitButton
