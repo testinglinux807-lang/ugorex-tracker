@@ -15,6 +15,7 @@ import {
   ListTodo,
   Boxes,
   ShoppingBag,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 
@@ -27,6 +28,7 @@ const NAV: Record<string, Item[]> = {
     { href: "/funnel", label: "Funnel", icon: Filter },
     { href: "/konter", label: "Konter", icon: Store },
     { href: "/tugas", label: "Tugas", icon: ListTodo },
+    { href: "/sales", label: "Sales", icon: Users },
     { href: "/order", label: "Order", icon: ShoppingBag },
     { href: "/data", label: "Data", icon: Database },
     { href: "/request", label: "Request", icon: Inbox },
