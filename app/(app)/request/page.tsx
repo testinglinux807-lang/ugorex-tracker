@@ -39,11 +39,29 @@ export default async function RequestPage() {
 
   const canRespond = !isOwner;
 
+  // Nomor WA admin — buat tombol "Chat Admin" di kartu request (khusus sales).
+  const admin =
+    user.role === "SALES"
+      ? await prisma.user.findFirst({
+          where: { role: "ADMIN" },
+          select: { phone: true },
+          orderBy: { createdAt: "asc" },
+        })
+      : null;
+
   const card = (r: (typeof requests)[number]) => {
     const wa = waLink(
       r.store.ownerPhone,
       `Halo${r.store.ownerName ? " " + r.store.ownerName : ""}, soal request "${r.subject}" dari ${r.store.name}.`,
     );
+    // Sales bisa lempar/tanya ke admin soal request ini via WA.
+    const waAdmin =
+      user.role === "SALES"
+        ? waLink(
+            admin?.phone,
+            `Halo admin, soal request "${r.subject}" dari ${r.store.name} (${r.createdBy?.name ?? "-"}): ${r.message}`,
+          )
+        : null;
     return (
       <li key={r.id} className="rounded-lg border border-neutral-200 p-3">
         <div className="flex items-start justify-between gap-2">
@@ -77,6 +95,17 @@ export default async function RequestPage() {
               >
                 <MessageCircle className="h-3.5 w-3.5" />
                 Hubungi Owner
+              </a>
+            )}
+            {waAdmin && (
+              <a
+                href={waAdmin}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 rounded-lg border border-neutral-900 bg-white px-2 py-1 text-xs font-semibold text-neutral-900 hover:bg-neutral-100"
+              >
+                <MessageCircle className="h-3.5 w-3.5" />
+                Chat Admin
               </a>
             )}
             {r.status !== "COMPLETED" ? (
