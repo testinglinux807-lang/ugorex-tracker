@@ -10,6 +10,7 @@ import { CreateOwnerForm } from "@/components/AccountForms";
 import { DeleteWithConfirm } from "@/components/DataActions";
 import { deleteOwnerAccount } from "@/app/actions/users";
 import { Paginated } from "@/components/Paginated";
+import { KonterLog, type LogItem } from "@/components/KonterLog";
 import { DataTabs } from "@/components/DataTabs";
 import { waLink } from "@/lib/wa";
 import { rupiahShort } from "@/lib/format";
@@ -27,6 +28,17 @@ const TICKET_LABEL: Record<string, string> = {
   IN_PROGRESS: "Diproses",
   CLOSED: "Selesai",
 };
+
+// Tanggal + jam (WIB) untuk timeline aktivitas konter
+const fmtDateTime = (d: Date) =>
+  new Date(d).toLocaleString("id-ID", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Asia/Jakarta",
+  });
 
 export default async function StoreDetailPage({
   params,
@@ -54,8 +66,19 @@ export default async function StoreDetailPage({
 
   const isAdmin = user.role === "ADMIN";
 
-  const sales = await prisma.sale.findMany({ where: { storeId: store.id } });
+  const sales = await prisma.sale.findMany({
+    where: { storeId: store.id },
+    include: { createdBy: true },
+    orderBy: { createdAt: "desc" },
+  });
   const products = await prisma.product.findMany({ orderBy: { name: "asc" } });
+
+  // Semua log funnel toko ini (bukan cuma yang terbaru) buat timeline aktivitas
+  const stageLogs = await prisma.stageLog.findMany({
+    where: { prospect: { storeId: store.id } },
+    include: { prospect: { include: { product: true } }, sales: true },
+    orderBy: { createdAt: "desc" },
+  });
   const totalRevenue = sales.reduce((a, s) => a + s.total, 0);
   const totalUnits = sales.reduce((a, s) => a + s.qty, 0);
 
@@ -86,6 +109,34 @@ export default async function StoreDetailPage({
         (soldByProduct.get(s.productId) ?? 0) + s.qty,
       );
   }
+
+  // ===== Log konter: riwayat penting (funnel) + penjualan =====
+  // Keluhan tidak dimasukkan sini karena sudah punya tab Tiket sendiri.
+  const funnelActs = stageLogs.map((log) => ({
+    id: `log-${log.id}`,
+    kind: "FUNNEL" as const,
+    ts: new Date(log.createdAt).getTime(),
+    href: `/prospects/${log.prospectId}`,
+    title: log.prospect.product.name,
+    subtitle: log.note,
+    by: log.sales?.name ?? "—",
+    date: fmtDateTime(log.createdAt),
+    stage: log.stage,
+    result: log.result,
+  }));
+  const saleActs = sales.map((s) => ({
+    id: `sale-${s.id}`,
+    kind: "SALE" as const,
+    ts: new Date(s.createdAt).getTime(),
+    href: `/konter/${store.id}`,
+    title: s.productName,
+    subtitle: `Terjual ${s.qty} unit · ${rupiahShort(s.total)}`,
+    by: s.createdBy?.name ?? "Owner/POS",
+    date: fmtDateTime(s.createdAt),
+  }));
+  const logItems: LogItem[] = [...funnelActs, ...saleActs].sort(
+    (a, b) => b.ts - a.ts,
+  );
 
   // ===== Panel-panel (dipakai ulang di tab & di area kelola) =====
   const chartPanel = (
@@ -264,22 +315,41 @@ export default async function StoreDetailPage({
     },
   ];
 
+  // Log konter — cerita toko ini: riwayat penting (funnel) + penjualan.
+  // Bisa dipakai baca kenapa toko rame: karena campaign tertentu atau
+  // memang lagi banyak yang beli.
+  const logSection = {
+    tab: "log",
+    className: "h-full",
+    node: (
+      <div className="flex h-full flex-col rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+        <h2 className="mb-1 font-semibold">Log Konter</h2>
+        <p className="mb-3 text-xs text-neutral-400">
+          Riwayat penting (kunjungan, campaign) & penjualan harian
+        </p>
+        <KonterLog items={logItems} />
+      </div>
+    ),
+  };
+
   const tabs = isAdmin
     ? [
+        { key: "log", label: "Log" },
         { key: "statistik", label: "Statistik" },
         { key: "prospek", label: "Prospek", count: store.prospects.length },
         { key: "tiket", label: "Tiket", count: store.tickets.length },
       ]
     : [
         { key: "kelola", label: "Kunjungan" },
+        { key: "log", label: "Log" },
         { key: "prospek", label: "Prospek", count: store.prospects.length },
         { key: "statistik", label: "Statistik" },
         { key: "tiket", label: "Tiket", count: store.tickets.length },
       ];
 
   const sections = isAdmin
-    ? analysisSections
-    : [...manageSections, ...analysisSections];
+    ? [logSection, ...analysisSections]
+    : [...manageSections, logSection, ...analysisSections];
 
   return (
     <div className="space-y-6">
