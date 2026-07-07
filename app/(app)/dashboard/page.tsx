@@ -100,6 +100,7 @@ export default async function DashboardPage() {
     area: s.area,
     isNew: new Date(s.createdAt) >= monthStart,
     isActive: s._count.transactions > 0,
+    createdAt: new Date(s.createdAt).toISOString(),
   }));
 
   // --- Funnel counts ---

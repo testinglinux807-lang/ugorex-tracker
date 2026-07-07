@@ -9,9 +9,22 @@ export type KonterTerbaruItem = {
   area: string | null;
   isNew: boolean;
   isActive: boolean;
+  createdAt: string; // ISO — kapan konter dibuat
 };
 
 const PER_SLIDE = 2;
+
+// Tanggal + jam dibuatnya konter (WIB)
+function fmtDateTime(iso: string) {
+  return new Date(iso).toLocaleString("id-ID", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Asia/Jakarta",
+  });
+}
 
 function initials(name: string) {
   return name
@@ -62,6 +75,9 @@ export function KonterTerbaru({ stores }: { stores: KonterTerbaruItem[] }) {
                   <p className="truncate text-sm font-medium">{s.name}</p>
                   <p className="truncate text-xs text-neutral-400">
                     {s.area ?? "—"}
+                  </p>
+                  <p className="truncate text-[11px] text-neutral-400">
+                    {fmtDateTime(s.createdAt)} WIB
                   </p>
                 </div>
                 {s.isNew ? (
