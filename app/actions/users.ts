@@ -112,3 +112,36 @@ export async function deleteSalesAccount(userId: string) {
   revalidatePath("/dashboard");
   return { ok: true };
 }
+
+// Admin / sales pemegang toko menghapus akun OWNER sebuah konter.
+// Konter tetap ada; cuma owner-nya dilepas & akunnya dihapus (tak bisa login).
+export async function deleteOwnerAccount(storeId: string) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (user.role === "OWNER") return { error: "Tidak punya akses." };
+
+  const store = await prisma.store.findUnique({
+    where: { id: storeId },
+    select: { ownerUserId: true, salesId: true },
+  });
+  if (!store || !store.ownerUserId) {
+    return { error: "Konter ini belum punya akun owner." };
+  }
+  const allowed =
+    user.role === "ADMIN" ||
+    (user.role === "SALES" && store.salesId === user.id);
+  if (!allowed) return { error: "Konter ini bukan tanggung jawabmu." };
+
+  const ownerId = store.ownerUserId;
+  // Lepas dulu dari toko, baru hapus akun (hindari langgar FK).
+  await prisma.$transaction([
+    prisma.store.update({
+      where: { id: storeId },
+      data: { ownerUserId: null },
+    }),
+    prisma.user.delete({ where: { id: ownerId } }),
+  ]);
+  revalidatePath("/data");
+  revalidatePath(`/konter/${storeId}`);
+  return { ok: true };
+}

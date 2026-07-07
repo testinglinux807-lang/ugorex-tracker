@@ -7,6 +7,8 @@ import { TopProductsChart } from "@/components/DashboardCharts";
 import { SalesTrendChart } from "@/components/SalesTrendChart";
 import { VisitForm } from "@/components/VisitForm";
 import { CreateOwnerForm } from "@/components/AccountForms";
+import { DeleteWithConfirm } from "@/components/DataActions";
+import { deleteOwnerAccount } from "@/app/actions/users";
 import { Paginated } from "@/components/Paginated";
 import { DataTabs } from "@/components/DataTabs";
 import { waLink } from "@/lib/wa";
@@ -203,11 +205,20 @@ export default async function StoreDetailPage({
   );
 
   const ownerBlock = store.ownerUser ? (
-    <p className="flex items-center gap-1.5 text-sm text-neutral-600">
-      <CheckCircle2 className="h-4 w-4 shrink-0 text-neutral-500" />
-      Akun owner sudah aktif:{" "}
-      <span className="font-medium">{store.ownerUser.name}</span>
-    </p>
+    <div className="flex items-center justify-between gap-2">
+      <p className="flex min-w-0 items-center gap-1.5 text-sm text-neutral-600">
+        <CheckCircle2 className="h-4 w-4 shrink-0 text-neutral-500" />
+        <span className="truncate">
+          Akun owner aktif:{" "}
+          <span className="font-medium">{store.ownerUser.name}</span>
+        </span>
+      </p>
+      <DeleteWithConfirm
+        action={deleteOwnerAccount.bind(null, store.id)}
+        title="Hapus akun owner"
+        confirmText={`Hapus akun owner "${store.ownerUser.name}"? Konter tetap ada, tapi owner tidak bisa login lagi (bisa dibuatkan ulang).`}
+      />
+    </div>
   ) : (
     <>
       <p className="mb-2 text-sm text-neutral-500">
