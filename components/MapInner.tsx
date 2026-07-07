@@ -82,12 +82,24 @@ const ICON_MAX =
 const ICON_MIN =
   '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/></svg>';
 
+// Layar penuh berbasis CSS (class .ug-map-full) — jalan di semua device,
+// termasuk HP yang tak mendukung Fullscreen API untuk elemen non-video.
 function FullscreenControl() {
   const map = useMap();
   useEffect(() => {
     const container = map.getContainer();
     const ctrl = new L.Control({ position: "topright" });
     let btn: HTMLAnchorElement | null = null;
+    let full = false;
+
+    const apply = (on: boolean) => {
+      full = on;
+      container.classList.toggle("ug-map-full", on);
+      if (btn) btn.innerHTML = on ? ICON_MIN : ICON_MAX;
+      // beri jeda supaya layout berubah dulu sebelum peta hitung ulang ukuran
+      setTimeout(() => map.invalidateSize(), 150);
+    };
+
     ctrl.onAdd = () => {
       const wrap = L.DomUtil.create("div", "leaflet-bar");
       btn = L.DomUtil.create("a", "", wrap) as HTMLAnchorElement;
@@ -100,20 +112,20 @@ function FullscreenControl() {
       L.DomEvent.on(btn, "click", (e) => {
         L.DomEvent.preventDefault(e);
         L.DomEvent.stopPropagation(e);
-        if (!document.fullscreenElement) container.requestFullscreen?.();
-        else document.exitFullscreen?.();
+        apply(!full);
       });
       return wrap;
     };
     ctrl.addTo(map);
-    const onFs = () => {
-      const isFs = document.fullscreenElement === container;
-      if (btn) btn.innerHTML = isFs ? ICON_MIN : ICON_MAX;
-      setTimeout(() => map.invalidateSize(), 120);
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && full) apply(false);
     };
-    document.addEventListener("fullscreenchange", onFs);
+    document.addEventListener("keydown", onKey);
+
     return () => {
-      document.removeEventListener("fullscreenchange", onFs);
+      document.removeEventListener("keydown", onKey);
+      if (full) container.classList.remove("ug-map-full");
       ctrl.remove();
     };
   }, [map]);
@@ -258,7 +270,7 @@ export default function MapInner({
     <MapContainer
       center={KARAWANG_CENTER}
       zoom={10}
-      scrollWheelZoom={false}
+      scrollWheelZoom={true}
       style={{ height: "100%", width: "100%" }}
     >
       <TileLayer attribution={TILE_ATTR} url={TILE_URL} subdomains="abcd" />

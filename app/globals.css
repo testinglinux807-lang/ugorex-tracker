@@ -127,3 +127,14 @@ body {
     padding: 16px;
   }
 }
+
+/* Peta "layar penuh" berbasis CSS — Fullscreen API tak jalan di sebagian
+   browser HP (iOS Safari) untuk elemen non-video, jadi pakai overlay fixed. */
+.ug-map-full {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  z-index: 9999 !important;
+  border-radius: 0 !important;
+}
