@@ -2,8 +2,8 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { type Stage } from "@/lib/constants";
-import { FunnelBar } from "@/components/FunnelBar";
+import { type Stage, type Result } from "@/lib/constants";
+import { FunnelBar, type FunnelItem } from "@/components/FunnelBar";
 import { ActivityFeed } from "@/components/ActivityFeed";
 import { TrackerMap } from "@/components/TrackerMap";
 import type { MapPoint } from "@/components/MapInner";
@@ -112,6 +112,28 @@ export default async function DashboardPage() {
   };
   for (const p of prospects) if (p.stage in counts) counts[p.stage as Stage]++;
   const total = prospects.length;
+
+  // Detail per tahap — daftar konter/prospek buat expand di FunnelBar.
+  // Hasil terakhir diambil dari recentLogs (sudah urut desc), default NEUTRAL.
+  const funnelItems: Record<Stage, FunnelItem[]> = {
+    AWARENESS: [],
+    INTEREST: [],
+    DESIRE: [],
+    ACTION: [],
+    LOYALTY: [],
+  };
+  for (const p of prospects) {
+    if (!(p.stage in funnelItems)) continue;
+    const last = recentLogs.find((l) => l.prospectId === p.id);
+    funnelItems[p.stage as Stage].push({
+      id: p.id,
+      storeId: p.storeId,
+      product: p.product.name,
+      store: p.store.name,
+      area: p.store.area ?? "—",
+      result: (last?.result ?? "NEUTRAL") as Result,
+    });
+  }
 
   // --- Revenue --- Total Penjualan = POS (jual ke end customer) + Order
   // restok yang sudah dibayar owner (dua-duanya pendapatan yang masuk).
@@ -313,12 +335,16 @@ export default async function DashboardPage() {
               <div className="flex h-full flex-col rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
                 <div className="mb-3 flex items-center justify-between">
                   <h2 className="font-semibold">Funnel Konter</h2>
-                  <span className="text-xs text-neutral-400">
-                    {total} prospek aktif
-                  </span>
+                  <Link
+                    href="/funnel"
+                    className="flex items-center gap-1 text-sm text-neutral-500 hover:underline"
+                  >
+                    Detail
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </Link>
                 </div>
                 <div className="flex flex-1 flex-col justify-center">
-                  <FunnelBar counts={counts} total={total} />
+                  <FunnelBar counts={counts} total={total} items={funnelItems} />
                 </div>
               </div>
             ),
