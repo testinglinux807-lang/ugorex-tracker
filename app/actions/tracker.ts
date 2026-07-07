@@ -149,6 +149,7 @@ export async function createProduct(formData: FormData) {
   await prisma.product.create({
     data: {
       name,
+      code: String(formData.get("code") ?? "").trim() || null,
       description: String(formData.get("description") ?? "").trim() || null,
       price,
       imageUrl: readImageUrl(formData),
@@ -177,6 +178,7 @@ export async function updateProduct(productId: string, formData: FormData) {
     where: { id: productId },
     data: {
       name,
+      code: String(formData.get("code") ?? "").trim() || null,
       price,
       centralStock,
       description: String(formData.get("description") ?? "").trim() || null,

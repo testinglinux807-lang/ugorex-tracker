@@ -17,7 +17,13 @@ export function ProductPicker({
   value,
   onChange,
 }: {
-  products: { id: string; name: string; price: number; remaining: number }[];
+  products: {
+    id: string;
+    name: string;
+    code?: string | null;
+    price: number;
+    remaining: number;
+  }[];
   value: string;
   onChange: (id: string) => void;
 }) {
@@ -46,7 +52,10 @@ export function ProductPicker({
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
     if (!term) return products;
-    return products.filter((p) => p.name.toLowerCase().includes(term));
+    // Cari lewat nama atau kode barang.
+    return products.filter((p) =>
+      `${p.name} ${p.code ?? ""}`.toLowerCase().includes(term),
+    );
   }, [products, q]);
 
   function pick(id: string) {
@@ -104,6 +113,11 @@ export function ProductPicker({
                     }`}
                   >
                     <span className="min-w-0 truncate">
+                      {p.code && (
+                        <span className="mr-1.5 rounded bg-neutral-900 px-1 py-0.5 text-[10px] font-bold text-white">
+                          {p.code}
+                        </span>
+                      )}
                       {p.name}
                       <span className="ml-1.5 text-xs text-neutral-400">
                         {rupiah(p.price)}

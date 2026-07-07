@@ -9,6 +9,7 @@ const PER_PAGE = 15;
 type Product = {
   id: string;
   name: string;
+  code: string | null;
   price: number;
   description: string | null;
   imageUrl: string | null;
@@ -27,6 +28,7 @@ export function ProductTable({ products }: { products: Product[] }) {
       (p) =>
         (!term ||
           p.name.toLowerCase().includes(term) ||
+          (p.code ?? "").toLowerCase().includes(term) ||
           (p.description ?? "").toLowerCase().includes(term)) &&
         (!onlyEmpty || p.centralStock === 0),
     );

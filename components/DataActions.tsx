@@ -83,6 +83,7 @@ export function ProductRow({
   product: {
     id: string;
     name: string;
+    code: string | null;
     price: number;
     description: string | null;
     imageUrl: string | null;
@@ -121,7 +122,14 @@ export function ProductRow({
           </div>
         )}
         <div className="min-w-0 flex-1">
-          <p className="truncate font-medium">{product.name}</p>
+          <p className="flex items-center gap-1.5 truncate font-medium">
+            {product.code && (
+              <span className="shrink-0 rounded bg-neutral-900 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                {product.code}
+              </span>
+            )}
+            <span className="truncate">{product.name}</span>
+          </p>
           <p className="truncate text-xs text-neutral-400">
             {rupiah(product.price)}
           </p>
@@ -152,23 +160,27 @@ export function ProductRow({
       {editing && (
         <div className="mt-2 space-y-2 rounded-lg bg-neutral-50 p-2">
           <form action={formAction} className="space-y-2">
-            <div className="grid grid-cols-2 gap-2">
-              <input
-                name="name"
-                required
-                defaultValue={product.name}
-                placeholder="Nama barang"
-                className={inputCls}
-              />
-              <input
-                name="price"
-                type="number"
-                min={0}
-                defaultValue={product.price}
-                placeholder="Harga (Rp)"
-                className={inputCls}
-              />
-            </div>
+            <input
+              name="name"
+              required
+              defaultValue={product.name}
+              placeholder="Nama barang"
+              className={inputCls}
+            />
+            <input
+              name="code"
+              defaultValue={product.code ?? ""}
+              placeholder="Kode / ID (mis. AA01)"
+              className={inputCls}
+            />
+            <input
+              name="price"
+              type="number"
+              min={0}
+              defaultValue={product.price}
+              placeholder="Harga (Rp)"
+              className={inputCls}
+            />
             <input
               name="description"
               defaultValue={product.description ?? ""}

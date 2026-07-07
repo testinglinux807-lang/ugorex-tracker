@@ -111,6 +111,7 @@ model Store {
 model Product {
   id          String     @id @default(cuid())
   name        String
+  code        String? // kode/ID barang (mis. "AA01") — barang kompatibel berbagi kode
   description String?
   price       Int        @default(0) // harga satuan (Rupiah)
   imageUrl    String? // foto katalog (data URL terkompresi atau URL eksternal)

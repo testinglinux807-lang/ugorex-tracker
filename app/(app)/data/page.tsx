@@ -84,6 +84,7 @@ export default async function DataPage() {
           products={products.map((p) => ({
             id: p.id,
             name: p.name,
+            code: p.code,
             price: p.price,
             description: p.description,
             imageUrl: productImageSrc(p),
@@ -102,8 +103,18 @@ export default async function DataPage() {
             <h2 className="font-semibold">Tambah Barang</h2>
           </div>
           <form action={createProduct} className="space-y-2">
+            <input
+              name="name"
+              required
+              placeholder="Nama barang"
+              className={inputCls}
+            />
+            <input
+              name="code"
+              placeholder="Kode / ID (mis. AA01)"
+              className={inputCls}
+            />
             <div className="grid grid-cols-2 gap-2">
-              <input name="name" required placeholder="Nama barang" className={inputCls} />
               <input
                 name="price"
                 type="number"
@@ -116,7 +127,7 @@ export default async function DataPage() {
                 type="number"
                 min={0}
                 placeholder="Stok pusat"
-                className={`${inputCls} col-span-2`}
+                className={inputCls}
               />
             </div>
             <input

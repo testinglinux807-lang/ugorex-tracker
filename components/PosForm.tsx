@@ -24,7 +24,13 @@ type CartLine = { productId: string; qty: number; price: number };
 export function PosForm({
   products,
 }: {
-  products: { id: string; name: string; price: number; remaining: number }[];
+  products: {
+    id: string;
+    name: string;
+    code: string | null;
+    price: number;
+    remaining: number;
+  }[];
 }) {
   const [pickerId, setPickerId] = useState("");
   const [cart, setCart] = useState<CartLine[]>([]);

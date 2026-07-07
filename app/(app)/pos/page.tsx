@@ -44,6 +44,7 @@ export default async function PosPage() {
   const productsWithStock = products.map((p) => ({
     id: p.id,
     name: p.name,
+    code: p.code,
     price: p.price,
     remaining: Math.max(
       0,
