@@ -26,6 +26,7 @@ const NAV: Record<string, Item[]> = {
     { href: "/prospects", label: "Tracker", icon: MapPin },
     { href: "/funnel", label: "Funnel", icon: Filter },
     { href: "/konter", label: "Konter", icon: Store },
+    { href: "/tugas", label: "Tugas", icon: ListTodo },
     { href: "/order", label: "Order", icon: ShoppingBag },
     { href: "/data", label: "Data", icon: Database },
     { href: "/request", label: "Request", icon: Inbox },
