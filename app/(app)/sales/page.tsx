@@ -1,34 +1,12 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
-import { rupiahShort } from "@/lib/format";
 import { STAGES, type Stage } from "@/lib/constants";
-import { Users, Trophy, ArrowUpRight } from "lucide-react";
+import { SalesGrid } from "@/components/SalesGrid";
+import { Users } from "lucide-react";
 
 // Konter dianggap "terbengkalai" kalau > 30 hari tak ada aktivitas funnel.
 const NEGLECT_DAYS = 30;
-
-function Stat({
-  label,
-  value,
-  warn,
-}: {
-  label: string;
-  value: string | number;
-  warn?: boolean;
-}) {
-  return (
-    <div className="rounded-lg bg-neutral-50 px-2 py-1.5 text-center">
-      <p
-        className={`text-sm font-bold ${warn ? "text-amber-600" : "text-neutral-800"}`}
-      >
-        {value}
-      </p>
-      <p className="text-[10px] text-neutral-400">{label}</p>
-    </div>
-  );
-}
 
 export default async function SalesPage() {
   const user = await getCurrentUser();
@@ -131,51 +109,7 @@ export default async function SalesPage() {
           Belum ada akun sales. Tambah di menu Data → Akun Sales.
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {rows.map((r, i) => (
-            <Link
-              key={r.id}
-              href={`/sales/${r.id}`}
-              className="group rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm transition hover:border-neutral-400"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="flex items-center gap-1.5 font-semibold">
-                    {i === 0 && (
-                      <Trophy className="h-4 w-4 shrink-0 text-brand-dark" />
-                    )}
-                    <span className="truncate">{r.name}</span>
-                  </p>
-                  <p className="text-xs text-neutral-400">{r.phone}</p>
-                </div>
-                <span className="flex shrink-0 items-center gap-1">
-                  <span className="text-xs font-medium text-neutral-400">
-                    #{i + 1}
-                  </span>
-                  <ArrowUpRight className="h-4 w-4 text-neutral-300 group-hover:text-neutral-600" />
-                </span>
-              </div>
-
-              <div className="mt-3 rounded-xl bg-neutral-900 p-3 text-white">
-                <p className="text-xs text-neutral-400">Omzet</p>
-                <p className="text-xl font-bold text-brand">
-                  {r.revenue > 0 ? rupiahShort(r.revenue) : "—"}
-                </p>
-              </div>
-
-              <div className="mt-3 grid grid-cols-4 gap-2">
-                <Stat label="Konter" value={r.konter} />
-                <Stat label="Loyal" value={r.loyal} />
-                <Stat
-                  label="Terbengkalai"
-                  value={r.terbengkalai}
-                  warn={r.terbengkalai > 0}
-                />
-                <Stat label="Tugas" value={`${r.taskDone}/${r.taskTotal}`} />
-              </div>
-            </Link>
-          ))}
-        </div>
+        <SalesGrid rows={rows} />
       )}
 
       <p className="text-xs text-neutral-400">
