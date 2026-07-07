@@ -13,17 +13,15 @@ function urlBase64ToUint8Array(base64: string) {
   return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
 }
 
-type Status = "unsupported" | "loading" | "off" | "on";
+export type PushStatus = "unsupported" | "loading" | "off" | "on";
 
-// Logo header: klik = minta izin & aktifkan push di perangkat ini (semua
-// role; admin/sales dapat kabar order baru/lunas, owner dikirim/sampai).
-// Titik lime kecil di pojok logo = push aktif. Riwayat notifikasinya
-// sendiri dibuka lewat lonceng (NotifBell) di kanan header.
-export function LogoPush() {
-  const [status, setStatus] = useState<Status>("loading");
+// Hook izin & aktivasi push di perangkat ini — dipakai logo header (desktop)
+// & item "Aktifkan notifikasi" di drawer menu (mobile).
+export function usePush() {
+  const [status, setStatus] = useState<PushStatus>("loading");
 
   useEffect(() => {
-    async function check(): Promise<Status> {
+    async function check(): Promise<PushStatus> {
       if (
         !VAPID_PUBLIC_KEY ||
         !("serviceWorker" in navigator) ||
@@ -79,6 +77,14 @@ export function LogoPush() {
       setStatus("off");
     }
   }
+
+  return { status, enable };
+}
+
+// Logo header (desktop): klik = aktifkan push di perangkat ini. Titik lime
+// kecil di pojok = push aktif. Di mobile push diaktifkan dari drawer menu.
+export function LogoPush() {
+  const { status, enable } = usePush();
 
   const logo = (
     <Image

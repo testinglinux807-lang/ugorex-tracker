@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { ROLE_LABEL, type Role } from "@/lib/constants";
-import { BottomNav, SideNav } from "@/components/Nav";
+import { SideNav, MobileNav } from "@/components/Nav";
 import { LogoPush } from "@/components/LogoPush";
 import { NotifBell } from "@/components/NotifBell";
 import { UserMenu } from "@/components/UserMenu";
@@ -39,9 +39,13 @@ export default async function AppLayout({
       {/* Header */}
       <header className="sticky top-0 z-10 flex items-center justify-between border-b border-neutral-200 bg-white px-4 py-3">
         <div className="flex min-w-0 items-center gap-2">
-          {/* Klik logo = aktifkan izin push di perangkat ini */}
-          <LogoPush />
-          <span className="truncate font-semibold">Ugorex Tracker</span>
+          {/* Mobile: logo + judul = buka drawer menu */}
+          <MobileNav role={user.role} orderBadge={orderBadge} />
+          {/* Desktop: klik logo = aktifkan izin push di perangkat ini */}
+          <div className="hidden min-w-0 items-center gap-2 sm:flex">
+            <LogoPush />
+            <span className="truncate font-semibold">Ugorex Tracker</span>
+          </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
           {/* Klik nama = dropdown akun (Keluar pindah ke sini) */}
@@ -65,12 +69,8 @@ export default async function AppLayout({
 
       <div className="flex flex-1">
         <SideNav role={user.role} orderBadge={orderBadge} />
-        <main className="w-full min-w-0 flex-1 p-4 pb-20 sm:p-6 sm:pb-6">
-          {children}
-        </main>
+        <main className="w-full min-w-0 flex-1 p-4 sm:p-6">{children}</main>
       </div>
-
-      <BottomNav role={user.role} orderBadge={orderBadge} />
     </div>
   );
 }
