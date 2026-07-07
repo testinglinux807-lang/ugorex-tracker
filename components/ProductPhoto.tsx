@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useRef, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
+import { useFormStatus } from "react-dom";
 import { updateProductImage } from "@/app/actions/tracker";
 import { ImagePlus, X } from "lucide-react";
 import { Spinner } from "@/components/SubmitButton";
@@ -44,6 +45,20 @@ export function ProductImageInput() {
   const [preview, setPreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Form induk pakai server action tanpa useActionState — React auto-reset
+  // field teks setelah submit, tapi foto ini controlled (state) jadi harus
+  // dibersihkan manual saat submit selesai (pending turun dari true ke false).
+  const { pending } = useFormStatus();
+  const wasPending = useRef(false);
+  useEffect(() => {
+    if (wasPending.current && !pending) {
+      setPreview(null);
+      setError(null);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+    wasPending.current = pending;
+  }, [pending]);
 
   async function onPick(file: File | undefined) {
     if (!file) return;
