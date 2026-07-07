@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   MapPin,
+  Filter,
   Database,
   Store,
   PlusCircle,
@@ -23,6 +24,8 @@ const NAV: Record<string, Item[]> = {
   ADMIN: [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { href: "/prospects", label: "Tracker", icon: MapPin },
+    { href: "/funnel", label: "Funnel", icon: Filter },
+    { href: "/konter", label: "Konter", icon: Store },
     { href: "/order", label: "Order", icon: ShoppingBag },
     { href: "/data", label: "Data", icon: Database },
     { href: "/request", label: "Request", icon: Inbox },

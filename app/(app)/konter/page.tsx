@@ -111,7 +111,9 @@ export default async function KonterPage({
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
-          <h1 className="text-2xl font-bold">Konter Saya</h1>
+          <h1 className="text-2xl font-bold">
+            {user.role === "ADMIN" ? "Semua Konter" : "Konter Saya"}
+          </h1>
           <p className="text-sm text-neutral-500">
             {q ? (
               <>
