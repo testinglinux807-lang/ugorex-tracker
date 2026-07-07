@@ -11,7 +11,14 @@ import { Paginated } from "@/components/Paginated";
 import { DataTabs } from "@/components/DataTabs";
 import { waLink } from "@/lib/wa";
 import { rupiahShort } from "@/lib/format";
-import { ArrowLeft, MapPin, MessageCircle } from "lucide-react";
+import {
+  ArrowLeft,
+  MapPin,
+  MessageCircle,
+  ClipboardPen,
+  UserPlus,
+  CheckCircle2,
+} from "lucide-react";
 
 const TICKET_LABEL: Record<string, string> = {
   OPEN: "Terbuka",
@@ -42,6 +49,8 @@ export default async function StoreDetailPage({
   });
   if (!store) notFound();
   if (user.role === "SALES" && store.salesId !== user.id) redirect("/konter");
+
+  const isAdmin = user.role === "ADMIN";
 
   const sales = await prisma.sale.findMany({ where: { storeId: store.id } });
   const products = await prisma.product.findMany({ orderBy: { name: "asc" } });
@@ -76,10 +85,195 @@ export default async function StoreDetailPage({
       );
   }
 
+  // ===== Panel-panel (dipakai ulang di tab & di area kelola) =====
+  const chartPanel = (
+    <div className="flex h-full flex-col rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+      <h2 className="mb-3 font-semibold">Grafik Penjualan</h2>
+      <div className="flex-1">
+        <SalesTrendChart sales={salesPoints} />
+      </div>
+    </div>
+  );
+
+  const topPanel = (
+    <div className="flex h-full flex-col rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+      <h2 className="mb-4 font-semibold">Produk Terlaris</h2>
+      <div className="flex-1">
+        <TopProductsChart data={topProducts} />
+      </div>
+    </div>
+  );
+
+  const prospekPanel = (
+    <div className="flex h-full flex-col rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+      <h2 className="mb-3 font-semibold">
+        Prospek / Funnel ({store.prospects.length})
+      </h2>
+      <Paginated
+        perPage={5}
+        className="space-y-2"
+        empty={<p className="text-sm text-neutral-400">Belum ada prospek.</p>}
+        items={store.prospects.map((p) => {
+          const sold = soldByProduct.get(p.productId) ?? 0;
+          const remaining = Math.max(0, p.stock - sold);
+          return (
+            <Link
+              key={p.id}
+              href={`/prospects/${p.id}`}
+              className="block rounded-lg border border-neutral-200 p-3 text-sm hover:border-neutral-400"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="min-w-0 truncate font-medium">
+                  {p.product.name}
+                </span>
+                <StageBadge stage={p.stage} />
+              </div>
+              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-neutral-500">
+                <span>
+                  Stok:{" "}
+                  <span className="font-semibold text-neutral-800">
+                    {p.stock}
+                  </span>
+                </span>
+                <span>
+                  Terjual:{" "}
+                  <span className="font-semibold text-neutral-800">{sold}</span>
+                </span>
+                <span>
+                  Sisa:{" "}
+                  <span className="font-semibold text-neutral-800">
+                    {remaining}
+                  </span>
+                </span>
+              </div>
+            </Link>
+          );
+        })}
+      />
+    </div>
+  );
+
+  const tiketPanel = (
+    <div className="flex h-full flex-col rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+      <h2 className="mb-3 font-semibold">Tiket ({store.tickets.length})</h2>
+      <Paginated
+        perPage={4}
+        className="space-y-2"
+        empty={<p className="text-sm text-neutral-400">Belum ada tiket.</p>}
+        items={store.tickets.map((t) => {
+          const link = waLink(
+            store.ownerPhone,
+            `Halo${store.ownerName ? " " + store.ownerName : ""}, ini admin Ugorex. Terkait keluhan "${t.subject}" untuk ${store.name}. Boleh dibantu jelaskan lebih lanjut?`,
+          );
+          return (
+            <div
+              key={t.id}
+              className="rounded-lg border border-neutral-200 p-3 text-sm"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium">{t.subject}</span>
+                <span className="shrink-0 rounded-full border border-neutral-300 px-2 py-0.5 text-xs text-neutral-600">
+                  {TICKET_LABEL[t.status] ?? t.status}
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-neutral-500">{t.message}</p>
+              {link && (
+                <a
+                  href={link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 inline-flex items-center gap-1 rounded-lg bg-green-600 px-2 py-1 text-xs font-semibold text-white hover:bg-green-700"
+                >
+                  <MessageCircle className="h-3.5 w-3.5" />
+                  Balas via WhatsApp
+                </a>
+              )}
+            </div>
+          );
+        })}
+      />
+    </div>
+  );
+
+  const visitForm = (
+    <VisitForm
+      storeId={store.id}
+      products={products.map((p) => ({ id: p.id, name: p.name }))}
+    />
+  );
+
+  const ownerBlock = store.ownerUser ? (
+    <p className="flex items-center gap-1.5 text-sm text-neutral-600">
+      <CheckCircle2 className="h-4 w-4 shrink-0 text-neutral-500" />
+      Akun owner sudah aktif:{" "}
+      <span className="font-medium">{store.ownerUser.name}</span>
+    </p>
+  ) : (
+    <>
+      <p className="mb-2 text-sm text-neutral-500">
+        Buatkan akun owner toko saat owner setuju ambil barang.
+      </p>
+      <CreateOwnerForm storeId={store.id} />
+    </>
+  );
+
+  // Analisis: sama untuk semua role (grafik, produk, prospek, tiket)
+  const analysisSections = [
+    { tab: "statistik", className: "h-full", node: chartPanel },
+    { tab: "statistik", className: "h-full", node: topPanel },
+    { tab: "prospek", className: "h-full", node: prospekPanel },
+    { tab: "tiket", className: "h-full", node: tiketPanel },
+  ];
+
+  // Kelola (tugas sales): buat SALES tampil sebagai tab; buat ADMIN
+  // dipindah ke bawah dalam bentuk collapse biar gak nyampur analisis.
+  const manageSections = [
+    {
+      tab: "kelola",
+      className: "h-full",
+      node: (
+        <div className="flex h-full flex-col rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+          <h2 className="mb-1 font-semibold">Catat Kunjungan / Update Funnel</h2>
+          <p className="mb-3 text-xs text-neutral-400">
+            Tandai tahap & respon toko atas barang yang ditawarkan
+          </p>
+          {visitForm}
+        </div>
+      ),
+    },
+    {
+      tab: "kelola",
+      className: "h-full",
+      node: (
+        <div className="flex h-full flex-col rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+          <h2 className="mb-3 font-semibold">Akun Owner Toko</h2>
+          {ownerBlock}
+        </div>
+      ),
+    },
+  ];
+
+  const tabs = isAdmin
+    ? [
+        { key: "statistik", label: "Statistik" },
+        { key: "prospek", label: "Prospek", count: store.prospects.length },
+        { key: "tiket", label: "Tiket", count: store.tickets.length },
+      ]
+    : [
+        { key: "kelola", label: "Kunjungan" },
+        { key: "prospek", label: "Prospek", count: store.prospects.length },
+        { key: "statistik", label: "Statistik" },
+        { key: "tiket", label: "Tiket", count: store.tickets.length },
+      ];
+
+  const sections = isAdmin
+    ? analysisSections
+    : [...manageSections, ...analysisSections];
+
   return (
     <div className="space-y-6">
       <Link
-        href={user.role === "ADMIN" ? "/data" : "/konter"}
+        href="/konter"
         className="inline-flex items-center gap-1 text-sm text-neutral-500 hover:underline"
       >
         <ArrowLeft className="h-3.5 w-3.5" />
@@ -148,170 +342,38 @@ export default async function StoreDetailPage({
         </div>
       </div>
 
-      {/* Di HP panel dipisah tab; desktop tetap 3 baris × 2 kolom */}
-      <DataTabs
-        tabs={[
-          { key: "kunjungan", label: "Kunjungan" },
-          { key: "prospek", label: "Prospek", count: store.prospects.length },
-          { key: "statistik", label: "Statistik" },
-          { key: "tiket", label: "Tiket", count: store.tickets.length },
-        ]}
-        sections={[
-          {
-            tab: "kunjungan",
-            node: (
-        <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-          <h2 className="mb-1 font-semibold">Catat Kunjungan / Update Funnel</h2>
-          <p className="mb-3 text-xs text-neutral-400">
-            Tandai tahap & respon toko atas barang yang ditawarkan
-          </p>
-          <VisitForm
-            storeId={store.id}
-            products={products.map((p) => ({ id: p.id, name: p.name }))}
-          />
-        </div>
-            ),
-          },
-          {
-            tab: "kunjungan",
-            node: (
-        <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-          <h2 className="mb-3 font-semibold">Akun Owner Toko</h2>
-          {store.ownerUser ? (
-            <p className="text-sm text-neutral-600">
-              Akun owner sudah aktif:{" "}
-              <span className="font-medium">{store.ownerUser.name}</span>
-            </p>
-          ) : (
-            <>
-              <p className="mb-2 text-sm text-neutral-500">
-                Buatkan akun owner toko saat owner setuju ambil barang.
+      {/* Di HP panel dipisah tab; desktop grid 2 kolom (pasangan seimbang) */}
+      <DataTabs tabs={tabs} sections={sections} />
+
+      {/* Kelola konter — buat admin, tugas sales di-collapse biar gak ganggu
+          fokus analisis. Sales lihat form ini langsung di tab Kunjungan. */}
+      {isAdmin && (
+        <details className="group rounded-2xl border border-neutral-200 bg-white shadow-sm">
+          <summary className="flex cursor-pointer items-center gap-2 p-5 font-semibold">
+            <ClipboardPen className="h-4 w-4 text-neutral-500" />
+            Kelola konter
+            <span className="text-xs font-normal text-neutral-400">
+              catat kunjungan · akun owner
+            </span>
+          </summary>
+          <div className="grid grid-cols-1 gap-5 border-t border-neutral-100 p-5 lg:grid-cols-2">
+            <div>
+              <h3 className="mb-1 font-medium">Catat Kunjungan / Update Funnel</h3>
+              <p className="mb-3 text-xs text-neutral-400">
+                Tandai tahap & respon toko atas barang yang ditawarkan
               </p>
-              <CreateOwnerForm storeId={store.id} />
-            </>
-          )}
-        </div>
-            ),
-          },
-          {
-            tab: "statistik",
-            node: (
-        <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-          <h2 className="mb-3 font-semibold">Grafik Penjualan</h2>
-          <SalesTrendChart sales={salesPoints} />
-        </div>
-            ),
-          },
-          {
-            tab: "statistik",
-            node: (
-        <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-          <h2 className="mb-4 font-semibold">Produk Terlaris</h2>
-          <TopProductsChart data={topProducts} />
-        </div>
-            ),
-          },
-          {
-            tab: "prospek",
-            node: (
-        <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-          <h2 className="mb-3 font-semibold">
-            Prospek ({store.prospects.length})
-          </h2>
-          <Paginated
-            perPage={5}
-            className="space-y-2"
-            empty={
-              <p className="text-sm text-neutral-400">Belum ada prospek.</p>
-            }
-            items={store.prospects.map((p) => {
-              const sold = soldByProduct.get(p.productId) ?? 0;
-              const remaining = Math.max(0, p.stock - sold);
-              return (
-                <Link
-                  key={p.id}
-                  href={`/prospects/${p.id}`}
-                  className="block rounded-lg border border-neutral-200 p-3 text-sm hover:border-neutral-400"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="min-w-0 truncate font-medium">
-                      {p.product.name}
-                    </span>
-                    <StageBadge stage={p.stage} />
-                  </div>
-                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-neutral-500">
-                    <span>
-                      Stok:{" "}
-                      <span className="font-semibold text-neutral-800">
-                        {p.stock}
-                      </span>
-                    </span>
-                    <span>
-                      Terjual:{" "}
-                      <span className="font-semibold text-neutral-800">
-                        {sold}
-                      </span>
-                    </span>
-                    <span>
-                      Sisa:{" "}
-                      <span className="font-semibold text-neutral-800">
-                        {remaining}
-                      </span>
-                    </span>
-                  </div>
-                </Link>
-              );
-            })}
-          />
-        </div>
-            ),
-          },
-          {
-            tab: "tiket",
-            node: (
-        <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-          <h2 className="mb-3 font-semibold">Tiket ({store.tickets.length})</h2>
-          <Paginated
-            perPage={4}
-            className="space-y-2"
-            empty={<p className="text-sm text-neutral-400">Belum ada tiket.</p>}
-            items={store.tickets.map((t) => {
-              const link = waLink(
-                store.ownerPhone,
-                `Halo${store.ownerName ? " " + store.ownerName : ""}, ini admin Ugorex. Terkait keluhan "${t.subject}" untuk ${store.name}. Boleh dibantu jelaskan lebih lanjut?`,
-              );
-              return (
-                <div
-                  key={t.id}
-                  className="rounded-lg border border-neutral-200 p-3 text-sm"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-medium">{t.subject}</span>
-                    <span className="shrink-0 rounded-full border border-neutral-300 px-2 py-0.5 text-xs text-neutral-600">
-                      {TICKET_LABEL[t.status] ?? t.status}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-xs text-neutral-500">{t.message}</p>
-                  {link && (
-                    <a
-                      href={link}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mt-2 inline-flex items-center gap-1 rounded-lg bg-green-600 px-2 py-1 text-xs font-semibold text-white hover:bg-green-700"
-                    >
-                      <MessageCircle className="h-3.5 w-3.5" />
-                      Balas via WhatsApp
-                    </a>
-                  )}
-                </div>
-              );
-            })}
-          />
-        </div>
-            ),
-          },
-        ]}
-      />
+              {visitForm}
+            </div>
+            <div>
+              <h3 className="mb-2 flex items-center gap-1.5 font-medium">
+                <UserPlus className="h-4 w-4 text-neutral-500" />
+                Akun Owner Toko
+              </h3>
+              {ownerBlock}
+            </div>
+          </div>
+        </details>
+      )}
     </div>
   );
 }
