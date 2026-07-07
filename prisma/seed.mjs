@@ -35,33 +35,66 @@ async function main() {
   // --- Product ---
   const antigores = await prisma.product.upsert({
     where: { id: "prod-antigores" },
-    update: { price: 25000 },
+    update: { price: 25000, code: "AG01" },
     create: {
       id: "prod-antigores",
       name: "Antigores Ugorex",
+      code: "AG01",
       description: "Pelindung layar anti gores premium",
       price: 25000,
+      centralStock: 100,
     },
   });
 
   await prisma.product.upsert({
     where: { id: "prod-tempered" },
-    update: { price: 30000 },
+    update: { price: 30000, code: "TG01" },
     create: {
       id: "prod-tempered",
       name: "Tempered Glass",
+      code: "TG01",
       description: "Pelindung layar kaca tempered",
       price: 30000,
+      centralStock: 100,
     },
   });
   await prisma.product.upsert({
     where: { id: "prod-softcase" },
-    update: { price: 15000 },
+    update: { price: 15000, code: "SC01" },
     create: {
       id: "prod-softcase",
       name: "Softcase",
+      code: "SC01",
       description: "Pelindung casing HP",
       price: 15000,
+      centralStock: 100,
+    },
+  });
+
+  // Dua barang beda nama tapi KODE SAMA (AA01) = kompatibel — buat nguji
+  // pencarian di POS: cari "AA01" / "oppo a98" / "xiaomi note 10" semua ketemu.
+  const tgOppo = await prisma.product.upsert({
+    where: { id: "prod-tg-oppo-a98" },
+    update: { price: 30000, code: "AA01" },
+    create: {
+      id: "prod-tg-oppo-a98",
+      name: "Tempered Glass Oppo A98",
+      code: "AA01",
+      description: "TG anti-spy — layar sama dg Xiaomi Note 10 (kode AA01)",
+      price: 30000,
+      centralStock: 100,
+    },
+  });
+  const tgXiaomi = await prisma.product.upsert({
+    where: { id: "prod-tg-xiaomi-note10" },
+    update: { price: 30000, code: "AA01" },
+    create: {
+      id: "prod-tg-xiaomi-note10",
+      name: "Tempered Glass Xiaomi Note 10",
+      code: "AA01",
+      description: "TG anti-spy — layar sama dg Oppo A98 (kode AA01)",
+      price: 30000,
+      centralStock: 100,
     },
   });
 
@@ -114,6 +147,22 @@ async function main() {
     where: { id: konterB.id },
     data: { ownerUserId: owner.id },
   });
+
+  // Stok dua barang kode AA01 di Konter B — biar owner bisa nyoba Catat
+  // Penjualan + pencarian kompatibel (kode sama) di POS.
+  for (const p of [tgOppo, tgXiaomi]) {
+    await prisma.prospect.upsert({
+      where: { storeId_productId: { storeId: konterB.id, productId: p.id } },
+      update: { stock: 10, stage: "ACTION" },
+      create: {
+        storeId: konterB.id,
+        productId: p.id,
+        stage: "ACTION",
+        stock: 10,
+        salesId: sales.id,
+      },
+    });
+  }
 
   // --- Prospect: Antigores @ Konter A (ditawarkan, ditolak di awareness) ---
   const prospectA = await prisma.prospect.upsert({
