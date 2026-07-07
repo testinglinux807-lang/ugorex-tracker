@@ -3,9 +3,11 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { updateRequestStatus } from "@/app/actions/requests";
+import { setTaskDone, deleteTask } from "@/app/actions/tasks";
 import { Paginated } from "@/components/Paginated";
 import { SubmitButton } from "@/components/SubmitButton";
 import { DeliveryReportForm } from "@/components/DeliveryReportForm";
+import { TaskAssignForm } from "@/components/TaskAssignForm";
 import { TugasTabs } from "@/components/TugasTabs";
 import { waLink } from "@/lib/wa";
 import {
@@ -16,6 +18,8 @@ import {
   MessageCircle,
   CheckCircle2,
   Store,
+  ClipboardList,
+  Trash2,
   type LucideIcon,
 } from "lucide-react";
 
@@ -95,6 +99,23 @@ export default async function TugasPage() {
     }),
   ]);
 
+  // Tugas manual dari admin: admin lihat semua, sales lihat miliknya.
+  const [tasks, salesList] = await Promise.all([
+    prisma.task.findMany({
+      where: isAdmin ? {} : { assignedToId: user.id },
+      include: { assignedTo: true, store: true },
+      orderBy: [{ status: "asc" }, { createdAt: "desc" }],
+    }),
+    isAdmin
+      ? prisma.user.findMany({
+          where: { role: "SALES" },
+          select: { id: true, name: true },
+          orderBy: { name: "asc" },
+        })
+      : Promise.resolve([] as { id: string; name: string }[]),
+  ]);
+  const pendingTasks = tasks.filter((t) => t.status !== "DONE");
+
   const kirim = orders.filter(
     (o) => o.status === "PENDING" && o.paymentStatus === "PAID",
   );
@@ -105,8 +126,111 @@ export default async function TugasPage() {
   const unvisited = stores.filter((s) => s._count.prospects === 0);
 
   const orderCount = kirim.length + diJalan.length + belumBayar.length;
+  const taskCount = pendingTasks.length;
   const totalTugas =
-    orderCount + freeRequests.length + tickets.length + unvisited.length;
+    orderCount +
+    freeRequests.length +
+    tickets.length +
+    unvisited.length +
+    (isAdmin ? 0 : taskCount);
+
+  const now = new Date();
+  const isOverdue = (t: (typeof tasks)[number]) =>
+    t.status !== "DONE" && t.dueDate != null && new Date(t.dueDate) < now;
+
+  // Baris tugas buat sales (aksi: tandai selesai / buka lagi)
+  const salesTaskRow = (t: (typeof tasks)[number]) => {
+    const done = t.status === "DONE";
+    return (
+      <div
+        key={t.id}
+        className="flex flex-wrap items-center justify-between gap-2 py-2.5"
+      >
+        <div className="min-w-0 flex-1">
+          <p className="flex items-center gap-1.5 text-sm font-medium">
+            {t.priority === "HIGH" && (
+              <span className="shrink-0 rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700">
+                Penting
+              </span>
+            )}
+            <span className={done ? "text-neutral-400 line-through" : ""}>
+              {t.title}
+            </span>
+          </p>
+          {t.note && (
+            <p className="truncate text-xs text-neutral-500">{t.note}</p>
+          )}
+          <p className="text-xs text-neutral-400">
+            {t.store && (
+              <Link
+                href={`/konter/${t.storeId}`}
+                className="hover:underline"
+              >
+                {t.store.name}
+              </Link>
+            )}
+            {t.store && t.dueDate ? " · " : ""}
+            {t.dueDate && (
+              <span className={isOverdue(t) ? "font-semibold text-red-600" : ""}>
+                Tenggat {fmtDate(t.dueDate)}
+              </span>
+            )}
+          </p>
+        </div>
+        <form action={setTaskDone.bind(null, t.id, !done)}>
+          <SubmitButton
+            pendingText="Memproses…"
+            className={`inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-60 ${
+              done
+                ? "border border-neutral-300 text-neutral-600 hover:bg-neutral-100"
+                : "bg-neutral-900 text-white hover:bg-neutral-800"
+            }`}
+          >
+            {done ? "Buka lagi" : "Selesai"}
+          </SubmitButton>
+        </form>
+      </div>
+    );
+  };
+
+  // Baris tugas buat admin (info penerima + hapus)
+  const adminTaskRow = (t: (typeof tasks)[number]) => {
+    const done = t.status === "DONE";
+    return (
+      <div
+        key={t.id}
+        className="flex flex-wrap items-center justify-between gap-2 py-2.5"
+      >
+        <div className="min-w-0 flex-1">
+          <p className="flex items-center gap-1.5 text-sm font-medium">
+            {t.priority === "HIGH" && (
+              <span className="shrink-0 rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700">
+                Penting
+              </span>
+            )}
+            <span className={done ? "text-neutral-400 line-through" : ""}>
+              {t.title}
+            </span>
+          </p>
+          <p className="truncate text-xs text-neutral-400">
+            {t.assignedTo.name}
+            {t.store ? ` · ${t.store.name}` : ""}
+            {t.dueDate ? ` · tenggat ${fmtDate(t.dueDate)}` : ""}
+            {` · ${done ? "selesai" : "belum"}`}
+          </p>
+        </div>
+        <form action={deleteTask.bind(null, t.id)}>
+          <SubmitButton
+            pendingText="Menghapus…"
+            title="Hapus tugas"
+            className="flex h-7 w-7 items-center justify-center rounded-lg border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-60"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </SubmitButton>
+        </form>
+      </div>
+    );
+  };
 
   const orderInfo = (o: (typeof orders)[number]) => (
     <Link href={`/order?focus=${o.id}`} className="min-w-0 flex-1 hover:underline">
@@ -116,6 +240,50 @@ export default async function TugasPage() {
       </span>
     </Link>
   );
+
+  // Tab penugasan: admin = form beri tugas + daftar; sales = tugas dari admin
+  const penugasanNode = isAdmin ? (
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-neutral-200 bg-white p-5">
+        <h2 className="mb-3 flex items-center gap-2 font-semibold">
+          <ClipboardList className="h-4 w-4 text-neutral-500" />
+          Beri Tugas ke Sales
+        </h2>
+        <TaskAssignForm
+          salesList={salesList}
+          stores={stores.map((s) => ({ id: s.id, name: s.name }))}
+        />
+      </div>
+      <div className="rounded-2xl border border-neutral-200 bg-white p-5">
+        <h2 className="mb-3 font-semibold">Tugas Aktif ({taskCount})</h2>
+        {tasks.length === 0 ? (
+          <p className="text-sm text-neutral-400">Belum ada tugas.</p>
+        ) : (
+          <Paginated
+            perPage={6}
+            className="divide-y divide-neutral-100"
+            items={tasks.map(adminTaskRow)}
+          />
+        )}
+      </div>
+    </div>
+  ) : tasks.length === 0 ? (
+    <EmptyCard text="Belum ada tugas dari admin." />
+  ) : (
+    <div className="rounded-2xl border border-neutral-200 bg-white p-5">
+      <Paginated
+        perPage={6}
+        className="divide-y divide-neutral-100"
+        items={tasks.map(salesTaskRow)}
+      />
+    </div>
+  );
+
+  const penugasanTab = {
+    key: "penugasan",
+    label: isAdmin ? "Tugas Sales" : "Dari Admin",
+    count: taskCount,
+  };
 
   return (
     <div className="space-y-4">
@@ -130,12 +298,14 @@ export default async function TugasPage() {
 
       <TugasTabs
         tabs={[
+          penugasanTab,
           { key: "orderan", label: "Orderan Masuk", count: orderCount },
           { key: "request", label: "Request", count: freeRequests.length },
           { key: "keluhan", label: "Keluhan", count: tickets.length },
           { key: "kunjungan", label: "Kunjungan", count: unvisited.length },
         ]}
         sections={[
+          { tab: "penugasan", node: penugasanNode },
           {
             tab: "orderan",
             node:

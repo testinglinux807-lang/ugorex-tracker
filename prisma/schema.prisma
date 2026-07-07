@@ -39,6 +39,10 @@ model User {
   createdRequests Request[] @relation("RequestCreator")
   pushSubscriptions PushSubscription[]
   notifications     Notification[]
+
+  // Tugas manual dari admin
+  assignedTasks Task[] @relation("TaskAssignee")
+  createdTasks  Task[] @relation("TaskCreator")
 }
 
 // Langganan Web Push per perangkat/browser (notifikasi order untuk admin/sales)
@@ -105,6 +109,7 @@ model Store {
   transactions Sale[]
   tickets      Ticket[]
   requests     Request[]
+  tasks        Task[]
 }
 
 // Barang yang dijual, mis. Antigores
@@ -255,6 +260,34 @@ model Request {
   deliveredBy   String?   // nama pengantar (snapshot, bukan relasi)
 
   items RequestItem[]
+}
+
+// Tugas manual dari admin ke sales — muncul di tab Tugas milik sales
+model Task {
+  id          String    @id @default(cuid())
+  title       String
+  note        String? // catatan/detail dari admin
+  priority    String    @default("NORMAL") // HIGH | NORMAL
+  dueDate     DateTime? // tenggat (opsional)
+  status      String    @default("PENDING") // PENDING | DONE
+  completedAt DateTime?
+
+  // Sales yang ditugaskan
+  assignedToId String
+  assignedTo   User   @relation("TaskAssignee", fields: [assignedToId], references: [id], onDelete: Cascade)
+
+  // Admin pembuat tugas
+  createdById String?
+  createdBy   User?   @relation("TaskCreator", fields: [createdById], references: [id])
+
+  // Konter terkait (opsional)
+  storeId String?
+  store   Store?  @relation(fields: [storeId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([assignedToId, status])
 }
 
 // Barang yang diminta dalam satu request restok (checkout dari owner)
