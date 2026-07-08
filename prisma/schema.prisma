@@ -43,6 +43,9 @@ model User {
   // Tugas manual dari admin
   assignedTasks Task[] @relation("TaskAssignee")
   createdTasks  Task[] @relation("TaskCreator")
+
+  // Catatan keuangan yang dibuat (admin)
+  financeEntries FinanceEntry[] @relation("FinanceCreator")
 }
 
 // Langganan Web Push per perangkat/browser (notifikasi order untuk admin/sales)
@@ -221,6 +224,24 @@ model StockAdjustment {
 model Config {
   key   String @id
   value String
+}
+
+// Pencatatan keuangan manual (admin, menu Keuangan). Buku kas sederhana:
+// type INCOME = pemasukan (mis. profit orderan masuk),
+// type EXPENSE = pengeluaran (mis. beli barang dari China, ongkir, gaji).
+model FinanceEntry {
+  id       String   @id @default(cuid())
+  type     String // INCOME | EXPENSE
+  amount   Int // jumlah Rupiah (selalu positif)
+  category String? // kategori bebas, mis. "Beli barang", "Ongkir"
+  note     String // keterangan transaksi
+  date     DateTime @default(now()) // tanggal transaksi (bisa diatur admin)
+
+  createdById String?
+  createdBy   User?   @relation("FinanceCreator", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+
+  @@index([type, date])
 }
 
 // Permintaan dari owner/sales (misal: minta stok, minta dikunjungi)

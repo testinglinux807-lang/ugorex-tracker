@@ -68,3 +68,18 @@ export const ROLE_LABEL: Record<Role, string> = {
   SALES: "Sales",
   OWNER: "Owner Toko",
 };
+
+// Pencatatan keuangan (menu Keuangan, admin)
+export const FINANCE_TYPES = ["INCOME", "EXPENSE"] as const;
+export type FinanceType = (typeof FINANCE_TYPES)[number];
+
+export const FINANCE_TYPE_LABEL: Record<FinanceType, string> = {
+  INCOME: "Pemasukan",
+  EXPENSE: "Pengeluaran",
+};
+
+// Saran kategori (dipakai sebagai datalist input; admin tetap bebas ketik)
+export const FINANCE_CATEGORIES: Record<FinanceType, string[]> = {
+  INCOME: ["Profit orderan", "Penjualan POS", "Modal masuk", "Lainnya"],
+  EXPENSE: ["Beli barang", "Ongkir / impor", "Gaji", "Operasional", "Lainnya"],
+};
