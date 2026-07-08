@@ -24,7 +24,17 @@ export function DeliveryReportForm({ orderId }: { orderId: string }) {
     if (!file) return;
     setPickError(null);
     try {
-      setPhoto(await compressToDataUrl(file, 800));
+      // Bukti serah terima: resolusi + kualitas ditekan (640px, WebP 0.6)
+      // supaya ukuran data URL di DB kecil, lalu cap timestamp saat difoto
+      // biar terlihat real (bukan foto lama).
+      const stamp = new Date().toLocaleString("id-ID", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      setPhoto(await compressToDataUrl(file, 640, { quality: 0.6, stamp }));
     } catch {
       setPickError("Foto gagal diproses, coba pilih foto lain.");
     }

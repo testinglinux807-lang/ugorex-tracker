@@ -33,7 +33,11 @@ export default async function StokPage() {
 
   // Sisa stok per barang = stok dikasih sales - total terjual
   const stockByProduct = new Map<string, number>();
-  for (const p of prospects) stockByProduct.set(p.productId, p.stock);
+  const priceByProduct = new Map<string, number>();
+  for (const p of prospects) {
+    stockByProduct.set(p.productId, p.stock);
+    if (p.price != null) priceByProduct.set(p.productId, p.price);
+  }
   const soldByProduct = new Map<string, number>();
   for (const s of sales) {
     if (s.productId)
@@ -45,6 +49,10 @@ export default async function StokPage() {
   const productsWithStock = products.map((p) => ({
     id: p.id,
     name: p.name,
+    // Harga jual: pakai harga owner kalau sudah disetel, kalau belum harga
+    // katalog. isCustomPrice menandai apakah owner sudah menetapkannya sendiri.
+    price: priceByProduct.get(p.id) ?? p.price,
+    isCustomPrice: priceByProduct.has(p.id),
     remaining: Math.max(
       0,
       (stockByProduct.get(p.id) ?? 0) - (soldByProduct.get(p.id) ?? 0),

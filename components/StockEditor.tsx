@@ -1,28 +1,43 @@
 "use client";
 
 import { useActionState, useMemo, useState } from "react";
-import { adjustStock } from "@/app/actions/pos";
+import { adjustStock, setOwnerPrice } from "@/app/actions/pos";
 import { Pencil, X, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { Spinner } from "@/components/SubmitButton";
 
 const PER_PAGE = 15;
 
-function StockRow({
-  product,
-}: {
-  product: { id: string; name: string; remaining: number };
-}) {
+const rupiah = (n: number) => "Rp" + n.toLocaleString("id-ID");
+
+type StockProduct = {
+  id: string;
+  name: string;
+  remaining: number;
+  price: number;
+  isCustomPrice: boolean;
+};
+
+function StockRow({ product }: { product: StockProduct }) {
   const [editing, setEditing] = useState(false);
-  const [state, formAction, pending] = useActionState(
+  const [stockState, stockAction, stockPending] = useActionState(
     async (_prev: unknown, fd: FormData) => (await adjustStock(fd)) ?? null,
     null,
   );
+  const [priceState, priceAction, pricePending] = useActionState(
+    async (_prev: unknown, fd: FormData) => (await setOwnerPrice(fd)) ?? null,
+    null,
+  );
 
-  // Tutup form setelah koreksi tersimpan (reset saat render, tanpa effect)
-  const [seenState, setSeenState] = useState(state);
-  if (state !== seenState) {
-    setSeenState(state);
-    if (state?.ok) setEditing(false);
+  // Tutup panel setelah harga / koreksi tersimpan (reset saat render)
+  const [seenStock, setSeenStock] = useState(stockState);
+  if (stockState !== seenStock) {
+    setSeenStock(stockState);
+    if (stockState?.ok) setEditing(false);
+  }
+  const [seenPrice, setSeenPrice] = useState(priceState);
+  if (priceState !== seenPrice) {
+    setSeenPrice(priceState);
+    if (priceState?.ok) setEditing(false);
   }
 
   return (
@@ -31,7 +46,7 @@ function StockRow({
         <div className="min-w-0 flex-1">
           {/* Nama penuh, boleh 2 baris — tidak dipotong */}
           <p className="text-sm font-medium leading-snug">{product.name}</p>
-          <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs">
+          <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
             {product.remaining > 0 && product.remaining <= 5 && (
               <span className="rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
                 Menipis
@@ -51,13 +66,22 @@ function StockRow({
                 {product.remaining}
               </span>
             </span>
+            <span className="text-neutral-500">
+              Harga:{" "}
+              <span className="font-semibold text-neutral-900">
+                {rupiah(product.price)}
+              </span>
+              {!product.isCustomPrice && (
+                <span className="text-neutral-400"> (default)</span>
+              )}
+            </span>
           </p>
         </div>
         <button
           type="button"
           onClick={() => setEditing((v) => !v)}
           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-neutral-300 text-neutral-600 hover:bg-neutral-100"
-          title={editing ? "Batal" : "Koreksi sisa stok"}
+          title={editing ? "Batal" : "Atur harga / koreksi stok"}
         >
           {editing ? (
             <X className="h-3.5 w-3.5" />
@@ -68,45 +92,85 @@ function StockRow({
       </div>
 
       {editing && (
-        <form action={formAction} className="mt-2 space-y-1.5">
-          <input type="hidden" name="productId" value={product.id} />
-          <div className="flex gap-1.5">
-            <input
-              name="remaining"
-              type="number"
-              min={0}
-              defaultValue={product.remaining}
-              required
-              aria-label={`Sisa stok ${product.name}`}
-              className="w-24 rounded-lg border border-neutral-300 px-2 py-1.5 text-sm"
-            />
-            <input
-              name="note"
-              placeholder="Alasan (mis. stok fisik beda)"
-              className="min-w-0 flex-1 rounded-lg border border-neutral-300 px-2 py-1.5 text-sm"
-            />
-            <button
-              type="submit"
-              disabled={pending}
-              className="shrink-0 rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-neutral-800 disabled:opacity-60"
-            >
-              {pending ? <Spinner className="h-3 w-3" /> : "Simpan"}
-            </button>
-          </div>
-          {state?.error && (
-            <p className="text-xs font-medium text-red-600">{state.error}</p>
-          )}
-        </form>
+        <div className="mt-2 space-y-2.5">
+          {/* Harga jual — dipakai prefill saat catat penjualan di POS */}
+          <form action={priceAction} className="space-y-1">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
+              Harga jual
+            </p>
+            <input type="hidden" name="productId" value={product.id} />
+            <div className="flex gap-1.5">
+              <div className="relative w-32 shrink-0">
+                <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-neutral-400">
+                  Rp
+                </span>
+                <input
+                  name="price"
+                  type="number"
+                  min={0}
+                  defaultValue={product.price}
+                  required
+                  aria-label={`Harga jual ${product.name}`}
+                  className="w-full rounded-lg border border-neutral-300 py-1.5 pl-7 pr-2 text-sm"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={pricePending}
+                className="shrink-0 rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-neutral-900 hover:opacity-90 disabled:opacity-60"
+              >
+                {pricePending ? <Spinner className="h-3 w-3" /> : "Simpan Harga"}
+              </button>
+            </div>
+            {priceState?.error && (
+              <p className="text-xs font-medium text-red-600">
+                {priceState.error}
+              </p>
+            )}
+          </form>
+
+          {/* Koreksi sisa stok fisik */}
+          <form action={stockAction} className="space-y-1">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
+              Koreksi sisa stok
+            </p>
+            <input type="hidden" name="productId" value={product.id} />
+            <div className="flex gap-1.5">
+              <input
+                name="remaining"
+                type="number"
+                min={0}
+                defaultValue={product.remaining}
+                required
+                aria-label={`Sisa stok ${product.name}`}
+                className="w-24 rounded-lg border border-neutral-300 px-2 py-1.5 text-sm"
+              />
+              <input
+                name="note"
+                placeholder="Alasan (mis. stok fisik beda)"
+                className="min-w-0 flex-1 rounded-lg border border-neutral-300 px-2 py-1.5 text-sm"
+              />
+              <button
+                type="submit"
+                disabled={stockPending}
+                className="shrink-0 rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-neutral-800 disabled:opacity-60"
+              >
+                {stockPending ? <Spinner className="h-3 w-3" /> : "Simpan"}
+              </button>
+            </div>
+            {stockState?.error && (
+              <p className="text-xs font-medium text-red-600">
+                {stockState.error}
+              </p>
+            )}
+          </form>
+        </div>
       )}
     </div>
   );
 }
 
-export function StockEditor({
-  products,
-}: {
-  products: { id: string; name: string; remaining: number }[];
-}) {
+export function StockEditor({ products }: { products: StockProduct[] }) {
   const [q, setQ] = useState("");
   // Default: barang yang ADA di toko saja — daftar katalog lengkap (ratusan
   // barang bersisa 0) cuma bikin owner mengubek pagination.

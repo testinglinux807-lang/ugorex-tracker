@@ -144,6 +144,10 @@ model Prospect {
   // Total stok barang yang sudah dikasih sales ke konter ini
   stock     Int      @default(0)
 
+  // Harga jual barang ini yang ditetapkan owner untuk tokonya (Rupiah).
+  // null = pakai harga default katalog (Product.price). Dipakai prefill POS.
+  price     Int?
+
   salesId   String?
   sales     User?    @relation("ProspectSales", fields: [salesId], references: [id])
 

@@ -525,6 +525,10 @@ export async function completeOrderWithReport(id: string, formData: FormData) {
     return { error: "Foto tidak valid, coba pilih ulang." };
   }
 
+  // Snapshot pengantar + rolenya, biar jelas siapa yang input bukti (admin
+  // atau sales, sekalian namanya). Hanya ADMIN/SALES yang lolos cek di atas.
+  const roleLabel = user.role === "ADMIN" ? "Admin" : "Sales";
+
   const ops: Prisma.PrismaPromise<unknown>[] = [
     prisma.request.update({
       where: { id },
@@ -533,7 +537,7 @@ export async function completeOrderWithReport(id: string, formData: FormData) {
         deliveryPhoto: photo || null,
         deliveryNote: note || null,
         deliveredAt: new Date(),
-        deliveredBy: user.name,
+        deliveredBy: `${user.name} (${roleLabel})`,
       },
     }),
   ];

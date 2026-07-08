@@ -6,15 +6,40 @@ import { updateProductImage } from "@/app/actions/tracker";
 import { ImagePlus, X } from "lucide-react";
 import { Spinner } from "@/components/SubmitButton";
 
-// Kompres foto di browser (maks 512px, WebP) supaya muat disimpan sebagai
-// data URL di database tanpa perlu layanan storage terpisah.
+// Cap teks (mis. timestamp) di pojok kiri-bawah foto — bukti serah terima
+// jadi terlihat kapan diambil & lebih sulit dipalsukan pakai foto lama.
+function drawStamp(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  text: string,
+) {
+  const pad = Math.max(4, Math.round(w * 0.02));
+  const fontSize = Math.max(11, Math.round(w * 0.038));
+  ctx.font = `600 ${fontSize}px system-ui, -apple-system, sans-serif`;
+  ctx.textBaseline = "middle";
+  const textW = ctx.measureText(text).width;
+  const boxH = fontSize + pad * 2;
+  const boxW = Math.min(w, textW + pad * 2);
+  ctx.fillStyle = "rgba(0,0,0,0.55)";
+  ctx.fillRect(0, h - boxH, boxW, boxH);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(text, pad, h - boxH / 2 + 1);
+}
+
+// Kompres foto di browser (WebP) supaya muat disimpan sebagai data URL di
+// database tanpa perlu layanan storage terpisah.
 // Diekspor: dipakai juga form report pengiriman order.
+// opts.quality: kualitas WebP (default 0.8). opts.stamp: teks yang dibakar
+// ke foto (mis. timestamp bukti serah terima).
 // Pakai elemen <img> (bukan createImageBitmap) untuk decode — createImageBitmap
 // sering gagal diam-diam di Safari/iOS untuk foto dari kamera.
 export async function compressToDataUrl(
   file: File,
   maxSize = 512,
+  opts: { quality?: number; stamp?: string } = {},
 ): Promise<string> {
+  const { quality = 0.8, stamp } = opts;
   const url = URL.createObjectURL(file);
   try {
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
@@ -33,8 +58,10 @@ export async function compressToDataUrl(
     const canvas = document.createElement("canvas");
     canvas.width = w;
     canvas.height = h;
-    canvas.getContext("2d")!.drawImage(img, 0, 0, w, h);
-    return canvas.toDataURL("image/webp", 0.8);
+    const ctx = canvas.getContext("2d")!;
+    ctx.drawImage(img, 0, 0, w, h);
+    if (stamp) drawStamp(ctx, w, h, stamp);
+    return canvas.toDataURL("image/webp", quality);
   } finally {
     URL.revokeObjectURL(url);
   }
