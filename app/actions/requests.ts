@@ -246,16 +246,19 @@ export async function createRestockRequest(formData: FormData) {
 // Dipanggil client setelah owner bayar / saat polling instruksi pembayaran:
 // verifikasi status ke Midtrans (jangan percaya client), tandai PAID, lalu
 // kirim notif "lunas". Idempoten (updateMany guard) — aman dipanggil berkali.
-export async function syncOrderPayment(requestId: string) {
+// Return true kalau order ini (sudah / jadi) LUNAS — dipakai watcher &
+// polling untuk tahu kapan perlu router.refresh(), tanpa refresh sia-sia
+// (yang bisa memicu loop).
+export async function syncOrderPayment(requestId: string): Promise<boolean> {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  if (user.role !== "OWNER" || !user.ownedStore) return;
+  if (user.role !== "OWNER" || !user.ownedStore) return false;
 
   const req = await prisma.request.findUnique({ where: { id: requestId } });
-  if (!req || req.storeId !== user.ownedStore.id) return;
-  if (req.paymentStatus === "PAID") return;
+  if (!req || req.storeId !== user.ownedStore.id) return false;
+  if (req.paymentStatus === "PAID") return true;
 
-  if (!(await isTransactionPaid(req.txnId ?? req.id))) return;
+  if (!(await isTransactionPaid(req.txnId ?? req.id))) return false;
 
   const res = await prisma.request.updateMany({
     where: { id: requestId, paymentStatus: { not: "PAID" } },
@@ -265,6 +268,7 @@ export async function syncOrderPayment(requestId: string) {
     after(() => notifyOrder(requestId, "paid"));
     revalidateOrderPaths(req.storeId);
   }
+  return true;
 }
 
 // Cek ringan status lunas — dipakai polling di panel instruksi pembayaran

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { syncOrderPayment, getOrderPaidStatus } from "@/app/actions/requests";
 import { PAYMENT_METHOD_LABEL } from "@/lib/payment-fee";
+import { Spinner } from "@/components/SubmitButton";
 import { Copy, Check, X, PackageCheck } from "lucide-react";
 
 const rupiah = (n: number) =>
@@ -33,13 +34,35 @@ export type PaymentInfo = {
 export function PaymentInstructionPanel({
   info,
   onClose,
+  onPaid,
 }: {
   info: PaymentInfo;
   onClose: () => void;
+  onPaid?: () => void;
 }) {
   const router = useRouter();
   const [copied, setCopied] = useState(false);
   const [paid, setPaid] = useState(false);
+  // QR di-fetch dari server Midtrans — sampai gambarnya ter-render, tutupi
+  // area QR dengan animasi loading supaya tak terlihat kotak kosong sekejap.
+  // qrMinTime: jaga spinner tampil minimal sesaat, karena kalau QR sudah
+  // ter-cache onLoad bisa memicu instan (sebelum spinner sempat terlihat).
+  const [qrLoaded, setQrLoaded] = useState(false);
+  const [qrMinTime, setQrMinTime] = useState(false);
+  // verifying: pembayaran baru terdeteksi lunas & halaman sedang di-refresh —
+  // tutup QR dengan spinner ("memproses…") sebelum berganti ke kartu sukses.
+  const [verifying, setVerifying] = useState(false);
+  const paidTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!info.qrUrl) return;
+    const t = setTimeout(() => setQrMinTime(true), 600);
+    return () => clearTimeout(t);
+  }, [info.qrUrl]);
+
+  // Spinner menutup QR saat: gambar QR belum siap, ATAU pembayaran sudah masuk
+  // dan sedang diproses (transisi ke status lunas).
+  const showQrSpinner = !!info.qrUrl && (verifying || !(qrLoaded && qrMinTime));
   const attempts = useRef(0);
   const cardTriggered = useRef(false);
 
@@ -50,15 +73,26 @@ export function PaymentInstructionPanel({
       await syncOrderPayment(info.requestId);
       const isPaid = await getOrderPaidStatus(info.requestId);
       if (isPaid) {
-        setPaid(true);
+        onPaid?.();
         clearInterval(interval);
+        // Tampilkan spinner di QR sesaat ("memproses"), baru munculkan kartu
+        // sukses — supaya ada transisi loading yang terasa saat lunas.
+        setVerifying(true);
         router.refresh();
+        paidTimer.current = setTimeout(() => setPaid(true), 900);
       } else if (attempts.current >= 75) {
         clearInterval(interval); // ~5 menit (75 x 4 detik)
       }
     }, 4000);
     return () => clearInterval(interval);
-  }, [info.requestId, info.paymentMethod, paid, router]);
+  }, [info.requestId, info.paymentMethod, paid, router, onPaid]);
+
+  useEffect(
+    () => () => {
+      if (paidTimer.current) clearTimeout(paidTimer.current);
+    },
+    [],
+  );
 
   // Kartu: picu challenge 3DS sekali saat panel muncul
   useEffect(() => {
@@ -74,11 +108,12 @@ export function PaymentInstructionPanel({
       onSuccess: () => {
         syncOrderPayment(info.requestId).then(() => {
           setPaid(true);
+          onPaid?.();
           router.refresh();
         });
       },
     });
-  }, [info.paymentMethod, info.redirectUrl, info.requestId, router]);
+  }, [info.paymentMethod, info.redirectUrl, info.requestId, router, onPaid]);
 
   function copyVa() {
     if (!info.vaNumber) return;
@@ -158,12 +193,21 @@ export function PaymentInstructionPanel({
 
             {info.qrUrl && (
               <div className="flex flex-col items-center gap-2 rounded-lg bg-neutral-100 p-3">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={info.qrUrl}
-                  alt="QR pembayaran"
-                  className="h-40 w-40 rounded-lg bg-white object-contain"
-                />
+                <div className="relative h-40 w-40">
+                  {showQrSpinner && (
+                    <div className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-white">
+                      <Spinner className="h-7 w-7 text-neutral-400" />
+                    </div>
+                  )}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={info.qrUrl}
+                    alt="QR pembayaran"
+                    onLoad={() => setQrLoaded(true)}
+                    onError={() => setQrLoaded(true)}
+                    className="h-40 w-40 rounded-lg bg-white object-contain"
+                  />
+                </div>
                 <p className="text-center text-xs text-neutral-500">
                   Scan pakai aplikasi{" "}
                   {info.paymentMethod === "GOPAY"
@@ -190,7 +234,9 @@ export function PaymentInstructionPanel({
             )}
 
             <p className="text-center text-xs text-neutral-400">
-              Menunggu pembayaran — halaman ini update otomatis begitu lunas.
+              {verifying
+                ? "Pembayaran diterima, memproses…"
+                : "Menunggu pembayaran — halaman ini update otomatis begitu lunas."}
             </p>
           </>
         )}

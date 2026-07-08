@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getOrderPaymentInfo } from "@/app/actions/requests";
 import { CreditCard } from "lucide-react";
@@ -9,6 +9,11 @@ import {
   PaymentInstructionPanel,
   type PaymentInfo,
 } from "@/components/PaymentInstructionPanel";
+
+// Order yang panel pembayarannya sedang terbuka — disimpan supaya kalau tab
+// ke-unload (mis. tap deeplink GoPay lalu balik dari app Gojek), panelnya
+// bisa dibuka lagi otomatis & polling lanjut. Dibersihkan saat lunas/ditutup.
+const PENDING_PAY_KEY = "ugorex_pending_pay";
 
 // Tombol "Bayar" di kartu riwayat order owner — untuk order UNPAID (selain
 // CASH) yang belum diselesaikan. Membuka ulang instruksi pembayaran yang
@@ -25,6 +30,10 @@ export function PayOrderButton({
   const [info, setInfo] = useState<PaymentInfo | null>(null);
   const router = useRouter();
 
+  const clearPending = useCallback(() => {
+    if (typeof window !== "undefined") localStorage.removeItem(PENDING_PAY_KEY);
+  }, []);
+
   async function handlePay() {
     setPending(true);
     setError(null);
@@ -36,9 +45,14 @@ export function PayOrderButton({
     }
     // Ternyata sudah lunas di Midtrans — server sudah menandai PAID.
     if ("paid" in res) {
+      clearPending();
       router.refresh();
       return;
     }
+    // Tandai order ini "sedang dibayar" sebelum panel muncul (owner mungkin
+    // langsung tap deeplink GoPay yang meng-unload tab ini).
+    if (typeof window !== "undefined")
+      localStorage.setItem(PENDING_PAY_KEY, orderId);
     setInfo({
       requestId: orderId,
       paymentMethod: res.paymentMethod,
@@ -49,6 +63,22 @@ export function PayOrderButton({
       deeplink: res.deeplink,
       paymentExpiry: res.paymentExpiry,
     });
+  }
+
+  // Buka lagi panel otomatis kalau order inilah yang tadi sedang dibayar —
+  // menangani kasus tab remount penuh setelah balik dari app pembayaran.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (localStorage.getItem(PENDING_PAY_KEY) !== orderId) return;
+    // Defer keluar dari body effect supaya tak memicu setState sinkron.
+    const t = setTimeout(() => handlePay(), 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function handleClose() {
+    clearPending();
+    setInfo(null);
   }
 
   return (
@@ -74,7 +104,11 @@ export function PayOrderButton({
         )}
       </button>
       {info && (
-        <PaymentInstructionPanel info={info} onClose={() => setInfo(null)} />
+        <PaymentInstructionPanel
+          info={info}
+          onClose={handleClose}
+          onPaid={clearPending}
+        />
       )}
     </>
   );

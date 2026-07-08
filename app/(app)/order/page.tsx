@@ -6,6 +6,7 @@ import { isTransactionPaid } from "@/lib/midtrans";
 import { notifyOrder } from "@/lib/wa-notify";
 import { OrderCard } from "@/components/OrderCard";
 import { OrderList } from "@/components/OrderList";
+import { OrderPaymentWatcher } from "@/components/OrderPaymentWatcher";
 import { OrderTabs } from "@/components/OrderTabs";
 import { RestockCheckout } from "@/components/RequestForm";
 import { deliveryPhotoSrc, productImageSrc } from "@/lib/product-image";
@@ -89,6 +90,21 @@ export default async function OrderPage({
         _sum: { qty: true },
       }),
     ]);
+    // Order yang masih perlu dibayar online — dipantau watcher supaya status
+    // ikut update begitu owner balik dari app pembayaran (mis. GoPay). Batasi
+    // ke 5 terbaru (orders sudah createdAt desc) biar tak menembak Midtrans
+    // untuk order lama yang telanjur kedaluwarsa.
+    const pendingPayIds = orders
+      .filter(
+        (r) =>
+          r.paymentStatus !== "PAID" &&
+          r.paymentMethod &&
+          r.paymentMethod !== "CASH" &&
+          r.status !== "COMPLETED",
+      )
+      .slice(0, 5)
+      .map((r) => r.id);
+
     const stockBy = new Map(prospects.map((p) => [p.productId, p.stock]));
     const soldBy = new Map(sold.map((s) => [s.productId, s._sum.qty ?? 0]));
     const ownerProducts = products.map((p) => ({
@@ -102,6 +118,7 @@ export default async function OrderPage({
 
     return (
       <div className="space-y-5">
+        <OrderPaymentWatcher pendingIds={pendingPayIds} />
         <div>
           <h1 className="text-2xl font-bold">Order</h1>
           <p className="text-sm text-neutral-500">
