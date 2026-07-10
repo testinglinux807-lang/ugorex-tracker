@@ -5,7 +5,8 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 
-// Admin memberi tugas manual ke seorang sales — muncul di tab Tugas sales.
+// Admin memberi tugas manual ke satu / banyak sales sekaligus — muncul di
+// tab Tugas masing-masing sales (satu baris Task per sales).
 export async function createTask(formData: FormData) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
@@ -13,7 +14,14 @@ export async function createTask(formData: FormData) {
     return { error: "Hanya admin yang bisa memberi tugas." };
   }
 
-  const assignedToId = String(formData.get("assignedToId") ?? "").trim();
+  const ids = [
+    ...new Set(
+      formData
+        .getAll("assignedToIds")
+        .map((v) => String(v).trim())
+        .filter(Boolean),
+    ),
+  ];
   const title = String(formData.get("title") ?? "").trim();
   const note = String(formData.get("note") ?? "").trim();
   const priority =
@@ -21,23 +29,22 @@ export async function createTask(formData: FormData) {
   const storeId = String(formData.get("storeId") ?? "").trim() || null;
   const dueRaw = String(formData.get("dueDate") ?? "").trim();
 
-  if (!assignedToId || !title) {
-    return { error: "Sales tujuan & judul tugas wajib diisi." };
+  if (ids.length === 0 || !title) {
+    return { error: "Pilih minimal satu sales & isi judul tugas." };
   }
 
-  // Pastikan tujuan memang akun sales
-  const sales = await prisma.user.findUnique({
-    where: { id: assignedToId },
-    select: { role: true },
+  // Pastikan semua tujuan memang akun sales
+  const salesCount = await prisma.user.count({
+    where: { id: { in: ids }, role: "SALES" },
   });
-  if (!sales || sales.role !== "SALES") {
+  if (salesCount !== ids.length) {
     return { error: "Tujuan tugas harus akun sales." };
   }
 
   const due = dueRaw ? new Date(dueRaw) : null;
 
-  await prisma.task.create({
-    data: {
+  await prisma.task.createMany({
+    data: ids.map((assignedToId) => ({
       title,
       note: note || null,
       priority,
@@ -45,10 +52,10 @@ export async function createTask(formData: FormData) {
       storeId,
       assignedToId,
       createdById: user.id,
-    },
+    })),
   });
   revalidatePath("/tugas");
-  return { ok: true };
+  return { ok: true, count: ids.length };
 }
 
 // Sales yang ditugaskan (atau admin) menandai tugas selesai / buka lagi.

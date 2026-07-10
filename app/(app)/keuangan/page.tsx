@@ -3,8 +3,14 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { rupiah } from "@/lib/format";
 import { wibMonthStart } from "@/lib/date";
+import { syncOrderIncome } from "@/lib/finance-sync";
 import { FinanceManager, type FinanceRow } from "@/components/FinanceManager";
-import { ArrowDownLeft, ArrowUpRight, Wallet } from "lucide-react";
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  FileSpreadsheet,
+  Wallet,
+} from "lucide-react";
 
 function SummaryCard({
   label,
@@ -56,6 +62,10 @@ export default async function KeuanganPage({
   if (!user) redirect("/login");
   if (user.role !== "ADMIN") redirect("/beranda");
 
+  // Order lunas yang belum tercatat → masuk buku kas sebagai pemasukan
+  // otomatis, sebelum angka-angka di bawah dihitung.
+  await syncOrderIncome();
+
   const monthStart = wibMonthStart();
 
   const total = await prisma.financeEntry.count();
@@ -101,6 +111,7 @@ export default async function KeuanganPage({
     note: e.note,
     date: e.date.toISOString(),
     createdByName: e.createdBy?.name ?? null,
+    auto: e.sourceId !== null,
   }));
 
   return (
@@ -108,8 +119,8 @@ export default async function KeuanganPage({
       <div>
         <h1 className="text-2xl font-bold">Keuangan</h1>
         <p className="text-sm text-neutral-500">
-          Buku kas — catat pemasukan (profit orderan) & pengeluaran (beli
-          barang, ongkir, gaji)
+          Buku kas — pemasukan dari order lunas tercatat otomatis; catat
+          manual pengeluaran (beli barang, ongkir, gaji) & pemasukan lain
         </p>
       </div>
 
@@ -137,6 +148,28 @@ export default async function KeuanganPage({
           icon={Wallet}
           className="col-span-2 sm:col-span-1"
         />
+      </div>
+
+      {/* Laporan keuangan lengkap di-export ke file (bukan di web) —
+          Arus Kas 12 bulan, Laba Rugi, Neraca, dan seluruh buku kas. */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-neutral-200 bg-white p-4">
+        <div className="min-w-0">
+          <p className="flex items-center gap-2 text-sm font-semibold">
+            <FileSpreadsheet className="h-4 w-4 text-neutral-500" />
+            Laporan Keuangan (Excel/CSV)
+          </p>
+          <p className="mt-0.5 text-xs text-neutral-400">
+            Arus kas 12 bulan · laba rugi bulan ini &amp; lalu · neraca ·
+            seluruh buku kas — langsung terbuka rapi di Excel/Sheets.
+          </p>
+        </div>
+        <a
+          href="/api/keuangan/export"
+          download
+          className="shrink-0 rounded-lg bg-neutral-900 px-4 py-2 text-sm font-semibold text-white hover:bg-neutral-800"
+        >
+          Download Laporan
+        </a>
       </div>
 
       <FinanceManager entries={rows} page={page} totalPages={totalPages} />

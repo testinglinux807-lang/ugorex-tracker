@@ -146,15 +146,27 @@ export async function createProduct(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return;
   const price = parseInt(String(formData.get("price") ?? "0"), 10) || 0;
+  const code = String(formData.get("code") ?? "").trim() || null;
+  let centralStock =
+    parseInt(String(formData.get("centralStock") ?? "0"), 10) || 0;
+  // Barang sekode berbagi satu stok pusat fisik — kalau kodenya sudah
+  // dipakai barang lain, ikuti stok grup itu (isian form diabaikan) supaya
+  // tambah varian baru tidak menimpa stok yang ada.
+  if (code) {
+    const sibling = await prisma.product.findFirst({
+      where: { code },
+      select: { centralStock: true },
+    });
+    if (sibling) centralStock = sibling.centralStock;
+  }
   await prisma.product.create({
     data: {
       name,
-      code: String(formData.get("code") ?? "").trim() || null,
+      code,
       description: String(formData.get("description") ?? "").trim() || null,
       price,
       imageUrl: readImageUrl(formData),
-      centralStock:
-        parseInt(String(formData.get("centralStock") ?? "0"), 10) || 0,
+      centralStock,
     },
   });
   revalidatePath("/data");
@@ -173,17 +185,30 @@ export async function updateProduct(productId: string, formData: FormData) {
   const price = parseInt(String(formData.get("price") ?? "0"), 10) || 0;
   const centralStock =
     parseInt(String(formData.get("centralStock") ?? "0"), 10) || 0;
+  const code = String(formData.get("code") ?? "").trim() || null;
 
-  await prisma.product.update({
-    where: { id: productId },
-    data: {
-      name,
-      code: String(formData.get("code") ?? "").trim() || null,
-      price,
-      centralStock,
-      description: String(formData.get("description") ?? "").trim() || null,
-    },
-  });
+  // Stok pusat dibagi bersama barang sekode — nilai dari form ikut
+  // disalin ke semua barang lain dengan kode yang sama biar tetap seragam.
+  await prisma.$transaction([
+    prisma.product.update({
+      where: { id: productId },
+      data: {
+        name,
+        code,
+        price,
+        centralStock,
+        description: String(formData.get("description") ?? "").trim() || null,
+      },
+    }),
+    ...(code
+      ? [
+          prisma.product.updateMany({
+            where: { code, NOT: { id: productId } },
+            data: { centralStock },
+          }),
+        ]
+      : []),
+  ]);
   revalidatePath("/data");
   revalidatePath("/katalog");
   revalidatePath("/pos");
@@ -275,8 +300,14 @@ export async function updateProductStock(productId: string, formData: FormData) 
     return { error: "Isi stok yang benar (angka 0 atau lebih)." };
   }
 
-  await prisma.product.update({
+  // Inject stok berlaku untuk semua barang sekode (stok pusat bersama).
+  const product = await prisma.product.findUnique({
     where: { id: productId },
+    select: { code: true },
+  });
+  if (!product) return { error: "Barang tidak ditemukan." };
+  await prisma.product.updateMany({
+    where: product.code ? { code: product.code } : { id: productId },
     data: { centralStock: stock },
   });
   revalidatePath("/data");

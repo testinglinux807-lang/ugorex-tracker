@@ -21,6 +21,11 @@ model User {
   role         String   @default("SALES")
   createdAt    DateTime @default(now())
 
+  // Komisi affiliator (hanya berarti untuk role SALES): persen dari omzet
+  // konter yang dia pegang, di-set admin di halaman detail sales. 0 = tanpa
+  // komisi. Komisi dihitung on-the-fly dari Sale, tidak disnapshot.
+  commissionPct Float @default(0)
+
   // Untuk OWNER: toko yang dimilikinya
   ownedStore   Store?   @relation("StoreOwnerUser")
 
@@ -61,6 +66,19 @@ model Voucher {
   expiresAt DateTime? // null = tanpa kadaluarsa
   active    Boolean   @default(true)
   createdAt DateTime  @default(now())
+}
+
+// Aturan diskon grosir order restok (dikelola admin di menu Data, di bawah
+// Voucher Toko): total qty satu order mencapai minQty → diskon percent%
+// dari subtotal, otomatis tanpa kode. Kalau beberapa tier terpenuhi,
+// dipakai tier dengan minQty terbesar. Bisa digabung voucher (voucher
+// dihitung dari sisa setelah potongan grosir).
+model GrosirTier {
+  id        String   @id @default(cuid())
+  minQty    Int // minimal total pcs dalam satu order
+  percent   Int // diskon persen 1-100
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
 }
 
 // Riwayat notifikasi in-app per user (inbox lonceng di header) —
@@ -241,6 +259,11 @@ model FinanceEntry {
   note     String // keterangan transaksi
   date     DateTime @default(now()) // tanggal transaksi (bisa diatur admin)
 
+  // Terisi untuk entri OTOMATIS dari order restock yang lunas (id Request).
+  // @unique menjamin satu order tercatat sekali; entri ber-sourceId tidak
+  // bisa diedit/dihapus manual (lihat lib/finance-sync.ts & actions/finance).
+  sourceId String? @unique
+
   createdById String?
   createdBy   User?   @relation("FinanceCreator", fields: [createdById], references: [id])
   createdAt   DateTime @default(now())
@@ -262,9 +285,10 @@ model Request {
   updatedAt   DateTime @updatedAt
 
   // Untuk checkout restok (payment gateway Midtrans Core API)
-  total         Int     @default(0) // total belanja produk SETELAH diskon (belum termasuk fee)
-  discount      Int     @default(0) // potongan voucher (Rupiah)
-  voucherCode   String? // kode voucher yang dipakai
+  total          Int     @default(0) // total belanja produk SETELAH diskon (belum termasuk fee)
+  discount       Int     @default(0) // potongan voucher (Rupiah)
+  grosirDiscount Int     @default(0) // potongan diskon grosir (Rupiah) — lihat GrosirTier
+  voucherCode    String? // kode voucher yang dipakai
   paymentStatus String  @default("UNPAID") // UNPAID | PAID
 
   // Metode & instruksi pembayaran (charge Core API, bukan Snap — instruksi

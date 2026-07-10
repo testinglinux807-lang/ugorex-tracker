@@ -9,9 +9,12 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { DeliveryReportForm } from "@/components/DeliveryReportForm";
 import { TaskAssignForm } from "@/components/TaskAssignForm";
 import { TugasTabs } from "@/components/TugasTabs";
+import { StarRating } from "@/components/StarRating";
+import { taskGrade, gradeSummary } from "@/lib/task-grade";
 import { waLink } from "@/lib/wa";
 import {
   ArrowRight,
+  Award,
   Truck,
   PackageCheck,
   CreditCard,
@@ -241,9 +244,62 @@ export default async function TugasPage() {
     </Link>
   );
 
+  // Grade KPI per sales dari tugas admin (lihat lib/task-grade.ts).
+  // Admin: papan grade semua sales; sales: grade dirinya sendiri.
+  const gradeBoard = salesList
+    .map((s) => ({
+      ...s,
+      grade: taskGrade(tasks.filter((t) => t.assignedToId === s.id)),
+    }))
+    .sort((a, b) => (b.grade.stars ?? -1) - (a.grade.stars ?? -1));
+  const myGrade = isAdmin ? null : taskGrade(tasks);
+  const gradeRule =
+    "Tepat waktu = poin penuh · telat = setengah · lewat tenggat belum selesai = 0 · tugas Penting bobot 2×";
+
   // Tab penugasan: admin = form beri tugas + daftar; sales = tugas dari admin
   const penugasanNode = isAdmin ? (
     <div className="space-y-4">
+      {/* Papan grade KPI sales — dihitung dari penyelesaian tugas di bawah */}
+      <div className="rounded-2xl border border-neutral-200 bg-white p-5">
+        <h2 className="mb-1 flex items-center gap-2 font-semibold">
+          <Award className="h-4 w-4 text-neutral-500" />
+          Grade Sales (KPI)
+        </h2>
+        <p className="mb-3 text-xs text-neutral-400">{gradeRule}</p>
+        {gradeBoard.length === 0 ? (
+          <p className="text-sm text-neutral-400">Belum ada akun sales.</p>
+        ) : (
+          <div className="divide-y divide-neutral-100">
+            {gradeBoard.map((s) => (
+              <div
+                key={s.id}
+                className="flex items-center justify-between gap-3 py-2.5"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">{s.name}</p>
+                  <p className="truncate text-xs text-neutral-400">
+                    {gradeSummary(s.grade)}
+                  </p>
+                </div>
+                {s.grade.stars === null ? (
+                  <span className="shrink-0 text-xs text-neutral-400">—</span>
+                ) : (
+                  <span className="flex shrink-0 items-center gap-1.5">
+                    <StarRating value={s.grade.stars} />
+                    <span className="w-7 text-right text-sm font-bold">
+                      {s.grade.stars.toLocaleString("id-ID", {
+                        minimumFractionDigits: 1,
+                        maximumFractionDigits: 1,
+                      })}
+                    </span>
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div className="rounded-2xl border border-neutral-200 bg-white p-5">
         <h2 className="mb-3 flex items-center gap-2 font-semibold">
           <ClipboardList className="h-4 w-4 text-neutral-500" />
@@ -270,12 +326,47 @@ export default async function TugasPage() {
   ) : tasks.length === 0 ? (
     <EmptyCard text="Belum ada tugas dari admin." />
   ) : (
-    <div className="rounded-2xl border border-neutral-200 bg-white p-5">
-      <Paginated
-        perPage={6}
-        className="divide-y divide-neutral-100"
-        items={tasks.map(salesTaskRow)}
-      />
+    <div className="space-y-4">
+      {/* Grade KPI pribadi — naik dengan menyelesaikan tugas tepat waktu */}
+      <div className="rounded-2xl border border-neutral-200 bg-white p-5">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="flex items-center gap-2 font-semibold">
+              <Award className="h-4 w-4 text-neutral-500" />
+              Grade Kamu
+            </h2>
+            <p className="mt-0.5 text-xs text-neutral-400">
+              {gradeSummary(myGrade!)}
+            </p>
+          </div>
+          {myGrade!.stars === null ? (
+            <span className="shrink-0 text-xs text-neutral-400">
+              Belum dinilai
+            </span>
+          ) : (
+            <span className="flex shrink-0 items-center gap-1.5">
+              <StarRating value={myGrade!.stars} size="h-5 w-5" />
+              <span className="text-lg font-bold">
+                {myGrade!.stars.toLocaleString("id-ID", {
+                  minimumFractionDigits: 1,
+                  maximumFractionDigits: 1,
+                })}
+              </span>
+            </span>
+          )}
+        </div>
+        <p className="mt-2 border-t border-neutral-100 pt-2 text-[11px] text-neutral-400">
+          {gradeRule}
+        </p>
+      </div>
+
+      <div className="rounded-2xl border border-neutral-200 bg-white p-5">
+        <Paginated
+          perPage={6}
+          className="divide-y divide-neutral-100"
+          items={tasks.map(salesTaskRow)}
+        />
+      </div>
     </div>
   );
 

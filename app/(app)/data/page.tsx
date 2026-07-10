@@ -8,11 +8,12 @@ import { KonterList } from "@/components/KonterList";
 import { ProductImageInput } from "@/components/ProductPhoto";
 import { SalesRow } from "@/components/DataActions";
 import { ProductTable } from "@/components/ProductTable";
-import { productImageSrc } from "@/lib/product-image";
+import { productImageSrcMap } from "@/lib/product-image";
 import { SubmitButton } from "@/components/SubmitButton";
 import { DataTabs } from "@/components/DataTabs";
 import { VoucherManager } from "@/components/VoucherManager";
-import { Package, Store, TicketPercent, Users } from "lucide-react";
+import { GrosirManager } from "@/components/GrosirManager";
+import { Package, Percent, Store, TicketPercent, Users } from "lucide-react";
 
 const inputCls = "w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm";
 const btnCls =
@@ -34,18 +35,26 @@ export default async function DataPage() {
 
   const isAdmin = user.role === "ADMIN";
 
-  const [products, stores, salesList, vouchers] = await Promise.all([
-    prisma.product.findMany({ orderBy: { name: "asc" } }),
-    prisma.store.findMany({
-      where: isAdmin ? {} : { salesId: user.id },
-      include: { sales: true, ownerUser: true },
-      orderBy: { name: "asc" },
-    }),
-    prisma.user.findMany({ where: { role: "SALES" }, orderBy: { name: "asc" } }),
-    isAdmin
-      ? prisma.voucher.findMany({ orderBy: { createdAt: "desc" } })
-      : Promise.resolve([]),
-  ]);
+  const [products, productImg, stores, salesList, vouchers, grosirTiers] =
+    await Promise.all([
+      prisma.product.findMany({ orderBy: { name: "asc" } }),
+      productImageSrcMap(),
+      prisma.store.findMany({
+        where: isAdmin ? {} : { salesId: user.id },
+        include: { sales: true, ownerUser: true },
+        orderBy: { name: "asc" },
+      }),
+      prisma.user.findMany({
+        where: { role: "SALES" },
+        orderBy: { name: "asc" },
+      }),
+      isAdmin
+        ? prisma.voucher.findMany({ orderBy: { createdAt: "desc" } })
+        : Promise.resolve([]),
+      isAdmin
+        ? prisma.grosirTier.findMany({ orderBy: { minQty: "asc" } })
+        : Promise.resolve([]),
+    ]);
 
   return (
     <div className="space-y-6">
@@ -87,7 +96,7 @@ export default async function DataPage() {
             code: p.code,
             price: p.price,
             description: p.description,
-            imageUrl: productImageSrc(p),
+            imageUrl: productImg.get(p.id) ?? null,
             centralStock: p.centralStock,
           }))}
         />
@@ -130,6 +139,10 @@ export default async function DataPage() {
                 className={inputCls}
               />
             </div>
+            <p className="text-[11px] text-neutral-400">
+              Barang dengan kode yang sama berbagi satu stok pusat — kalau
+              kodenya sudah dipakai barang lain, stok mengikuti stok kode itu.
+            </p>
             <input
               name="description"
               placeholder="Deskripsi (opsional)"
@@ -171,6 +184,27 @@ export default async function DataPage() {
                 usedCount: v.usedCount,
                 expiresAt: v.expiresAt ? v.expiresAt.toISOString() : null,
                 active: v.active,
+              }))}
+            />
+          </section>
+                  ),
+                },
+                {
+                  tab: "voucher",
+                  node: (
+          /* Diskon grosir — otomatis dari total qty order, tanpa kode */
+          <section className="rounded-xl border border-neutral-200 bg-white p-5">
+            <div className="mb-3 flex items-center gap-2">
+              <Percent className="h-4 w-4 text-neutral-500" />
+              <h2 className="font-semibold">Diskon Grosir</h2>
+              <Count n={grosirTiers.length} />
+            </div>
+            <GrosirManager
+              tiers={grosirTiers.map((t) => ({
+                id: t.id,
+                minQty: t.minQty,
+                percent: t.percent,
+                active: t.active,
               }))}
             />
           </section>

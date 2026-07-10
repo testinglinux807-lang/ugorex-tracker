@@ -50,10 +50,10 @@ const NAV: Record<string, Item[]> = {
     { href: "/request", label: "Request", icon: Inbox },
   ],
   OWNER: [
-    { href: "/pos", label: "POS", icon: ShoppingCart },
-    { href: "/order", label: "Order", icon: ShoppingBag },
-    { href: "/stok", label: "Stok", icon: Boxes },
-    { href: "/tiket", label: "Tiket", icon: Ticket },
+    { href: "/pos", label: "Penjualan", icon: ShoppingCart },
+    { href: "/order", label: "Restock", icon: ShoppingBag },
+    { href: "/stok", label: "Penyimpanan", icon: Boxes },
+    { href: "/tiket", label: "Komplain", icon: Ticket },
     { href: "/request", label: "Request", icon: Inbox },
   ],
 };
@@ -272,11 +272,10 @@ export function MobileNav({
                     key={it.href}
                     href={it.href}
                     onClick={() => setOpen(false)}
-                    className={`flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm ${
-                      on
-                        ? "bg-neutral-900 text-white"
-                        : "text-neutral-600 hover:bg-neutral-100"
-                    }`}
+                    className={`flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm ${on
+                      ? "bg-neutral-900 text-white"
+                      : "text-neutral-600 hover:bg-neutral-100"
+                      }`}
                   >
                     <Icon className="h-4 w-4 shrink-0" strokeWidth={2} />
                     <span className="flex-1">{it.label}</span>

@@ -22,6 +22,15 @@ export function ProductTable({ products }: { products: Product[] }) {
   const [onlyEmpty, setOnlyEmpty] = useState(false);
   const [page, setPage] = useState(0);
 
+  // Barang sekode berbagi satu stok pusat — hitung dari daftar penuh
+  // (bukan hasil filter) supaya keterangannya tetap benar saat mencari.
+  const codeCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const p of products)
+      if (p.code) m.set(p.code, (m.get(p.code) ?? 0) + 1);
+    return m;
+  }, [products]);
+
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
     return products.filter(
@@ -89,7 +98,13 @@ export function ProductTable({ products }: { products: Product[] }) {
             Barang tidak ditemukan.
           </p>
         ) : (
-          view.map((p) => <ProductRow key={p.id} product={p} />)
+          view.map((p) => (
+            <ProductRow
+              key={p.id}
+              product={p}
+              codeCount={p.code ? (codeCounts.get(p.code) ?? 1) : 1}
+            />
+          ))
         )}
       </div>
 

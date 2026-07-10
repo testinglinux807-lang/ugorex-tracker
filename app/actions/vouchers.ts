@@ -79,6 +79,52 @@ export async function deleteVoucher(id: string) {
   revalidatePath("/data");
 }
 
+// Admin membuat tier diskon grosir (menu Data, di bawah Voucher Toko):
+// order restok dengan total qty >= minQty otomatis dapat diskon percent%.
+export async function createGrosirTier(formData: FormData) {
+  if (!(await requireAdmin())) {
+    return { error: "Hanya admin yang bisa mengatur diskon grosir." };
+  }
+
+  const minQty = parseInt(String(formData.get("minQty") ?? "0"), 10) || 0;
+  const percent = parseInt(String(formData.get("percent") ?? "0"), 10) || 0;
+  if (minQty < 2) return { error: "Minimal pembelian paling sedikit 2 pcs." };
+  if (percent < 1 || percent > 100) {
+    return { error: "Persen diskon harus 1-100." };
+  }
+
+  const dup = await prisma.grosirTier.findFirst({ where: { minQty } });
+  if (dup) {
+    return { error: `Tier untuk minimal ${minQty} pcs sudah ada.` };
+  }
+
+  await prisma.grosirTier.create({ data: { minQty, percent } });
+  revalidatePath("/data");
+  revalidatePath("/order");
+  return { ok: true };
+}
+
+// Admin mengaktifkan / menonaktifkan tier grosir
+export async function toggleGrosirTier(id: string) {
+  if (!(await requireAdmin())) return;
+  const t = await prisma.grosirTier.findUnique({ where: { id } });
+  if (!t) return;
+  await prisma.grosirTier.update({
+    where: { id },
+    data: { active: !t.active },
+  });
+  revalidatePath("/data");
+  revalidatePath("/order");
+}
+
+// Admin menghapus tier grosir
+export async function deleteGrosirTier(id: string) {
+  if (!(await requireAdmin())) return;
+  await prisma.grosirTier.delete({ where: { id } }).catch(() => {});
+  revalidatePath("/data");
+  revalidatePath("/order");
+}
+
 // Owner mengecek kode voucher dari form checkout/POS (preview diskon).
 // Validasi FINAL tetap terjadi di server saat transaksi dibuat.
 export async function checkVoucher(code: string) {

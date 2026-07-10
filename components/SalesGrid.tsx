@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Search, Trophy, ArrowUpRight } from "lucide-react";
 import { rupiahShort } from "@/lib/format";
+import { StarRating } from "@/components/StarRating";
 
 export type SalesRowData = {
   id: string;
@@ -15,6 +16,9 @@ export type SalesRowData = {
   terbengkalai: number;
   taskDone: number;
   taskTotal: number;
+  stars: number | null; // grade KPI tugas (0-5); null = belum dinilai
+  pct: number; // persen komisi affiliator (0 = belum diatur)
+  commission: number; // komisi Rupiah = pct × omzet periode terpilih
 };
 
 function Stat({
@@ -88,6 +92,17 @@ export function SalesGrid({ rows }: { rows: SalesRowData[] }) {
                     <span className="truncate">{r.name}</span>
                   </p>
                   <p className="text-xs text-neutral-400">{r.phone}</p>
+                  {r.stars !== null && (
+                    <p className="mt-1 flex items-center gap-1">
+                      <StarRating value={r.stars} size="h-3.5 w-3.5" />
+                      <span className="text-xs font-bold text-neutral-700">
+                        {r.stars.toLocaleString("id-ID", {
+                          minimumFractionDigits: 1,
+                          maximumFractionDigits: 1,
+                        })}
+                      </span>
+                    </p>
+                  )}
                 </div>
                 <span className="flex shrink-0 items-center gap-1">
                   <span className="text-xs font-medium text-neutral-400">
@@ -102,6 +117,14 @@ export function SalesGrid({ rows }: { rows: SalesRowData[] }) {
                 <p className="text-xl font-bold text-brand">
                   {r.revenue > 0 ? rupiahShort(r.revenue) : "—"}
                 </p>
+                {r.pct > 0 && (
+                  <p className="mt-1 border-t border-white/10 pt-1 text-[11px] text-neutral-300">
+                    Komisi {r.pct}% ·{" "}
+                    <span className="font-semibold text-white">
+                      {r.commission > 0 ? rupiahShort(r.commission) : "—"}
+                    </span>
+                  </p>
+                )}
               </div>
 
               <div className="mt-3 grid grid-cols-4 gap-2">

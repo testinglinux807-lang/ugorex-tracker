@@ -6,6 +6,11 @@ import { StageBadge } from "@/components/Badge";
 import { Paginated } from "@/components/Paginated";
 import { rupiahShort } from "@/lib/format";
 import { STAGES, type Stage } from "@/lib/constants";
+import { StarRating } from "@/components/StarRating";
+import { PeriodeFilter } from "@/components/PeriodeFilter";
+import { CommissionForm } from "@/components/CommissionForm";
+import { taskGrade, gradeSummary } from "@/lib/task-grade";
+import { parsePeriode, periodeStart, PERIODE_LABEL } from "@/lib/periode";
 import {
   ArrowLeft,
   MapPin,
@@ -51,8 +56,10 @@ function Kpi({
 
 export default async function SalesDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ periode?: string }>;
 }) {
   const { id } = await params;
   const user = await getCurrentUser();
@@ -62,6 +69,10 @@ export default async function SalesDetailPage({
 
   const sales = await prisma.user.findUnique({ where: { id } });
   if (!sales || sales.role !== "SALES") notFound();
+
+  // Filter periode omzet & komisi (?periode=minggu|bulan)
+  const periode = parsePeriode((await searchParams).periode);
+  const start = periodeStart(periode);
 
   const [stores, saleRows, tasks] = await Promise.all([
     prisma.store.findMany({
@@ -74,7 +85,10 @@ export default async function SalesDetailPage({
       orderBy: { name: "asc" },
     }),
     prisma.sale.findMany({
-      where: { store: { salesId: id } },
+      where: {
+        store: { salesId: id },
+        ...(start ? { createdAt: { gte: start } } : {}),
+      },
       select: { storeId: true, total: true },
     }),
     prisma.task.findMany({
@@ -125,6 +139,10 @@ export default async function SalesDetailPage({
   const loyal = konter.filter((s) => s.furthest === "LOYALTY").length;
   const terbengkalai = konter.filter((s) => s.neglected).length;
   const taskDone = tasks.filter((t) => t.status === "DONE").length;
+  // Grade KPI dari tugas admin — rumus sama dengan menu Tugas & /sales
+  const grade = taskGrade(tasks);
+  // Komisi affiliator: persen (diatur admin di bawah) × omzet periode ini
+  const commission = Math.round((totalRevenue * sales.commissionPct) / 100);
 
   return (
     <div className="space-y-6">
@@ -138,21 +156,69 @@ export default async function SalesDetailPage({
 
       {/* Header */}
       <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-        <h1 className="text-2xl font-bold">{sales.name}</h1>
-        <p className="mt-1 flex items-center gap-1 text-sm text-neutral-500">
-          <Phone className="h-3.5 w-3.5 shrink-0" />
-          {sales.phone}
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold">{sales.name}</h1>
+            <p className="mt-1 flex items-center gap-1 text-sm text-neutral-500">
+              <Phone className="h-3.5 w-3.5 shrink-0" />
+              {sales.phone}
+            </p>
+          </div>
+          {/* Grade KPI tugas — bintang yang sama dengan menu Tugas */}
+          <div className="shrink-0 text-right">
+            {grade.stars === null ? (
+              <p className="text-xs text-neutral-400">Belum ada grade</p>
+            ) : (
+              <p className="flex items-center justify-end gap-1.5">
+                <StarRating value={grade.stars} size="h-5 w-5" />
+                <span className="text-lg font-bold">
+                  {grade.stars.toLocaleString("id-ID", {
+                    minimumFractionDigits: 1,
+                    maximumFractionDigits: 1,
+                  })}
+                </span>
+              </p>
+            )}
+            <p className="mt-0.5 text-xs text-neutral-400">
+              {gradeSummary(grade)}
+            </p>
+          </div>
+        </div>
       </div>
 
+      {/* Filter periode omzet & komisi */}
+      <PeriodeFilter current={periode} basePath={`/sales/${id}`} />
+
       {/* KPI */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <Kpi label="Omzet" value={rupiahShort(totalRevenue)} accent />
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <Kpi
+          label={`Omzet (${PERIODE_LABEL[periode]})`}
+          value={rupiahShort(totalRevenue)}
+          accent
+        />
+        <Kpi
+          label={`Komisi ${sales.commissionPct > 0 ? `${sales.commissionPct}%` : ""}`}
+          value={sales.commissionPct > 0 ? rupiahShort(commission) : "—"}
+          accent={commission > 0}
+        />
         <Kpi label="Konter" value={konter.length} />
         <Kpi label="Konter Loyal" value={loyal} />
         <Kpi label="Terbengkalai" value={terbengkalai} warn={terbengkalai > 0} />
         <Kpi label="Tugas" value={`${taskDone}/${tasks.length}`} />
       </div>
+
+      {/* Pengaturan komisi affiliator (admin) */}
+      <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+        <h2 className="mb-1 font-semibold">Komisi Affiliator</h2>
+        <p className="mb-3 text-xs text-neutral-400">
+          Persen dari omzet konter yang dipegang {sales.name}. Nilainya
+          dihitung otomatis mengikuti filter periode di atas — cocok untuk
+          rekap pembayaran komisi mingguan/bulanan.
+        </p>
+        <div className="max-w-xs">
+          <CommissionForm salesId={id} currentPct={sales.commissionPct} />
+        </div>
+      </section>
 
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
         {/* Daftar konter */}

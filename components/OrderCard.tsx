@@ -285,9 +285,9 @@ export function OrderCard({
         <div className="mt-1 flex items-baseline justify-between gap-2">
           <span className="text-xs text-neutral-500">Total Pesanan</span>
           <span className="flex items-baseline gap-2">
-            {r.discount > 0 && (
+            {r.discount + r.grosirDiscount > 0 && (
               <span className="text-[11px] text-neutral-400">
-                hemat {rupiah(r.discount)}
+                hemat {rupiah(r.discount + r.grosirDiscount)}
               </span>
             )}
             <span className="text-base font-bold">{rupiah(r.total)}</span>

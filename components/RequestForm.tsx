@@ -14,7 +14,11 @@ import {
 } from "lucide-react";
 import { PendingLabel } from "@/components/SubmitButton";
 import { VoucherInput, type AppliedVoucher } from "@/components/VoucherInput";
-import { voucherDiscount } from "@/lib/voucher-calc";
+import {
+  voucherDiscount,
+  grosirTierFor,
+  grosirDiscount,
+} from "@/lib/voucher-calc";
 import { paymentFee } from "@/lib/payment-fee";
 import {
   PaymentMethodPicker,
@@ -72,6 +76,10 @@ type RestockProduct = {
   imageUrl: string | null;
 };
 
+// Tier diskon grosir aktif (aturan admin) — dipakai untuk preview di
+// keranjang; perhitungan final tetap di server.
+export type GrosirTierInfo = { minQty: number; percent: number };
+
 // Foto barang kecil dengan fallback ikon
 function Thumb({
   src,
@@ -102,7 +110,13 @@ function Thumb({
 }
 
 // Checkout restok: pilih barang + jumlah langsung dari stok pusat
-function RestockForm({ products }: { products: RestockProduct[] }) {
+function RestockForm({
+  products,
+  grosirTiers,
+}: {
+  products: RestockProduct[];
+  grosirTiers: GrosirTierInfo[];
+}) {
   const [state, formAction, pending] = useActionState(
     async (_prev: unknown, fd: FormData) =>
       (await createRestockRequest(fd)) ?? null,
@@ -187,8 +201,15 @@ function RestockForm({ products }: { products: RestockProduct[] }) {
     const p = products.find((x) => x.id === id);
     return a + (p ? p.price * n : 0);
   }, 0);
-  const discount = voucher ? voucherDiscount(voucher, cartSubtotal) : 0;
-  const cartTotal = cartSubtotal - discount;
+  // Diskon grosir otomatis dari total qty; voucher dihitung dari sisanya —
+  // urutan yang sama dengan perhitungan final di server.
+  const totalQty = chosen.reduce((a, [, n]) => a + n, 0);
+  const grosirTier = grosirTierFor(grosirTiers, totalQty);
+  const grosir = grosirTier ? grosirDiscount(grosirTier, cartSubtotal) : 0;
+  const discount = voucher
+    ? voucherDiscount(voucher, cartSubtotal - grosir)
+    : 0;
+  const cartTotal = cartSubtotal - grosir - discount;
   const fee = method === "CASH" ? 0 : paymentFee(method, cartTotal);
   const grandTotal = cartTotal + fee;
 
@@ -366,16 +387,27 @@ function RestockForm({ products }: { products: RestockProduct[] }) {
               </div>
             );
           })}
-          {discount > 0 && (
+          {(grosir > 0 || discount > 0) && (
             <>
               <div className="flex items-center justify-between border-t border-neutral-200 pt-1">
                 <span>Subtotal</span>
                 <span>{rupiah(cartSubtotal)}</span>
               </div>
-              <div className="flex items-center justify-between">
-                <span>Diskon ({voucher!.code})</span>
-                <span>−{rupiah(discount)}</span>
-              </div>
+              {grosir > 0 && (
+                <div className="flex items-center justify-between">
+                  <span>
+                    Diskon grosir {grosirTier!.percent}% (≥{grosirTier!.minQty}{" "}
+                    pcs)
+                  </span>
+                  <span>−{rupiah(grosir)}</span>
+                </div>
+              )}
+              {discount > 0 && (
+                <div className="flex items-center justify-between">
+                  <span>Diskon ({voucher!.code})</span>
+                  <span>−{rupiah(discount)}</span>
+                </div>
+              )}
             </>
           )}
           {fee > 0 && (
@@ -386,7 +418,9 @@ function RestockForm({ products }: { products: RestockProduct[] }) {
           )}
           <div
             className={`flex items-center justify-between pt-1 ${
-              discount > 0 || fee > 0 ? "" : "border-t border-neutral-200"
+              grosir > 0 || discount > 0 || fee > 0
+                ? ""
+                : "border-t border-neutral-200"
             }`}
           >
             <span className="font-semibold text-neutral-900">
@@ -484,16 +518,27 @@ function RestockForm({ products }: { products: RestockProduct[] }) {
 
             <div className="my-3 border-t border-dashed border-neutral-300" />
 
-            {discount > 0 && (
+            {(grosir > 0 || discount > 0) && (
               <div className="mb-1 space-y-0.5 text-xs text-neutral-500">
                 <div className="flex items-center justify-between">
                   <span>Subtotal</span>
                   <span>{rupiah(cartSubtotal)}</span>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span>Diskon ({voucher!.code})</span>
-                  <span>−{rupiah(discount)}</span>
-                </div>
+                {grosir > 0 && (
+                  <div className="flex items-center justify-between">
+                    <span>
+                      Diskon grosir {grosirTier!.percent}% (≥
+                      {grosirTier!.minQty} pcs)
+                    </span>
+                    <span>−{rupiah(grosir)}</span>
+                  </div>
+                )}
+                {discount > 0 && (
+                  <div className="flex items-center justify-between">
+                    <span>Diskon ({voucher!.code})</span>
+                    <span>−{rupiah(discount)}</span>
+                  </div>
+                )}
               </div>
             )}
             {fee > 0 && (
@@ -630,7 +675,13 @@ function FreeForm() {
 }
 
 // Kartu checkout restok — dipakai di halaman Order owner
-export function RestockCheckout({ products }: { products: RestockProduct[] }) {
+export function RestockCheckout({
+  products,
+  grosirTiers = [],
+}: {
+  products: RestockProduct[];
+  grosirTiers?: GrosirTierInfo[];
+}) {
   return (
     <div className="space-y-3 rounded-2xl border border-neutral-200 bg-white p-5">
       {MIDTRANS_CLIENT_KEY && (
@@ -650,7 +701,7 @@ export function RestockCheckout({ products }: { products: RestockProduct[] }) {
         Pilih barang & jumlah dari stok pusat yang tersedia — langsung checkout
         tanpa tunggu sales cek stok.
       </p>
-      <RestockForm products={products} />
+      <RestockForm products={products} grosirTiers={grosirTiers} />
     </div>
   );
 }

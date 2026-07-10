@@ -79,6 +79,7 @@ function EditToggle({
 // Baris barang di menu Data: info + stok pusat + foto + edit + hapus
 export function ProductRow({
   product,
+  codeCount = 1,
 }: {
   product: {
     id: string;
@@ -89,6 +90,9 @@ export function ProductRow({
     imageUrl: string | null;
     centralStock: number;
   };
+  // Jumlah barang (termasuk ini) yang memakai kode yang sama — barang
+  // sekode berbagi satu stok pusat fisik.
+  codeCount?: number;
 }) {
   const [editing, setEditing] = useState(false);
   const action = updateProduct.bind(null, product.id);
@@ -140,7 +144,14 @@ export function ProductRow({
                 : "text-neutral-500"
             }`}
           >
-            Stok pusat: {product.centralStock}
+            Stok pusat{product.code ? ` ${product.code}` : ""}:{" "}
+            {product.centralStock}
+            {codeCount > 1 && (
+              <span className="text-neutral-400">
+                {" "}
+                · dipakai {codeCount} barang sekode
+              </span>
+            )}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
@@ -190,6 +201,8 @@ export function ProductRow({
             <div>
               <label className="mb-1 block text-xs text-neutral-500">
                 Stok pusat
+                {codeCount > 1 &&
+                  ` — berlaku untuk semua barang berkode ${product.code}`}
               </label>
               <input
                 name="centralStock"

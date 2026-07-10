@@ -95,6 +95,33 @@ export async function updateSalesAccount(userId: string, formData: FormData) {
   return { ok: true };
 }
 
+// Admin mengatur persen komisi affiliator seorang sales (dari omzet konter
+// yang dia pegang) — form di halaman detail /sales/[id].
+export async function setSalesCommission(userId: string, formData: FormData) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (user.role !== "ADMIN") return { error: "Hanya admin." };
+
+  const target = await prisma.user.findUnique({ where: { id: userId } });
+  if (!target || target.role !== "SALES") {
+    return { error: "Akun sales tidak ditemukan." };
+  }
+
+  const raw = String(formData.get("commissionPct") ?? "").trim();
+  const pct = Number.parseFloat(raw.replace(",", "."));
+  if (raw === "" || Number.isNaN(pct) || pct < 0 || pct > 100) {
+    return { error: "Isi persen komisi 0-100 (boleh desimal, mis. 2,5)." };
+  }
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { commissionPct: pct },
+  });
+  revalidatePath("/sales");
+  revalidatePath(`/sales/${userId}`);
+  return { ok: true };
+}
+
 // Admin menghapus akun SALES (konter yang dia pegang jadi tanpa sales,
 // riwayat kunjungan/transaksi tetap ada)
 export async function deleteSalesAccount(userId: string) {

@@ -31,6 +31,7 @@ export type FinanceRow = {
   note: string;
   date: string; // ISO
   createdByName: string | null;
+  auto: boolean; // true = pemasukan otomatis dari order lunas (terkunci)
 };
 
 // Format YYYY-MM-DD (WIB) untuk value input type=date.
@@ -305,25 +306,37 @@ export function FinanceManager({
                       {rupiah(e.amount)}
                     </span>
 
-                    {/* Aksi: edit + hapus */}
+                    {/* Aksi: edit + hapus — entri otomatis dari order
+                        terkunci (mengikuti data ordernya) */}
                     <div className="flex shrink-0 items-center gap-1.5 lg:justify-self-end">
-                      <button
-                        type="button"
-                        onClick={() => startEdit(e)}
-                        title="Edit catatan"
-                        className="flex h-7 w-7 items-center justify-center rounded-lg border border-neutral-300 text-neutral-500 hover:bg-neutral-100"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      <form action={deleteFinanceEntry.bind(null, e.id)}>
-                        <SubmitButton
-                          pendingText="…"
-                          title="Hapus catatan"
-                          className="flex h-7 w-7 items-center justify-center rounded-lg border border-neutral-300 text-neutral-500 hover:bg-neutral-100"
+                      {e.auto ? (
+                        <span
+                          title="Tercatat otomatis dari order lunas — mengikuti data ordernya"
+                          className="rounded-full border border-neutral-200 px-2 py-0.5 text-[10px] font-medium text-neutral-400"
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </SubmitButton>
-                      </form>
+                          otomatis
+                        </span>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => startEdit(e)}
+                            title="Edit catatan"
+                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-neutral-300 text-neutral-500 hover:bg-neutral-100"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <form action={deleteFinanceEntry.bind(null, e.id)}>
+                            <SubmitButton
+                              pendingText="…"
+                              title="Hapus catatan"
+                              className="flex h-7 w-7 items-center justify-center rounded-lg border border-neutral-300 text-neutral-500 hover:bg-neutral-100"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </SubmitButton>
+                          </form>
+                        </>
+                      )}
                     </div>
                   </li>
                 );

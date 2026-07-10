@@ -18,7 +18,11 @@ import {
 } from "@/lib/midtrans";
 import { paymentFee } from "@/lib/payment-fee";
 import { findUsableVoucher, consumeVoucher } from "@/lib/voucher";
-import { voucherDiscount } from "@/lib/voucher-calc";
+import {
+  voucherDiscount,
+  grosirTierFor,
+  grosirDiscount,
+} from "@/lib/voucher-calc";
 
 const PAYMENT_METHODS = new Set([
   "VA_BCA",
@@ -91,12 +95,31 @@ export async function createRestockRequest(formData: FormData) {
     return { error: "Ada barang yang tidak valid." };
   }
 
-  // Jumlah order tidak boleh melebihi stok pusat saat ini
+  // Jumlah order tidak boleh melebihi stok pusat saat ini. Barang sekode
+  // (mis. tempered glass yang cocok untuk beberapa tipe HP) berbagi satu
+  // stok pusat fisik — qty barang-barang sekode dijumlahkan dulu sebelum
+  // dibandingkan, supaya order 2 varian sekode tidak lolos padahal stoknya
+  // cuma cukup untuk salah satu.
+  const stockGroups = new Map<
+    string,
+    { stock: number; qty: number; label: string }
+  >();
   for (const item of items) {
     const product = products.find((p) => p.id === item.productId)!;
-    if (item.qty > product.centralStock) {
+    const key = product.code ?? `id:${product.id}`;
+    const g = stockGroups.get(key) ?? {
+      stock: product.centralStock,
+      qty: 0,
+      label: product.code ? `kode ${product.code}` : product.name,
+    };
+    g.qty += item.qty;
+    g.stock = Math.max(g.stock, product.centralStock);
+    stockGroups.set(key, g);
+  }
+  for (const g of stockGroups.values()) {
+    if (g.qty > g.stock) {
       return {
-        error: `Stok pusat ${product.name} tinggal ${product.centralStock}, kurangi jumlahnya.`,
+        error: `Stok pusat ${g.label} tinggal ${g.stock}, kurangi jumlahnya.`,
       };
     }
   }
@@ -115,10 +138,18 @@ export async function createRestockRequest(formData: FormData) {
   }));
   const subtotal = itemRows.reduce((a, i) => a + i.qty * i.price, 0);
 
+  // Diskon grosir otomatis: total qty order mencapai tier (aturan admin di
+  // menu Data) → potongan persen dari subtotal, tanpa kode apa pun.
+  const totalQty = items.reduce((a, i) => a + i.qty, 0);
+  const tiers = await prisma.grosirTier.findMany({ where: { active: true } });
+  const grosirTier = grosirTierFor(tiers, totalQty);
+  const grosir = grosirTier ? grosirDiscount(grosirTier, subtotal) : 0;
+
   // Voucher (opsional) — validasi ulang di server, preview di client tidak
   // dipercaya. Kuota BELUM dikonsumsi di sini — baru dikonsumsi setelah
   // charge Midtrans berhasil (di bawah), supaya charge yang gagal tidak
-  // membakar kuota voucher untuk order yang batal.
+  // membakar kuota voucher untuk order yang batal. Voucher dihitung dari
+  // sisa setelah potongan grosir (bisa digabung).
   const voucherCodeRaw = String(formData.get("voucherCode") ?? "").trim();
   let discount = 0;
   let voucherCode: string | null = null;
@@ -126,11 +157,11 @@ export async function createRestockRequest(formData: FormData) {
   if (voucherCodeRaw) {
     const found = await findUsableVoucher(voucherCodeRaw);
     if ("error" in found) return { error: found.error };
-    discount = voucherDiscount(found.voucher!, subtotal);
+    discount = voucherDiscount(found.voucher!, subtotal - grosir);
     voucherCode = found.voucher!.code;
     voucher = found.voucher!;
   }
-  const total = subtotal - discount;
+  const total = subtotal - grosir - discount;
 
   const method = String(formData.get("paymentMethod") ?? "");
   if (!PAYMENT_METHODS.has(method)) {
@@ -155,6 +186,16 @@ export async function createRestockRequest(formData: FormData) {
       quantity: i.qty,
       name: productOf.get(i.productId)!.name,
     })),
+    ...(grosir > 0
+      ? [
+          {
+            id: "GROSIR",
+            price: -grosir,
+            quantity: 1,
+            name: `Diskon grosir ${grosirTier!.percent}% (min ${grosirTier!.minQty} pcs)`,
+          },
+        ]
+      : []),
     ...(discount > 0
       ? [
           {
@@ -204,6 +245,7 @@ export async function createRestockRequest(formData: FormData) {
       createdById: user.id,
       total,
       discount,
+      grosirDiscount: grosir,
       voucherCode,
       paymentStatus: freeOrder ? "PAID" : "UNPAID",
       paymentMethod: method,
@@ -486,7 +528,7 @@ export async function updateRequestStatus(id: string, status: string) {
   const ops: Prisma.PrismaPromise<unknown>[] = [
     prisma.request.update({ where: { id }, data: { status } }),
   ];
-  if (fulfilling) ops.push(...stockMoveOps(req));
+  if (fulfilling) ops.push(...(await stockMoveOps(req)));
   await prisma.$transaction(ops);
 
   // Riwayat funnel ikut mencatat barang yang masuk
@@ -541,7 +583,7 @@ export async function completeOrderWithReport(id: string, formData: FormData) {
       },
     }),
   ];
-  if (req.items.length > 0) ops.push(...stockMoveOps(req));
+  if (req.items.length > 0) ops.push(...(await stockMoveOps(req)));
   await prisma.$transaction(ops);
 
   // Riwayat funnel ikut mencatat barang yang masuk
@@ -558,20 +600,35 @@ export async function completeOrderWithReport(id: string, formData: FormData) {
 // stok toko (prospek) bertambah. Kurangi stok pusat tanpa sampai minus:
 // (1) kalau stok < qty, nol-kan; (2) kalau cukup, kurangi qty.
 // Urutannya penting — kebalikannya bisa meng-nol-kan stok yang cukup.
-function stockMoveOps(req: {
+// Barang sekode berbagi satu stok pusat fisik, jadi pengurangan berlaku ke
+// SEMUA barang dengan kode itu (nilainya di-mirror antar baris sekode) —
+// async karena perlu baca kode dulu, di luar transaksi batch.
+async function stockMoveOps(req: {
   storeId: string;
   store: { salesId: string | null };
   items: { productId: string; qty: number }[];
 }) {
+  const codeOf = new Map(
+    (
+      await prisma.product.findMany({
+        where: { id: { in: req.items.map((i) => i.productId) } },
+        select: { id: true, code: true },
+      })
+    ).map((p) => [p.id, p.code]),
+  );
+  const target = (productId: string) => {
+    const code = codeOf.get(productId);
+    return code ? { code } : { id: productId };
+  };
   const ops: Prisma.PrismaPromise<unknown>[] = [];
   for (const item of req.items) {
     ops.push(
       prisma.product.updateMany({
-        where: { id: item.productId, centralStock: { lt: item.qty } },
+        where: { ...target(item.productId), centralStock: { lt: item.qty } },
         data: { centralStock: 0 },
       }),
       prisma.product.updateMany({
-        where: { id: item.productId, centralStock: { gte: item.qty } },
+        where: { ...target(item.productId), centralStock: { gte: item.qty } },
         data: { centralStock: { decrement: item.qty } },
       }),
       // Tambahkan ke stok toko

@@ -9,6 +9,28 @@ export function voucherDiscount(
   return Math.max(0, Math.min(d, subtotal));
 }
 
+// Tier diskon grosir yang berlaku untuk total qty order: minQty terbesar
+// yang terpenuhi. null = belum mencapai tier manapun. Dipakai server
+// (perhitungan final) dan client (preview keranjang) supaya angkanya sama.
+export function grosirTierFor<T extends { minQty: number; percent: number }>(
+  tiers: T[],
+  totalQty: number,
+): T | null {
+  let best: T | null = null;
+  for (const t of tiers) {
+    if (totalQty >= t.minQty && (!best || t.minQty > best.minQty)) best = t;
+  }
+  return best;
+}
+
+// Potongan grosir dalam Rupiah — persen dari subtotal, dibulatkan ke bawah.
+export function grosirDiscount(
+  tier: { percent: number },
+  subtotal: number,
+): number {
+  return Math.max(0, Math.min(Math.floor((subtotal * tier.percent) / 100), subtotal));
+}
+
 // Label singkat nilai voucher, mis. "10%" atau "Rp10.000"
 export function voucherLabel(v: { type: string; value: number }): string {
   return v.type === "PERCENT"

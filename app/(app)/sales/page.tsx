@@ -3,27 +3,50 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { STAGES, type Stage } from "@/lib/constants";
 import { SalesGrid } from "@/components/SalesGrid";
+import { PeriodeFilter } from "@/components/PeriodeFilter";
+import { taskGrade } from "@/lib/task-grade";
+import { parsePeriode, periodeStart, PERIODE_LABEL } from "@/lib/periode";
 import { Users } from "lucide-react";
 
 // Konter dianggap "terbengkalai" kalau > 30 hari tak ada aktivitas funnel.
 const NEGLECT_DAYS = 30;
 
-export default async function SalesPage() {
+export default async function SalesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ periode?: string }>;
+}) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (user.role === "OWNER") redirect("/pos");
   if (user.role === "SALES") redirect("/beranda");
+
+  // Filter periode omzet & komisi (?periode=minggu|bulan) — loyal/
+  // terbengkalai tetap dihitung dari semua waktu.
+  const periode = parsePeriode((await searchParams).periode);
+  const start = periodeStart(periode);
 
   const [salesUsers, prospects, saleRows, stores, tasks] = await Promise.all([
     prisma.user.findMany({ where: { role: "SALES" }, orderBy: { name: "asc" } }),
     prisma.prospect.findMany({
       include: { logs: { orderBy: { createdAt: "desc" }, take: 1 } },
     }),
-    prisma.sale.findMany({ select: { storeId: true, total: true } }),
+    prisma.sale.findMany({
+      where: start ? { createdAt: { gte: start } } : {},
+      select: { storeId: true, total: true },
+    }),
     prisma.store.findMany({
       select: { id: true, salesId: true, createdAt: true },
     }),
-    prisma.task.findMany({ select: { assignedToId: true, status: true } }),
+    prisma.task.findMany({
+      select: {
+        assignedToId: true,
+        status: true,
+        priority: true,
+        dueDate: true,
+        completedAt: true,
+      },
+    }),
   ]);
 
   // Omzet per konter
@@ -85,6 +108,13 @@ export default async function SalesPage() {
         terbengkalai,
         taskDone: ts.done,
         taskTotal: ts.total,
+        // Grade KPI dari tugas admin (lib/task-grade.ts) — sama dengan
+        // yang tampil di menu Tugas.
+        stars: taskGrade(tasks.filter((t) => t.assignedToId === u.id)).stars,
+        // Komisi affiliator: persen (diatur admin di detail sales) × omzet
+        // periode terpilih.
+        pct: u.commissionPct,
+        commission: Math.round((revenue * u.commissionPct) / 100),
       };
     })
     .sort(
@@ -100,9 +130,12 @@ export default async function SalesPage() {
           Performa Sales
         </h1>
         <p className="text-sm text-neutral-500">
-          {salesUsers.length} sales · diurut dari omzet · klik kartu untuk detail
+          {salesUsers.length} sales · diurut dari omzet {PERIODE_LABEL[periode]}{" "}
+          · klik kartu untuk detail
         </p>
       </div>
+
+      <PeriodeFilter current={periode} basePath="/sales" />
 
       {salesUsers.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-neutral-300 p-10 text-center text-sm text-neutral-500">
@@ -115,7 +148,9 @@ export default async function SalesPage() {
       <p className="text-xs text-neutral-400">
         Loyal = konter yang mencapai tahap Loyalty · Terbengkalai = konter &gt;{" "}
         {NEGLECT_DAYS} hari tanpa aktivitas · Tugas = selesai/total tugas dari
-        admin.
+        admin · Bintang = grade KPI tugas (tepat waktu penuh, telat setengah,
+        lewat tenggat 0) · Komisi = persen affiliator × omzet periode terpilih
+        (atur persennya di detail sales).
       </p>
     </div>
   );

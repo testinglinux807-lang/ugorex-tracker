@@ -9,7 +9,7 @@ import { OrderList } from "@/components/OrderList";
 import { OrderPaymentWatcher } from "@/components/OrderPaymentWatcher";
 import { OrderTabs } from "@/components/OrderTabs";
 import { RestockCheckout } from "@/components/RequestForm";
-import { deliveryPhotoSrc, productImageSrc } from "@/lib/product-image";
+import { deliveryPhotoSrcMap, productImageSrcMap } from "@/lib/product-image";
 import { ShoppingBag } from "lucide-react";
 
 const rupiah = (n: number) =>
@@ -39,31 +39,66 @@ export default async function OrderPage({
   }
 
   // Owner: order tokonya; sales: toko yang dia pegang; admin: semua
+  const orderWhere = {
+    items: { some: {} },
+    ...(isOwner
+      ? { storeId: user.ownedStore!.id }
+      : user.role === "SALES"
+        ? { store: { salesId: user.id } }
+        : {}),
+  };
+  const orderInclude = {
+    store: { include: { sales: true } },
+    createdBy: true,
+    items: { include: { product: true } },
+  } as const;
+  // take: riwayat lama tidak perlu ditarik ulang tiap buka halaman — angka
+  // ringkasan dihitung terpisah lewat aggregate di bawah.
   const rawOrders = await prisma.request.findMany({
-    where: {
-      items: { some: {} },
-      ...(isOwner
-        ? { storeId: user.ownedStore!.id }
-        : user.role === "SALES"
-          ? { store: { salesId: user.id } }
-          : {}),
-    },
-    include: {
-      store: { include: { sales: true } },
-      createdBy: true,
-      items: { include: { product: true } },
-    },
+    where: orderWhere,
+    include: orderInclude,
     orderBy: { createdAt: "desc" },
+    take: 100,
   });
-  // Ganti data URI foto dengan URL route API — tanpa ini, base64 yang sama
-  // tertanam ulang di tiap order dan halaman membengkak sampai belasan MB.
-  // Berlaku juga untuk foto bukti pengiriman.
+  // Order dari klik notifikasi bisa lebih tua dari 100 teratas — ambil
+  // terpisah (orderWhere yang sama menjaga scoping per role).
+  if (focus && !rawOrders.some((r) => r.id === focus)) {
+    const focused = await prisma.request.findFirst({
+      where: { ...orderWhere, id: focus },
+      include: orderInclude,
+    });
+    if (focused) rawOrders.unshift(focused);
+  }
+
+  // Angka ringkasan dihitung di DB dari SEMUA order (bukan cuma 100 yang
+  // ditampilkan) supaya total tetap benar.
+  const [orderAgg, pending] = await Promise.all([
+    prisma.request.aggregate({
+      where: orderWhere,
+      _count: true,
+      _sum: { total: true },
+    }),
+    prisma.request.count({
+      where: { ...orderWhere, status: { not: "COMPLETED" } },
+    }),
+  ]);
+  const orderCount = orderAgg._count;
+  const totalValue = orderAgg._sum.total ?? 0;
+
+  // Kolom foto (base64) di-omit global — susun URL route API dari metadata
+  // ringan (lihat lib/product-image.ts) lalu tempelkan ke hasil query.
+  const [imgSrc, photoSrc] = await Promise.all([
+    productImageSrcMap([
+      ...new Set(rawOrders.flatMap((r) => r.items.map((it) => it.product.id))),
+    ]),
+    deliveryPhotoSrcMap(rawOrders.map((r) => r.id)),
+  ]);
   const orders = rawOrders.map((r) => ({
     ...r,
-    deliveryPhoto: deliveryPhotoSrc(r),
+    deliveryPhoto: photoSrc.get(r.id) ?? null,
     items: r.items.map((it) => ({
       ...it,
-      product: { ...it.product, imageUrl: productImageSrc(it.product) },
+      product: { ...it.product, imageUrl: imgSrc.get(it.product.id) ?? null },
     })),
   }));
   // Urutan: yang terbaru paling atas (createdAt desc dari DB) supaya order
@@ -81,15 +116,21 @@ export default async function OrderPage({
   // ===== Tampilan OWNER: checkout + riwayat order toko =====
   if (isOwner) {
     const storeId = user.ownedStore!.id;
-    const [products, prospects, sold] = await Promise.all([
-      prisma.product.findMany({ orderBy: { name: "asc" } }),
-      prisma.prospect.findMany({ where: { storeId } }),
-      prisma.sale.groupBy({
-        by: ["productId"],
-        where: { storeId },
-        _sum: { qty: true },
-      }),
-    ]);
+    const [products, prospects, sold, catalogImg, grosirTiers] =
+      await Promise.all([
+        prisma.product.findMany({ orderBy: { name: "asc" } }),
+        prisma.prospect.findMany({ where: { storeId } }),
+        prisma.sale.groupBy({
+          by: ["productId"],
+          where: { storeId },
+          _sum: { qty: true },
+        }),
+        productImageSrcMap(),
+        prisma.grosirTier.findMany({
+          where: { active: true },
+          select: { minQty: true, percent: true },
+        }),
+      ]);
     // Order yang masih perlu dibayar online — dipantau watcher supaya status
     // ikut update begitu owner balik dari app pembayaran (mis. GoPay). Batasi
     // ke 5 terbaru (orders sudah createdAt desc) biar tak menembak Midtrans
@@ -113,7 +154,7 @@ export default async function OrderPage({
       price: p.price,
       remaining: Math.max(0, (stockBy.get(p.id) ?? 0) - (soldBy.get(p.id) ?? 0)),
       central: p.centralStock,
-      imageUrl: productImageSrc(p),
+      imageUrl: catalogImg.get(p.id) ?? null,
     }));
 
     return (
@@ -128,14 +169,19 @@ export default async function OrderPage({
 
         <OrderTabs
           defaultTab={focusIdx !== -1 ? "history" : "checkout"}
-          historyCount={orders.length}
-          checkout={<RestockCheckout products={ownerProducts} />}
+          historyCount={orderCount}
+          checkout={
+            <RestockCheckout
+              products={ownerProducts}
+              grosirTiers={grosirTiers}
+            />
+          }
           history={
             <div className="rounded-2xl border border-neutral-200 bg-white p-5">
               <div className="mb-3 flex items-center gap-2">
                 <ShoppingBag className="h-4 w-4 text-neutral-500" />
                 <h2 className="font-semibold">
-                  Riwayat Order ({orders.length})
+                  Riwayat Order ({orderCount})
                 </h2>
               </div>
               <OrderList
@@ -194,9 +240,6 @@ export default async function OrderPage({
     }
   }
 
-  const pending = orders.filter((r) => r.status !== "COMPLETED").length;
-  const totalValue = orders.reduce((a, r) => a + r.total, 0);
-
   // Sisa stok per (toko, barang) — biar langsung kelihatan kondisi stok toko
   const storeIds = [...new Set(orders.map((r) => r.storeId))];
   const [prospects, sold] = await Promise.all([
@@ -233,7 +276,7 @@ export default async function OrderPage({
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <div className="rounded-2xl border border-neutral-200 bg-white p-4">
           <p className="text-xs text-neutral-500">Total Order</p>
-          <p className="text-2xl font-bold">{orders.length}</p>
+          <p className="text-2xl font-bold">{orderCount}</p>
         </div>
         <div className="rounded-2xl border border-neutral-200 bg-white p-4">
           <p className="text-xs text-neutral-500">Menunggu Diproses</p>

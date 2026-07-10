@@ -43,6 +43,15 @@ export async function saveFinanceEntry(formData: FormData) {
   const id = String(formData.get("id") ?? "").trim();
 
   if (id) {
+    // Entri otomatis (pemasukan order lunas) mengikuti data ordernya —
+    // tidak boleh diubah manual supaya tetap sinkron.
+    const existing = await prisma.financeEntry.findUnique({
+      where: { id },
+      select: { sourceId: true },
+    });
+    if (existing?.sourceId) {
+      return { error: "Entri otomatis dari order tidak bisa diubah." };
+    }
     await prisma.financeEntry.update({ where: { id }, data: parsed.data });
   } else {
     await prisma.financeEntry.create({
@@ -58,6 +67,14 @@ export async function deleteFinanceEntry(id: string) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (user.role !== "ADMIN") return;
+
+  // Entri otomatis tidak bisa dihapus — kalaupun dihapus, rekonsiliasi
+  // syncOrderIncome akan membuatnya lagi selama ordernya tetap lunas.
+  const existing = await prisma.financeEntry.findUnique({
+    where: { id },
+    select: { sourceId: true },
+  });
+  if (existing?.sourceId) return;
 
   await prisma.financeEntry.delete({ where: { id } });
   revalidatePath("/keuangan");
