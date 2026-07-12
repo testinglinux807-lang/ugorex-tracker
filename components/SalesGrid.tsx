@@ -5,6 +5,9 @@ import Link from "next/link";
 import { Search, Trophy, ArrowUpRight } from "lucide-react";
 import { rupiahShort } from "@/lib/format";
 import { StarRating } from "@/components/StarRating";
+import { GradeBadge, LevelBadge } from "@/components/Badge";
+import type { Grade } from "@/lib/sales-grade";
+import type { SalesKpi } from "@/lib/sales-kpi";
 
 export type SalesRowData = {
   id: string;
@@ -17,6 +20,12 @@ export type SalesRowData = {
   taskDone: number;
   taskTotal: number;
   stars: number | null; // grade KPI tugas (0-5); null = belum dinilai
+  grade: Grade | null; // grade huruf leveling S+ … E; null = belum ada data
+  score: number | null; // skor 0-100 di balik grade huruf
+  level: number; // level 1-5 (lib/sales-grade.ts salesLevel)
+  levelName: string; // Trainee | Sales | Sales Expert | Top Performer | Sales Captain
+  captainArea: string | null; // wilayah yang dipimpin (hanya level 5)
+  kpi: SalesKpi; // 4 KPI operasional bulan berjalan (lib/sales-kpi.ts)
   pct: number; // persen komisi affiliator (0 = belum diatur)
   commission: number; // komisi Rupiah = pct × omzet periode terpilih
 };
@@ -92,6 +101,12 @@ export function SalesGrid({ rows }: { rows: SalesRowData[] }) {
                     <span className="truncate">{r.name}</span>
                   </p>
                   <p className="text-xs text-neutral-400">{r.phone}</p>
+                  <p
+                    className="mt-1"
+                    title={r.captainArea ? `Wilayah ${r.captainArea}` : undefined}
+                  >
+                    <LevelBadge level={r.level} name={r.levelName} />
+                  </p>
                   {r.stars !== null && (
                     <p className="mt-1 flex items-center gap-1">
                       <StarRating value={r.stars} size="h-3.5 w-3.5" />
@@ -104,7 +119,12 @@ export function SalesGrid({ rows }: { rows: SalesRowData[] }) {
                     </p>
                   )}
                 </div>
-                <span className="flex shrink-0 items-center gap-1">
+                <span className="flex shrink-0 items-center gap-1.5">
+                  {r.grade && (
+                    <span title={r.score !== null ? `Skor ${r.score}/100` : undefined}>
+                      <GradeBadge grade={r.grade} />
+                    </span>
+                  )}
                   <span className="text-xs font-medium text-neutral-400">
                     #{r.rank}
                   </span>
@@ -136,6 +156,26 @@ export function SalesGrid({ rows }: { rows: SalesRowData[] }) {
                   warn={r.terbengkalai > 0}
                 />
                 <Stat label="Tugas" value={`${r.taskDone}/${r.taskTotal}`} />
+              </div>
+
+              {/* 4 KPI operasional bulan berjalan (lib/sales-kpi.ts) */}
+              <p className="mb-1 mt-3 text-[10px] font-medium uppercase tracking-wide text-neutral-400">
+                KPI bulan ini
+              </p>
+              <div className="grid grid-cols-4 gap-2">
+                <Stat label="Seeding" value={r.kpi.seeding} />
+                <Stat
+                  label="Konversi"
+                  value={r.kpi.konversi !== null ? `${r.kpi.konversi}%` : "—"}
+                />
+                <Stat
+                  label="Reorder"
+                  value={r.kpi.reorder !== null ? `${r.kpi.reorder} pcs` : "—"}
+                />
+                <Stat
+                  label="Harga/pcs"
+                  value={r.kpi.harga !== null ? rupiahShort(r.kpi.harga) : "—"}
+                />
               </div>
             </Link>
           ))}

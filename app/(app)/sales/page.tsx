@@ -5,6 +5,9 @@ import { STAGES, type Stage } from "@/lib/constants";
 import { SalesGrid } from "@/components/SalesGrid";
 import { PeriodeFilter } from "@/components/PeriodeFilter";
 import { taskGrade } from "@/lib/task-grade";
+import { salesGrade, salesLevel } from "@/lib/sales-grade";
+import { salesKpi } from "@/lib/sales-kpi";
+import { wibMonthStart } from "@/lib/date";
 import { parsePeriode, periodeStart, PERIODE_LABEL } from "@/lib/periode";
 import { Users } from "lucide-react";
 
@@ -26,7 +29,11 @@ export default async function SalesPage({
   const periode = parsePeriode((await searchParams).periode);
   const start = periodeStart(periode);
 
-  const [salesUsers, prospects, saleRows, stores, tasks] = await Promise.all([
+  // Jendela KPI operasional: bulan berjalan (WIB)
+  const monthStart = wibMonthStart();
+
+  const [salesUsers, prospects, saleRows, stores, tasks, saleTotals, kpiOrders, kpiSales] =
+    await Promise.all([
     prisma.user.findMany({ where: { role: "SALES" }, orderBy: { name: "asc" } }),
     prisma.prospect.findMany({
       include: { logs: { orderBy: { createdAt: "desc" }, take: 1 } },
@@ -47,7 +54,34 @@ export default async function SalesPage({
         completedAt: true,
       },
     }),
+    // Total omzet per konter semua waktu (agregat di DB) — bahan grade
+    // huruf, supaya grade tidak berubah-ubah mengikuti filter periode.
+    prisma.sale.groupBy({ by: ["storeId"], _sum: { total: true } }),
+    // Bahan 4 KPI operasional bulan ini (lib/sales-kpi.ts): order restok
+    // lunas (reorder) & transaksi POS (harga jual rata-rata)
+    prisma.request.findMany({
+      where: {
+        items: { some: {} },
+        paymentStatus: "PAID",
+        createdAt: { gte: monthStart },
+      },
+      select: {
+        storeId: true,
+        createdAt: true,
+        items: { select: { qty: true } },
+      },
+    }),
+    prisma.sale.findMany({
+      where: { createdAt: { gte: monthStart } },
+      select: { storeId: true, createdAt: true, qty: true, total: true },
+    }),
   ]);
+
+  const kpiOrderRows = kpiOrders.map((o) => ({
+    storeId: o.storeId,
+    createdAt: o.createdAt,
+    pcs: o.items.reduce((a, it) => a + it.qty, 0),
+  }));
 
   // Omzet per konter
   const revenueByStore = new Map<string, number>();
@@ -74,6 +108,19 @@ export default async function SalesPage({
     storeAgg.set(p.storeId, a);
   }
 
+  // Omzet semua waktu per sales + tertinggi di tim — pembanding grade huruf
+  const allTimeByStore = new Map<string, number>();
+  for (const t of saleTotals) allTimeByStore.set(t.storeId, t._sum.total ?? 0);
+  const allTimeBySales = new Map<string, number>();
+  for (const s of stores) {
+    if (!s.salesId) continue;
+    allTimeBySales.set(
+      s.salesId,
+      (allTimeBySales.get(s.salesId) ?? 0) + (allTimeByStore.get(s.id) ?? 0),
+    );
+  }
+  const maxRevenue = Math.max(0, ...allTimeBySales.values());
+
   // Tugas per sales
   const taskStat = new Map<string, { total: number; done: number }>();
   for (const t of tasks) {
@@ -98,6 +145,29 @@ export default async function SalesPage({
         if (lastTs < neglectCut) terbengkalai++;
       }
       const ts = taskStat.get(u.id) ?? { total: 0, done: 0 };
+      // Grade KPI dari tugas admin (lib/task-grade.ts) — sama dengan
+      // yang tampil di menu Tugas.
+      const stars = taskGrade(
+        tasks.filter((t) => t.assignedToId === u.id),
+      ).stars;
+      // Grade huruf leveling S+ … E (lib/sales-grade.ts) — selalu dari
+      // data semua waktu, tidak ikut filter periode.
+      const g = salesGrade({
+        revenue: allTimeBySales.get(u.id) ?? 0,
+        maxRevenue,
+        konter: myStores.length,
+        loyal,
+        terbengkalai,
+        stars,
+      });
+      // Level 1-5 (lib/sales-grade.ts) — dari grade huruf; level 5 kalau
+      // diangkat admin jadi Sales Captain sebuah wilayah
+      const lvl = salesLevel(g.grade, u.captainArea);
+      // 4 KPI operasional bulan ini
+      const kpi = salesKpi(
+        { stores: myStores, orders: kpiOrderRows, sales: kpiSales },
+        { from: monthStart, to: null },
+      );
       return {
         id: u.id,
         name: u.name,
@@ -108,9 +178,13 @@ export default async function SalesPage({
         terbengkalai,
         taskDone: ts.done,
         taskTotal: ts.total,
-        // Grade KPI dari tugas admin (lib/task-grade.ts) — sama dengan
-        // yang tampil di menu Tugas.
-        stars: taskGrade(tasks.filter((t) => t.assignedToId === u.id)).stars,
+        stars,
+        grade: g.grade,
+        score: g.score,
+        level: lvl.level,
+        levelName: lvl.name,
+        captainArea: u.captainArea,
+        kpi,
         // Komisi affiliator: persen (diatur admin di detail sales) × omzet
         // periode terpilih.
         pct: u.commissionPct,
@@ -149,8 +223,10 @@ export default async function SalesPage({
         Loyal = konter yang mencapai tahap Loyalty · Terbengkalai = konter &gt;{" "}
         {NEGLECT_DAYS} hari tanpa aktivitas · Tugas = selesai/total tugas dari
         admin · Bintang = grade KPI tugas (tepat waktu penuh, telat setengah,
-        lewat tenggat 0) · Komisi = persen affiliator × omzet periode terpilih
-        (atur persennya di detail sales).
+        lewat tenggat 0) · Grade huruf (S+ terbaik … E) = gabungan omzet semua
+        waktu dibanding sales terbaik, porsi konter loyal, keaktifan, dan KPI
+        tugas · Komisi = persen affiliator × omzet periode terpilih (atur
+        persennya di detail sales).
       </p>
     </div>
   );

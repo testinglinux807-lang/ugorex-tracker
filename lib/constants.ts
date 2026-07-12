@@ -78,8 +78,23 @@ export const FINANCE_TYPE_LABEL: Record<FinanceType, string> = {
   EXPENSE: "Pengeluaran",
 };
 
-// Saran kategori (dipakai sebagai datalist input; admin tetap bebas ketik)
+// Saran kategori (dipakai sebagai datalist input; admin tetap bebas ketik).
+// Kategori ini juga bahan laporan Laba Rugi/Neraca/Arus Kas di /keuangan —
+// pemetaan kata kuncinya di lib/finance-statements.ts (mis. "Modal masuk"
+// dihitung ekuitas, bukan pendapatan; "Beli barang"/"Ongkir" jadi HPP).
 export const FINANCE_CATEGORIES: Record<FinanceType, string[]> = {
   INCOME: ["Profit orderan", "Penjualan POS", "Modal masuk", "Lainnya"],
-  EXPENSE: ["Beli barang", "Ongkir / impor", "Gaji", "Operasional", "Lainnya"],
+  EXPENSE: [
+    "Beli barang",
+    "Ongkir / impor",
+    "Iklan",
+    "Admin bank",
+    "Perlengkapan",
+    "Biaya platform",
+    "Gaji",
+    "Sewa",
+    "Operasional",
+    "Pajak",
+    "Lainnya",
+  ],
 };

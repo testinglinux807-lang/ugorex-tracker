@@ -4,7 +4,9 @@ import { getCurrentUser } from "@/lib/auth";
 import { rupiah } from "@/lib/format";
 import { wibMonthStart } from "@/lib/date";
 import { syncOrderIncome } from "@/lib/finance-sync";
+import { financeStatements } from "@/lib/finance-statements";
 import { FinanceManager, type FinanceRow } from "@/components/FinanceManager";
+import { FinanceStatements } from "@/components/FinanceStatements";
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -56,7 +58,7 @@ const PER_PAGE = 20;
 export default async function KeuanganPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; tahun?: string; jenis?: string }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
@@ -68,17 +70,29 @@ export default async function KeuanganPage({
 
   const monthStart = wibMonthStart();
 
-  const total = await prisma.financeEntry.count();
+  const params = await searchParams;
+  // Filter jenis riwayat (?jenis=masuk|keluar) — ikut pagination
+  const jenis =
+    params.jenis === "masuk"
+      ? ("INCOME" as const)
+      : params.jenis === "keluar"
+        ? ("EXPENSE" as const)
+        : null;
+  const entryWhere = jenis ? { type: jenis } : {};
+
+  const total = await prisma.financeEntry.count({ where: entryWhere });
   const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
   // Halaman diminta, dijepit ke rentang valid.
-  const reqPage = Number((await searchParams).page ?? 1);
+  const reqPage = Number(params.page ?? 1);
   const page = Math.min(
     totalPages,
     Math.max(1, Number.isFinite(reqPage) ? Math.floor(reqPage) : 1),
   );
 
-  const [entries, allAgg, monthAgg] = await Promise.all([
+  const [entries, allAgg, monthAgg, allEntries, piutangAgg, products] =
+    await Promise.all([
     prisma.financeEntry.findMany({
+      where: entryWhere,
       orderBy: [{ date: "desc" }, { createdAt: "desc" }],
       skip: (page - 1) * PER_PAGE,
       take: PER_PAGE,
@@ -90,6 +104,21 @@ export default async function KeuanganPage({
       _sum: { amount: true },
       where: { date: { gte: monthStart } },
     }),
+    // Bahan laporan Laba Rugi / Neraca / Arus Kas 12 bulan
+    prisma.financeEntry.findMany({
+      select: { type: true, amount: true, date: true, category: true },
+      orderBy: { date: "asc" },
+    }),
+    // Piutang: order terkirim/selesai yang belum dibayar (sama dgn export)
+    prisma.request.aggregate({
+      where: {
+        items: { some: {} },
+        paymentStatus: { not: "PAID" },
+        status: { in: ["SHIPPED", "COMPLETED"] },
+      },
+      _sum: { total: true },
+    }),
+    prisma.product.findMany({ select: { price: true, centralStock: true } }),
   ]);
 
   const sumOf = (
@@ -102,6 +131,32 @@ export default async function KeuanganPage({
   const balance = income - expense;
   const monthIncome = sumOf(monthAgg, "INCOME");
   const monthExpense = sumOf(monthAgg, "EXPENSE");
+
+  // Laporan tahunan (?tahun=YYYY, default tahun berjalan WIB)
+  const maxYear = Number(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Jakarta",
+      year: "numeric",
+    }).format(new Date()),
+  );
+  const minYear = allEntries.length
+    ? Number(
+        new Intl.DateTimeFormat("en-CA", {
+          timeZone: "Asia/Jakarta",
+          year: "numeric",
+        }).format(allEntries[0].date),
+      )
+    : maxYear;
+  const reqYear = Number(params.tahun ?? maxYear);
+  const year = Math.min(
+    maxYear,
+    Math.max(minYear, Number.isFinite(reqYear) ? Math.floor(reqYear) : maxYear),
+  );
+  const statements = financeStatements(allEntries, {
+    year,
+    piutang: piutangAgg._sum.total ?? 0,
+    persediaan: products.reduce((a, p) => a + p.price * p.centralStock, 0),
+  });
 
   const rows: FinanceRow[] = entries.map((e) => ({
     id: e.id,
@@ -150,8 +205,11 @@ export default async function KeuanganPage({
         />
       </div>
 
-      {/* Laporan keuangan lengkap di-export ke file (bukan di web) —
-          Arus Kas 12 bulan, Laba Rugi, Neraca, dan seluruh buku kas. */}
+      {/* Laporan tahunan 12 bulan — Laba Rugi, Neraca, Arus Kas
+          (lib/finance-statements.ts, kerangka Financial Statement Template) */}
+      <FinanceStatements data={statements} minYear={minYear} maxYear={maxYear} />
+
+      {/* Versi file dari laporan di atas + seluruh buku kas. */}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-neutral-200 bg-white p-4">
         <div className="min-w-0">
           <p className="flex items-center gap-2 text-sm font-semibold">
@@ -172,7 +230,12 @@ export default async function KeuanganPage({
         </a>
       </div>
 
-      <FinanceManager entries={rows} page={page} totalPages={totalPages} />
+      <FinanceManager
+        entries={rows}
+        filter={jenis ?? "ALL"}
+        page={page}
+        totalPages={totalPages}
+      />
     </div>
   );
 }

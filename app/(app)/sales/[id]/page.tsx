@@ -2,14 +2,18 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
-import { StageBadge } from "@/components/Badge";
+import { StageBadge, GradeBadge, LevelBadge } from "@/components/Badge";
 import { Paginated } from "@/components/Paginated";
 import { rupiahShort } from "@/lib/format";
 import { STAGES, type Stage } from "@/lib/constants";
 import { StarRating } from "@/components/StarRating";
 import { PeriodeFilter } from "@/components/PeriodeFilter";
 import { CommissionForm } from "@/components/CommissionForm";
+import { CaptainForm } from "@/components/CaptainForm";
 import { taskGrade, gradeSummary } from "@/lib/task-grade";
+import { salesGrade, salesLevel, gradePartsSummary } from "@/lib/sales-grade";
+import { salesKpi } from "@/lib/sales-kpi";
+import { wibMonthStart } from "@/lib/date";
 import { parsePeriode, periodeStart, PERIODE_LABEL } from "@/lib/periode";
 import {
   ArrowLeft,
@@ -34,11 +38,13 @@ function Kpi({
   value,
   accent,
   warn,
+  hint,
 }: {
   label: string;
   value: string | number;
   accent?: boolean;
   warn?: boolean;
+  hint?: string;
 }) {
   return (
     <div className="min-w-0 rounded-2xl border border-neutral-200 bg-white p-4">
@@ -50,6 +56,9 @@ function Kpi({
       >
         {value}
       </p>
+      {hint && (
+        <p className="mt-0.5 truncate text-xs text-neutral-400">{hint}</p>
+      )}
     </div>
   );
 }
@@ -74,7 +83,12 @@ export default async function SalesDetailPage({
   const periode = parsePeriode((await searchParams).periode);
   const start = periodeStart(periode);
 
-  const [stores, saleRows, tasks] = await Promise.all([
+  // Jendela 4 KPI operasional: bulan berjalan + bulan lalu (pembanding)
+  const monthStart = wibMonthStart();
+  const prevMonthStart = wibMonthStart(new Date(monthStart.getTime() - 1));
+
+  const [stores, saleRows, tasks, saleTotals, allStores, kpiOrders, kpiSales] =
+    await Promise.all([
     prisma.store.findMany({
       where: { salesId: id },
       include: {
@@ -96,7 +110,43 @@ export default async function SalesDetailPage({
       include: { store: true },
       orderBy: [{ status: "asc" }, { createdAt: "desc" }],
     }),
+    // Omzet semua waktu per konter (agregat di DB) + pemegang tiap konter —
+    // pembanding grade huruf (omzet sales ini vs sales terbaik di tim).
+    prisma.sale.groupBy({ by: ["storeId"], _sum: { total: true } }),
+    prisma.store.findMany({ select: { id: true, salesId: true } }),
+    // Bahan 4 KPI operasional (lib/sales-kpi.ts): order restok lunas &
+    // transaksi POS sejak bulan lalu
+    prisma.request.findMany({
+      where: {
+        items: { some: {} },
+        paymentStatus: "PAID",
+        createdAt: { gte: prevMonthStart },
+        store: { salesId: id },
+      },
+      select: {
+        storeId: true,
+        createdAt: true,
+        items: { select: { qty: true } },
+      },
+    }),
+    prisma.sale.findMany({
+      where: { store: { salesId: id }, createdAt: { gte: prevMonthStart } },
+      select: { storeId: true, createdAt: true, qty: true, total: true },
+    }),
   ]);
+
+  // 4 KPI operasional: bulan ini vs bulan lalu
+  const kpiInput = {
+    stores,
+    orders: kpiOrders.map((o) => ({
+      storeId: o.storeId,
+      createdAt: o.createdAt,
+      pcs: o.items.reduce((a, it) => a + it.qty, 0),
+    })),
+    sales: kpiSales,
+  };
+  const kpiNow = salesKpi(kpiInput, { from: monthStart, to: null });
+  const kpiPrev = salesKpi(kpiInput, { from: prevMonthStart, to: monthStart });
 
   const revenueByStore = new Map<string, number>();
   for (const s of saleRows)
@@ -144,6 +194,29 @@ export default async function SalesDetailPage({
   // Komisi affiliator: persen (diatur admin di bawah) × omzet periode ini
   const commission = Math.round((totalRevenue * sales.commissionPct) / 100);
 
+  // Grade huruf leveling S+ … E (lib/sales-grade.ts) — dari data semua
+  // waktu, tidak ikut filter periode
+  const allTimeByStore = new Map<string, number>();
+  for (const t of saleTotals) allTimeByStore.set(t.storeId, t._sum.total ?? 0);
+  const allTimeBySales = new Map<string, number>();
+  for (const s of allStores) {
+    if (!s.salesId) continue;
+    allTimeBySales.set(
+      s.salesId,
+      (allTimeBySales.get(s.salesId) ?? 0) + (allTimeByStore.get(s.id) ?? 0),
+    );
+  }
+  const letter = salesGrade({
+    revenue: allTimeBySales.get(id) ?? 0,
+    maxRevenue: Math.max(0, ...allTimeBySales.values()),
+    konter: konter.length,
+    loyal,
+    terbengkalai,
+    stars: grade.stars,
+  });
+  // Level 1-5 — dari grade huruf; level 5 kalau diangkat jadi Sales Captain
+  const lvl = salesLevel(letter.grade, sales.captainArea);
+
   return (
     <div className="space-y-6">
       <Link
@@ -163,11 +236,27 @@ export default async function SalesDetailPage({
               <Phone className="h-3.5 w-3.5 shrink-0" />
               {sales.phone}
             </p>
+            <p className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              <LevelBadge level={lvl.level} name={lvl.name} />
+              {sales.captainArea && (
+                <span className="text-xs text-neutral-500">
+                  Wilayah {sales.captainArea}
+                </span>
+              )}
+            </p>
           </div>
-          {/* Grade KPI tugas — bintang yang sama dengan menu Tugas */}
+          {/* Grade huruf leveling + grade KPI tugas (bintang menu Tugas) */}
           <div className="shrink-0 text-right">
+            {letter.grade && (
+              <p className="mb-1.5 flex items-center justify-end gap-2">
+                <span className="text-xs text-neutral-400">
+                  Skor {letter.score}/100
+                </span>
+                <GradeBadge grade={letter.grade} size="lg" />
+              </p>
+            )}
             {grade.stars === null ? (
-              <p className="text-xs text-neutral-400">Belum ada grade</p>
+              <p className="text-xs text-neutral-400">Belum ada grade tugas</p>
             ) : (
               <p className="flex items-center justify-end gap-1.5">
                 <StarRating value={grade.stars} size="h-5 w-5" />
@@ -182,6 +271,11 @@ export default async function SalesDetailPage({
             <p className="mt-0.5 text-xs text-neutral-400">
               {gradeSummary(grade)}
             </p>
+            {letter.parts.length > 0 && (
+              <p className="mt-0.5 text-xs text-neutral-400">
+                {gradePartsSummary(letter.parts)}
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -207,6 +301,41 @@ export default async function SalesDetailPage({
         <Kpi label="Tugas" value={`${taskDone}/${tasks.length}`} />
       </div>
 
+      {/* 4 KPI operasional bulan berjalan (lib/sales-kpi.ts) */}
+      <div>
+        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-400">
+          KPI bulan ini · pembanding bulan lalu
+        </p>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <Kpi
+            label="Seeding Konter Baru"
+            value={kpiNow.seeding}
+            hint={`Bulan lalu ${kpiPrev.seeding}`}
+          />
+          <Kpi
+            label="Konversi Konter Aktif"
+            value={kpiNow.konversi !== null ? `${kpiNow.konversi}%` : "—"}
+            hint={`${kpiNow.aktif} konter reorder · bulan lalu ${
+              kpiPrev.konversi !== null ? `${kpiPrev.konversi}%` : "—"
+            }`}
+          />
+          <Kpi
+            label="Reorder / Konter Aktif"
+            value={kpiNow.reorder !== null ? `${kpiNow.reorder} pcs` : "—"}
+            hint={`Bulan lalu ${
+              kpiPrev.reorder !== null ? `${kpiPrev.reorder} pcs` : "—"
+            }`}
+          />
+          <Kpi
+            label="Harga Jual Rata-rata"
+            value={kpiNow.harga !== null ? rupiahShort(kpiNow.harga) : "—"}
+            hint={`per pcs · bulan lalu ${
+              kpiPrev.harga !== null ? rupiahShort(kpiPrev.harga) : "—"
+            }`}
+          />
+        </div>
+      </div>
+
       {/* Pengaturan komisi affiliator (admin) */}
       <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
         <h2 className="mb-1 font-semibold">Komisi Affiliator</h2>
@@ -217,6 +346,20 @@ export default async function SalesDetailPage({
         </p>
         <div className="max-w-xs">
           <CommissionForm salesId={id} currentPct={sales.commissionPct} />
+        </div>
+      </section>
+
+      {/* Angkat Sales Captain — level 5 rahasia (admin) */}
+      <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+        <h2 className="mb-1 font-semibold">Sales Captain</h2>
+        <p className="mb-3 text-xs text-neutral-400">
+          Level 5 (rahasia) — angkat {sales.name} jadi kepala sales untuk satu
+          wilayah. Satu wilayah hanya boleh punya satu captain; kosongkan lalu
+          simpan untuk mencabut. Level ini tidak pernah ditampilkan sebagai
+          jenjang berikutnya ke sales.
+        </p>
+        <div className="max-w-xs">
+          <CaptainForm salesId={id} currentArea={sales.captainArea} />
         </div>
       </section>
 

@@ -15,7 +15,7 @@ const MONTH_NAMES = [
 ];
 
 // Kunci bulan WIB "2026-07" untuk sebuah instant.
-function wibYm(d: Date): string {
+export function wibYm(d: Date): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Jakarta",
     year: "numeric",

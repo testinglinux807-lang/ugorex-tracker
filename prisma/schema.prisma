@@ -26,6 +26,12 @@ model User {
   // komisi. Komisi dihitung on-the-fly dari Sale, tidak disnapshot.
   commissionPct Float @default(0)
 
+  // Level 5 "Sales Captain" (rahasia, diangkat admin di detail sales):
+  // kepala sales untuk satu wilayah, mis. "Karawang Barat". null = level
+  // mengikuti grade huruf (lib/sales-grade.ts salesLevel). Terbatas —
+  // satu wilayah hanya boleh punya satu captain (dicek di actions/users).
+  captainArea String?
+
   // Untuk OWNER: toko yang dimilikinya
   ownedStore   Store?   @relation("StoreOwnerUser")
 

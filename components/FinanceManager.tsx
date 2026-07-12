@@ -91,6 +91,28 @@ export function FinanceManager({
   const shown =
     filter === "ALL" ? entries : entries.filter((e) => e.type === filter);
 
+  // Kelompokkan per tanggal (WIB) + kas bersih hari itu, biar riwayat
+  // terbaca seperti buku kas harian. Entri sudah terurut tanggal desc.
+  const groups: { label: string; net: number; items: FinanceRow[] }[] = [];
+  for (const e of shown) {
+    const label = fmtDate(e.date, {
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+    const last = groups[groups.length - 1];
+    const g =
+      last?.label === label ? last : { label, net: 0, items: [] as FinanceRow[] };
+    if (g !== last) groups.push(g);
+    g.net += e.type === "INCOME" ? e.amount : -e.amount;
+    g.items.push(e);
+  }
+
+  // Query jenis untuk link pagination (mempertahankan filter aktif)
+  const jenisParam =
+    filter === "INCOME" ? "masuk" : filter === "EXPENSE" ? "keluar" : null;
+
   const income = type === "INCOME";
   const isEditing = editing !== null;
 
@@ -226,126 +248,137 @@ export function FinanceManager({
 
       {/* Kolom kanan: riwayat transaksi (lebih lebar di desktop) */}
       <div className="rounded-xl border border-neutral-200 bg-white p-4 lg:col-span-2">
-        <h2 className="mb-3 text-sm font-semibold text-neutral-500">
-          Riwayat transaksi
-        </h2>
-        {shown.length > 0 ? (
-          <div>
-            {/* Header kolom — desktop saja, biar terbaca seperti tabel kas */}
-            <div className="hidden gap-3 border-b border-neutral-200 px-1 pb-2 text-xs font-medium uppercase tracking-wide text-neutral-400 lg:grid lg:grid-cols-[minmax(0,1fr)_10rem_8rem_auto_auto] lg:items-center">
-              <span>Keterangan</span>
-              <span>Kategori</span>
-              <span>Tanggal</span>
-              <span className="text-right">Jumlah</span>
-              <span />
-            </div>
-            <ul className="divide-y divide-neutral-100">
-              {shown.map((e) => {
-                const inc = e.type === "INCOME";
-                const tgl = fmtDate(e.date, {
-                  day: "numeric",
-                  month: "short",
-                  year: "numeric",
-                });
-                return (
-                  <li
-                    key={e.id}
-                    className="flex items-center gap-3 py-2.5 text-sm lg:grid lg:grid-cols-[minmax(0,1fr)_10rem_8rem_auto_auto] lg:items-center lg:px-1"
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-neutral-500">
+            Riwayat transaksi
+          </h2>
+          {/* Filter jenis — link server, pagination ikut ter-filter */}
+          <div className="flex gap-1.5">
+            {(
+              [
+                ["ALL", "Semua", "/keuangan"],
+                ["INCOME", "Pemasukan", "/keuangan?jenis=masuk"],
+                ["EXPENSE", "Pengeluaran", "/keuangan?jenis=keluar"],
+              ] as const
+            ).map(([key, label, href]) => (
+              <Link
+                key={key}
+                href={href}
+                scroll={false}
+                className={`rounded-full border px-2.5 py-1 text-xs font-medium ${
+                  filter === key
+                    ? "border-neutral-900 bg-neutral-900 text-white"
+                    : "border-neutral-300 text-neutral-500 hover:bg-neutral-100"
+                }`}
+              >
+                {label}
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        {groups.length > 0 ? (
+          <div className="space-y-4">
+            {groups.map((g) => (
+              <div key={g.label}>
+                {/* Header hari: tanggal + kas bersih hari itu */}
+                <div className="flex items-center justify-between rounded-lg bg-neutral-50 px-3 py-1.5">
+                  <span className="text-xs font-semibold text-neutral-600">
+                    {g.label}
+                  </span>
+                  <span
+                    className={`text-xs font-semibold ${
+                      g.net >= 0 ? "text-brand-dark" : "text-neutral-900"
+                    }`}
                   >
-                    {/* Keterangan (+ meta ringkas di mobile) */}
-                    <div className="flex min-w-0 flex-1 items-center gap-3">
-                      <span
-                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
-                          inc
-                            ? "bg-brand/25 text-brand-dark"
-                            : "bg-neutral-100 text-neutral-500"
-                        }`}
-                      >
-                        {inc ? (
-                          <ArrowDownLeft className="h-4 w-4" />
-                        ) : (
-                          <ArrowUpRight className="h-4 w-4" />
-                        )}
-                      </span>
-                      <div className="min-w-0">
-                        <p className="truncate font-medium text-neutral-900">
-                          {e.note}
-                        </p>
-                        {/* Mobile: kategori · tanggal · pencatat jadi satu baris */}
-                        <p className="truncate text-xs text-neutral-400 lg:hidden">
-                          {e.category ? `${e.category} · ` : ""}
-                          {tgl}
-                          {e.createdByName ? ` · ${e.createdByName}` : ""}
-                        </p>
-                        {/* Desktop: pencatat kecil di bawah keterangan */}
-                        {e.createdByName && (
-                          <p className="hidden truncate text-xs text-neutral-400 lg:block">
-                            {e.createdByName}
-                          </p>
-                        )}
-                      </div>
-                    </div>
+                    {g.net >= 0 ? "+" : "−"}
+                    {rupiah(Math.abs(g.net))}
+                  </span>
+                </div>
 
-                    {/* Kategori — kolom desktop */}
-                    <span className="hidden truncate text-xs text-neutral-500 lg:block">
-                      {e.category || "—"}
-                    </span>
-
-                    {/* Tanggal — kolom desktop */}
-                    <span className="hidden text-xs text-neutral-500 lg:block">
-                      {tgl}
-                    </span>
-
-                    {/* Jumlah */}
-                    <span
-                      className={`shrink-0 text-right font-semibold lg:justify-self-end ${
-                        inc ? "text-brand-dark" : "text-neutral-900"
-                      }`}
-                    >
-                      {inc ? "+" : "−"}
-                      {rupiah(e.amount)}
-                    </span>
-
-                    {/* Aksi: edit + hapus — entri otomatis dari order
-                        terkunci (mengikuti data ordernya) */}
-                    <div className="flex shrink-0 items-center gap-1.5 lg:justify-self-end">
-                      {e.auto ? (
+                <ul className="divide-y divide-neutral-100 px-1">
+                  {g.items.map((e) => {
+                    const inc = e.type === "INCOME";
+                    return (
+                      <li key={e.id} className="flex items-center gap-3 py-2.5">
                         <span
-                          title="Tercatat otomatis dari order lunas — mengikuti data ordernya"
-                          className="rounded-full border border-neutral-200 px-2 py-0.5 text-[10px] font-medium text-neutral-400"
+                          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
+                            inc
+                              ? "bg-brand/25 text-brand-dark"
+                              : "bg-neutral-100 text-neutral-500"
+                          }`}
                         >
-                          otomatis
+                          {inc ? (
+                            <ArrowDownLeft className="h-4 w-4" />
+                          ) : (
+                            <ArrowUpRight className="h-4 w-4" />
+                          )}
                         </span>
-                      ) : (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => startEdit(e)}
-                            title="Edit catatan"
-                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-neutral-300 text-neutral-500 hover:bg-neutral-100"
+
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-neutral-900">
+                            {e.note}
+                          </p>
+                          <p className="truncate text-xs text-neutral-400">
+                            {e.category || "Tanpa kategori"}
+                            {e.createdByName ? ` · ${e.createdByName}` : ""}
+                          </p>
+                        </div>
+
+                        {/* Nominal + aksi ditumpuk di kanan — hemat lebar
+                            di HP, keterangan dapat ruang lebih */}
+                        <div className="flex shrink-0 flex-col items-end gap-1">
+                          <span
+                            className={`text-sm font-semibold tabular-nums ${
+                              inc ? "text-brand-dark" : "text-neutral-900"
+                            }`}
                           >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </button>
-                          <form action={deleteFinanceEntry.bind(null, e.id)}>
-                            <SubmitButton
-                              pendingText="…"
-                              title="Hapus catatan"
-                              className="flex h-7 w-7 items-center justify-center rounded-lg border border-neutral-300 text-neutral-500 hover:bg-neutral-100"
+                            {inc ? "+" : "−"}
+                            {rupiah(e.amount)}
+                          </span>
+                          {/* Aksi: edit + hapus — entri otomatis dari order
+                              terkunci (mengikuti data ordernya) */}
+                          {e.auto ? (
+                            <span
+                              title="Tercatat otomatis dari order lunas — mengikuti data ordernya"
+                              className="rounded-full border border-neutral-200 px-2 py-0.5 text-[10px] font-medium text-neutral-400"
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </SubmitButton>
-                          </form>
-                        </>
-                      )}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
+                              otomatis
+                            </span>
+                          ) : (
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => startEdit(e)}
+                                title="Edit catatan"
+                                className="flex h-6 w-6 items-center justify-center rounded-md border border-neutral-300 text-neutral-500 hover:bg-neutral-100"
+                              >
+                                <Pencil className="h-3 w-3" />
+                              </button>
+                              <form action={deleteFinanceEntry.bind(null, e.id)}>
+                                <SubmitButton
+                                  pendingText="…"
+                                  title="Hapus catatan"
+                                  className="flex h-6 w-6 items-center justify-center rounded-md border border-neutral-300 text-neutral-500 hover:bg-neutral-100"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </SubmitButton>
+                              </form>
+                            </div>
+                          )}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
           </div>
         ) : (
           <p className="py-6 text-center text-sm text-neutral-400">
-            Belum ada catatan.
+            {filter === "ALL"
+              ? "Belum ada catatan."
+              : `Belum ada ${FINANCE_TYPE_LABEL[filter].toLowerCase()}.`}
           </p>
         )}
 
@@ -356,11 +389,15 @@ export function FinanceManager({
               Halaman {page} dari {totalPages}
             </span>
             <div className="flex gap-2">
-              <PageLink page={page - 1} disabled={page <= 1}>
+              <PageLink page={page - 1} jenis={jenisParam} disabled={page <= 1}>
                 <ChevronLeft className="h-4 w-4" />
                 Sebelumnya
               </PageLink>
-              <PageLink page={page + 1} disabled={page >= totalPages}>
+              <PageLink
+                page={page + 1}
+                jenis={jenisParam}
+                disabled={page >= totalPages}
+              >
                 Berikutnya
                 <ChevronRight className="h-4 w-4" />
               </PageLink>
@@ -372,13 +409,15 @@ export function FinanceManager({
   );
 }
 
-// Tombol navigasi halaman — nonaktif di ujung.
+// Tombol navigasi halaman — nonaktif di ujung; filter jenis ikut terbawa.
 function PageLink({
   page,
+  jenis,
   disabled,
   children,
 }: {
   page: number;
+  jenis: string | null;
   disabled: boolean;
   children: React.ReactNode;
 }) {
@@ -395,7 +434,7 @@ function PageLink({
   }
   return (
     <Link
-      href={`/keuangan?page=${page}`}
+      href={`/keuangan?${jenis ? `jenis=${jenis}&` : ""}page=${page}`}
       scroll={false}
       className={`${cls} border-neutral-300 text-neutral-700 hover:bg-neutral-100`}
     >

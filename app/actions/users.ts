@@ -122,6 +122,43 @@ export async function setSalesCommission(userId: string, formData: FormData) {
   return { ok: true };
 }
 
+// Admin mengangkat/mencabut Sales Captain (level 5, rahasia): kepala sales
+// untuk satu wilayah — form di halaman detail /sales/[id]. Terbatas: satu
+// wilayah hanya boleh punya satu captain. Kirim wilayah kosong = mencabut.
+export async function setSalesCaptain(userId: string, formData: FormData) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (user.role !== "ADMIN") return { error: "Hanya admin." };
+
+  const target = await prisma.user.findUnique({ where: { id: userId } });
+  if (!target || target.role !== "SALES") {
+    return { error: "Akun sales tidak ditemukan." };
+  }
+
+  const area = String(formData.get("captainArea") ?? "").trim();
+  if (area) {
+    const taken = await prisma.user.findFirst({
+      where: {
+        captainArea: { equals: area, mode: "insensitive" },
+        id: { not: userId },
+      },
+      select: { name: true },
+    });
+    if (taken) {
+      return { error: `Wilayah ${area} sudah dipegang ${taken.name}.` };
+    }
+  }
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { captainArea: area || null },
+  });
+  revalidatePath("/sales");
+  revalidatePath(`/sales/${userId}`);
+  revalidatePath("/beranda");
+  return { ok: true };
+}
+
 // Admin menghapus akun SALES (konter yang dia pegang jadi tanpa sales,
 // riwayat kunjungan/transaksi tetap ada)
 export async function deleteSalesAccount(userId: string) {
