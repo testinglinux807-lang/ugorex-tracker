@@ -1,16 +1,18 @@
 // Grade huruf (S+, S, A, B, C, D, E) untuk leveling sales — tampil di
 // Performa Sales & detail sales (admin) dan Beranda (sales sendiri).
-// Skor 0-100 dari 4 komponen. Seperti grade tugas (lib/task-grade.ts),
+// Skor 0-100 dari 5 komponen. Seperti grade tugas (lib/task-grade.ts),
 // aturannya sengaja transparan supaya sales tahu cara nilainya naik:
-//   - Omzet  (35) : omzet semua waktu dibanding sales terbaik di tim —
+//   - Omzet  (30) : omzet semua waktu dibanding sales terbaik di tim —
 //                   pakai akar kuadrat supaya selisih omzet besar tidak
 //                   terlalu menghukum sales di bawahnya
-//   - Loyal  (25) : porsi konter yang mencapai tahap Loyalty
-//   - Aktif  (20) : porsi konter yang tidak terbengkalai (>30 hari diam)
+//   - Loyal  (20) : porsi konter yang mencapai tahap Loyalty
+//   - Aktif  (15) : porsi konter yang tidak terbengkalai (>30 hari diam)
 //   - Tugas  (20) : grade KPI tugas admin (0-5 bintang) diskalakan
+//   - Rating (15) : rata-rata rating bintang dari owner konter (SalesRating)
 // Komponen tanpa data (belum pegang konter / belum ada tugas dinilai /
-// belum ada omzet di tim) tidak dihitung — skor diskalakan ulang dari
-// komponen yang ada. Tanpa data sama sekali = belum punya grade.
+// belum ada omzet di tim / belum ada rating owner) tidak dihitung — skor
+// diskalakan ulang dari komponen yang ada. Tanpa data sama sekali =
+// belum punya grade.
 
 export const GRADES = ["S+", "S", "A", "B", "C", "D", "E"] as const;
 export type Grade = (typeof GRADES)[number];
@@ -65,10 +67,11 @@ export type SalesGradeInput = {
   loyal: number; // konter yang mencapai tahap Loyalty
   terbengkalai: number; // konter >30 hari tanpa aktivitas
   stars: number | null; // grade KPI tugas 0-5; null = belum ada tugas dinilai
+  rating: number | null; // rata-rata rating owner 0-5; null = belum dirating
 };
 
 export type GradePart = {
-  key: "omzet" | "loyal" | "aktif" | "tugas";
+  key: "omzet" | "loyal" | "aktif" | "tugas" | "rating";
   label: string;
   earned: number; // poin didapat (1 desimal)
   max: number; // bobot maksimal komponen
@@ -90,22 +93,22 @@ export function salesGrade(i: SalesGradeInput): SalesGradeResult {
     parts.push({
       key: "omzet",
       label: "Omzet",
-      earned: round1(35 * Math.sqrt(ratio)),
-      max: 35,
+      earned: round1(30 * Math.sqrt(ratio)),
+      max: 30,
     });
   }
   if (i.konter > 0) {
     parts.push({
       key: "loyal",
       label: "Konter Loyal",
-      earned: round1(25 * (i.loyal / i.konter)),
-      max: 25,
+      earned: round1(20 * (i.loyal / i.konter)),
+      max: 20,
     });
     parts.push({
       key: "aktif",
       label: "Keaktifan",
-      earned: round1(20 * ((i.konter - i.terbengkalai) / i.konter)),
-      max: 20,
+      earned: round1(15 * ((i.konter - i.terbengkalai) / i.konter)),
+      max: 15,
     });
   }
   if (i.stars !== null) {
@@ -114,6 +117,14 @@ export function salesGrade(i: SalesGradeInput): SalesGradeResult {
       label: "Tugas",
       earned: round1(20 * (i.stars / 5)),
       max: 20,
+    });
+  }
+  if (i.rating !== null) {
+    parts.push({
+      key: "rating",
+      label: "Rating Owner",
+      earned: round1(15 * (Math.min(5, Math.max(0, i.rating)) / 5)),
+      max: 15,
     });
   }
 
@@ -169,7 +180,30 @@ export function salesLevel(
   };
 }
 
-// Rincian satu baris, mis. "Omzet 24,7/35 · Konter Loyal 12,5/25 · …"
+// Target grade berikutnya dari sebuah skor — bahan panel "Cara Naik Level"
+// di beranda. null = sudah S+ (puncak).
+export function nextGradeTarget(
+  score: number,
+): { grade: Grade; min: number } | null {
+  let best: { grade: Grade; min: number } | null = null;
+  for (const g of GRADES) {
+    const min = GRADE_MIN[g];
+    if (min > score && (best === null || min < best.min)) best = { grade: g, min };
+  }
+  return best;
+}
+
+// Jenjang level biasa + syarat grade minimumnya — untuk panel cara naik
+// level. Level 5 (Sales Captain) sengaja tidak ada di sini: rahasia,
+// tidak pernah ditampilkan sebagai jenjang berikutnya ke sales.
+export const LEVEL_LADDER = [
+  { level: 1, name: "Trainee", req: "Titik awal" },
+  { level: 2, name: "Sales", req: "Grade C" },
+  { level: 3, name: "Sales Expert", req: "Grade A" },
+  { level: 4, name: "Top Performer", req: "Grade S" },
+] as const;
+
+// Rincian satu baris, mis. "Omzet 24,7/30 · Konter Loyal 12,5/20 · …"
 export function gradePartsSummary(parts: GradePart[]): string {
   return parts
     .map((p) => `${p.label} ${p.earned.toLocaleString("id-ID")}/${p.max}`)

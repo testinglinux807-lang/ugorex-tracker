@@ -55,6 +55,9 @@ model User {
   assignedTasks Task[] @relation("TaskAssignee")
   createdTasks  Task[] @relation("TaskCreator")
 
+  // Rating bintang dari owner konter untuk sales ini (menu Performa Sales)
+  salesRatings SalesRating[] @relation("SalesRatingTarget")
+
   // Catatan keuangan yang dibuat (admin)
   financeEntries FinanceEntry[] @relation("FinanceCreator")
 }
@@ -137,6 +140,27 @@ model Store {
   tickets      Ticket[]
   requests     Request[]
   tasks        Task[]
+  salesRating  SalesRating?
+}
+
+// Rating sales dari owner konter (bintang 1-5 + keterangan) — diisi owner
+// di halaman POS, tampil di Performa Sales & detail sales (admin). Satu
+// konter satu rating (owner bisa mengubahnya kapan saja); salesId = sales
+// pemegang konter saat rating terakhir disimpan.
+model SalesRating {
+  id      String @id @default(cuid())
+  storeId String @unique
+  store   Store  @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  salesId String
+  sales   User   @relation("SalesRatingTarget", fields: [salesId], references: [id], onDelete: Cascade)
+
+  stars Int // 1-5
+  note  String? // keterangan dari owner (opsional)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([salesId])
 }
 
 // Barang yang dijual, mis. Antigores

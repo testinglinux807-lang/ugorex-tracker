@@ -87,7 +87,7 @@ export default async function SalesDetailPage({
   const monthStart = wibMonthStart();
   const prevMonthStart = wibMonthStart(new Date(monthStart.getTime() - 1));
 
-  const [stores, saleRows, tasks, saleTotals, allStores, kpiOrders, kpiSales] =
+  const [stores, saleRows, tasks, saleTotals, allStores, kpiOrders, kpiSales, ratings] =
     await Promise.all([
     prisma.store.findMany({
       where: { salesId: id },
@@ -133,7 +133,20 @@ export default async function SalesDetailPage({
       where: { store: { salesId: id }, createdAt: { gte: prevMonthStart } },
       select: { storeId: true, createdAt: true, qty: true, total: true },
     }),
+    // Rating bintang + keterangan dari owner konter untuk sales ini
+    prisma.salesRating.findMany({
+      where: { salesId: id },
+      include: { store: { select: { name: true, ownerName: true } } },
+      orderBy: { updatedAt: "desc" },
+    }),
   ]);
+
+  const ratingAvg =
+    ratings.length > 0
+      ? Math.round(
+          (ratings.reduce((a, r) => a + r.stars, 0) / ratings.length) * 10,
+        ) / 10
+      : null;
 
   // 4 KPI operasional: bulan ini vs bulan lalu
   const kpiInput = {
@@ -213,6 +226,7 @@ export default async function SalesDetailPage({
     loyal,
     terbengkalai,
     stars: grade.stars,
+    rating: ratingAvg,
   });
   // Level 1-5 — dari grade huruf; level 5 kalau diangkat jadi Sales Captain
   const lvl = salesLevel(letter.grade, sales.captainArea);
@@ -245,31 +259,41 @@ export default async function SalesDetailPage({
               )}
             </p>
           </div>
-          {/* Grade huruf leveling + grade KPI tugas (bintang menu Tugas) */}
-          <div className="shrink-0 text-right">
+          {/* Grade huruf leveling + grade KPI tugas (bintang menu Tugas).
+              Di HP blok ini turun jadi baris sendiri rata kiri dan boleh
+              menyusut (min-w-0) — teks rincian panjang wrap, tidak
+              mendorong halaman melebar. */}
+          <div className="min-w-0 text-left sm:text-right">
             {letter.grade && (
-              <p className="mb-1.5 flex items-center justify-end gap-2">
+              <p className="mb-1.5 flex items-center gap-2 sm:justify-end">
                 <span className="text-xs text-neutral-400">
                   Skor {letter.score}/100
                 </span>
                 <GradeBadge grade={letter.grade} size="lg" />
               </p>
             )}
-            {grade.stars === null ? (
-              <p className="text-xs text-neutral-400">Belum ada grade tugas</p>
+            {/* Bintang = rating dari owner konter (bukan grade tugas) —
+                ulasan lengkapnya di section "Rating dari Owner" di bawah */}
+            {ratingAvg === null ? (
+              <p className="text-xs text-neutral-400">
+                Belum ada rating dari owner
+              </p>
             ) : (
-              <p className="flex items-center justify-end gap-1.5">
-                <StarRating value={grade.stars} size="h-5 w-5" />
+              <p className="flex items-center gap-1.5 sm:justify-end">
+                <StarRating value={ratingAvg} size="h-5 w-5" />
                 <span className="text-lg font-bold">
-                  {grade.stars.toLocaleString("id-ID", {
+                  {ratingAvg.toLocaleString("id-ID", {
                     minimumFractionDigits: 1,
                     maximumFractionDigits: 1,
                   })}
                 </span>
+                <span className="text-xs text-neutral-400">
+                  ({ratings.length} owner)
+                </span>
               </p>
             )}
             <p className="mt-0.5 text-xs text-neutral-400">
-              {gradeSummary(grade)}
+              Tugas: {gradeSummary(grade)}
             </p>
             {letter.parts.length > 0 && (
               <p className="mt-0.5 text-xs text-neutral-400">
@@ -361,6 +385,61 @@ export default async function SalesDetailPage({
         <div className="max-w-xs">
           <CaptainForm salesId={id} currentArea={sales.captainArea} />
         </div>
+      </section>
+
+      {/* Rating & ulasan dari owner konter (diisi owner di halaman POS) */}
+      <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="font-semibold">Rating dari Owner ({ratings.length})</h2>
+          {ratingAvg !== null && (
+            <span className="flex items-center gap-1.5">
+              <StarRating value={ratingAvg} size="h-4 w-4" />
+              <span className="text-sm font-bold">
+                {ratingAvg.toLocaleString("id-ID", {
+                  minimumFractionDigits: 1,
+                  maximumFractionDigits: 1,
+                })}
+              </span>
+            </span>
+          )}
+        </div>
+        <Paginated
+          perPage={5}
+          className="space-y-2"
+          empty={
+            <p className="text-sm text-neutral-400">
+              Belum ada rating — owner konter bisa memberi rating dari
+              halaman POS tokonya.
+            </p>
+          }
+          items={ratings.map((r) => (
+            <div key={r.id} className="rounded-lg border border-neutral-200 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="min-w-0 truncate text-sm font-medium">
+                  {r.store.name}
+                  {r.store.ownerName && (
+                    <span className="font-normal text-neutral-400">
+                      {" "}
+                      · {r.store.ownerName}
+                    </span>
+                  )}
+                </p>
+                <span className="flex shrink-0 items-center gap-1">
+                  <StarRating value={r.stars} size="h-3.5 w-3.5" />
+                  <span className="text-xs font-bold">{r.stars}/5</span>
+                </span>
+              </div>
+              {r.note && (
+                <p className="mt-1 text-sm text-neutral-600">
+                  &ldquo;{r.note}&rdquo;
+                </p>
+              )}
+              <p className="mt-1 text-xs text-neutral-400">
+                {fmtDate(r.updatedAt)}
+              </p>
+            </div>
+          ))}
+        />
       </section>
 
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">

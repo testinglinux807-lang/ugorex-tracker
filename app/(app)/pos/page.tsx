@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { PosForm } from "@/components/PosForm";
 import { TransaksiList } from "@/components/TransaksiList";
 import { PosSummary } from "@/components/PosSummary";
+import { RateSalesForm } from "@/components/RateSalesForm";
 import { wibDayStart } from "@/lib/date";
 
 export default async function PosPage() {
@@ -20,13 +21,22 @@ export default async function PosPage() {
   }
 
   const storeId = user.ownedStore.id;
-  const [products, sales, prospects] = await Promise.all([
+  const [products, sales, prospects, mySales, myRating] = await Promise.all([
     prisma.product.findMany({ orderBy: { name: "asc" } }),
     prisma.sale.findMany({
       where: { storeId },
       orderBy: { createdAt: "desc" },
     }),
     prisma.prospect.findMany({ where: { storeId } }),
+    // Sales pemegang konter + rating yang pernah diberikan owner ini —
+    // untuk form "Nilai Sales Kamu" di bawah
+    user.ownedStore.salesId
+      ? prisma.user.findUnique({
+          where: { id: user.ownedStore.salesId },
+          select: { name: true },
+        })
+      : null,
+    prisma.salesRating.findUnique({ where: { storeId } }),
   ]);
   const recent = sales.slice(0, 20);
 
@@ -95,6 +105,24 @@ export default async function PosPage() {
           />
         </div>
       </div>
+
+      {/* Rating sales pemegang konter — tampil di Performa Sales (admin) */}
+      {mySales && (
+        <div className="rounded-2xl border border-neutral-200 bg-white p-5">
+          <h2 className="font-semibold">Nilai Sales Kamu</h2>
+          <p className="mb-3 text-xs text-neutral-400">
+            Gimana pelayanan {mySales.name} selama ini? Rating & keteranganmu
+            membantu kami menjaga kualitas layanan — bisa diubah kapan saja.
+          </p>
+          <div className="max-w-md">
+            <RateSalesForm
+              salesName={mySales.name}
+              currentStars={myRating?.stars ?? null}
+              currentNote={myRating?.note ?? null}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

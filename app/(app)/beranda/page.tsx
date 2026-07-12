@@ -17,7 +17,10 @@ import {
   salesGrade,
   salesLevel,
   gradePartsSummary,
+  nextGradeTarget,
+  LEVEL_LADDER,
   GRADE_DESC,
+  type GradePart,
 } from "@/lib/sales-grade";
 import { GradeBadge, LEVEL_ICON } from "@/components/Badge";
 import { DataTabs } from "@/components/DataTabs";
@@ -30,6 +33,7 @@ import {
   Navigation,
   Route,
   CheckCircle2,
+  TrendingUp,
 } from "lucide-react";
 
 // Konter dianggap "terbengkalai" kalau > 30 hari tak ada aktivitas funnel —
@@ -65,6 +69,7 @@ export default async function BerandaPage() {
     saleTotals,
     allStores,
     kpiOrders,
+    myRatingAgg,
   ] = await Promise.all([
     prisma.store.findMany({
       where: { salesId: user.id },
@@ -130,6 +135,11 @@ export default async function BerandaPage() {
         items: { select: { qty: true } },
       },
     }),
+    // Rata-rata rating owner untuk sales ini — komponen grade huruf
+    prisma.salesRating.aggregate({
+      where: { salesId: user.id },
+      _avg: { stars: true },
+    }),
   ]);
 
   // Ringkasan
@@ -185,17 +195,83 @@ export default async function BerandaPage() {
       (allTimeBySales.get(s.salesId) ?? 0) + (allTimeByStore.get(s.id) ?? 0),
     );
   }
+  const myRevenue = allTimeBySales.get(user.id) ?? 0;
+  const maxRevenue = Math.max(0, ...allTimeBySales.values());
+  const myStars = taskGrade(myTasks).stars;
+  const myRating = myRatingAgg._avg.stars;
   const myGrade = salesGrade({
-    revenue: allTimeBySales.get(user.id) ?? 0,
-    maxRevenue: Math.max(0, ...allTimeBySales.values()),
+    revenue: myRevenue,
+    maxRevenue,
     konter: konterCount,
     loyal,
     terbengkalai,
-    stars: taskGrade(myTasks).stars,
+    stars: myStars,
+    rating: myRating,
   });
   // Level 1-5 — dari grade huruf; level 5 kalau diangkat jadi Sales Captain
   const lvl = salesLevel(myGrade.grade, user.captainArea);
   const LvlIcon = LEVEL_ICON[lvl.level];
+
+  // ===== Panel "Cara Naik Level": progres tiap komponen grade + tips =====
+  const nextTarget =
+    myGrade.score !== null ? nextGradeTarget(myGrade.score) : null;
+  const partByKey = new Map(myGrade.parts.map((p) => [p.key, p]));
+  const fmtStars = (n: number) =>
+    n.toLocaleString("id-ID", { maximumFractionDigits: 1 });
+  // Tips konkret per komponen dari data sales ini; komponen tanpa data
+  // dijelaskan cara mengaktifkannya.
+  const gradeSteps: {
+    key: GradePart["key"];
+    label: string;
+    max: number;
+    tip: string;
+  }[] = [
+    {
+      key: "omzet",
+      label: "Omzet",
+      max: 30,
+      tip:
+        maxRevenue > 0
+          ? `Omzet-mu ${rupiahShort(myRevenue)} — terbaik di tim ${rupiahShort(maxRevenue)}. Perbanyak penjualan & restok konter.`
+          : "Belum ada omzet di tim — mulai catat penjualan di konter-mu.",
+    },
+    {
+      key: "loyal",
+      label: "Konter Loyal",
+      max: 20,
+      tip:
+        konterCount > 0
+          ? `${loyal} dari ${konterCount} konter sudah Loyalty — dampingi sisanya sampai repeat order.`
+          : "Belum pegang konter — buka konter baru dulu.",
+    },
+    {
+      key: "aktif",
+      label: "Keaktifan",
+      max: 15,
+      tip:
+        terbengkalai > 0
+          ? `${terbengkalai} konter terbengkalai >30 hari — kunjungi lagi minggu ini.`
+          : "Semua konter aktif — pertahankan kunjungan rutin.",
+    },
+    {
+      key: "tugas",
+      label: "Tugas",
+      max: 20,
+      tip:
+        myStars !== null
+          ? `Grade tugas ${fmtStars(myStars)}/5 — selesaikan tugas admin sebelum tenggat.`
+          : "Belum ada tugas dinilai — selesaikan tugas dari admin tepat waktu.",
+    },
+    {
+      key: "rating",
+      label: "Rating Owner",
+      max: 15,
+      tip:
+        myRating !== null
+          ? `Rata-rata rating owner ${fmtStars(myRating)}/5 — jaga pelayanan biar bintangnya penuh.`
+          : "Belum ada rating — layani owner dengan baik; mereka menilaimu dari halaman POS tokonya.",
+    },
+  ];
 
   // 4 KPI operasional: bulan ini vs bulan lalu (lib/sales-kpi.ts)
   const kpiInput = {
@@ -531,6 +607,99 @@ export default async function BerandaPage() {
               {kpiPrev.harga !== null ? rupiahShort(kpiPrev.harga) : "—"}
             </p>
           </div>
+        </div>
+      </section>
+
+      {/* ===== Cara naik level: tangga level + progres komponen grade ===== */}
+      <section className="rounded-2xl border border-neutral-200 bg-white p-5">
+        <div className="mb-1 flex items-center gap-2">
+          <TrendingUp className="h-4 w-4 text-neutral-500" />
+          <h2 className="font-semibold">Cara Naik Level</h2>
+        </div>
+        <p className="mb-3 text-xs text-neutral-400">
+          Level mengikuti grade, dan grade dihitung dari 5 komponen di bawah —
+          naikkan poinnya, grade & level naik otomatis.
+        </p>
+
+        {/* Tangga level 1-4 — level saat ini disorot */}
+        <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {LEVEL_LADDER.map((l) => {
+            const Icon = LEVEL_ICON[l.level];
+            const current = lvl.level === l.level;
+            const passed = lvl.level > l.level;
+            return (
+              <div
+                key={l.level}
+                className={`rounded-xl border p-2.5 ${
+                  current
+                    ? "border-brand bg-brand/10"
+                    : passed
+                      ? "border-neutral-200 bg-neutral-50"
+                      : "border-neutral-200"
+                }`}
+              >
+                <p className="flex items-center gap-1.5 text-xs font-semibold">
+                  <Icon
+                    className={`h-3.5 w-3.5 shrink-0 ${
+                      current ? "text-brand-dark" : "text-neutral-400"
+                    }`}
+                  />
+                  Lv. {l.level} {l.name}
+                </p>
+                <p className="mt-0.5 text-[11px] text-neutral-400">
+                  {passed ? "Terlewati" : current ? "Posisimu sekarang" : l.req}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Target skor grade berikutnya */}
+        {myGrade.score !== null && (
+          <div className="mb-4 rounded-lg bg-neutral-50 px-3 py-2 text-sm">
+            {nextTarget ? (
+              <>
+                Skor-mu <span className="font-bold">{myGrade.score}/100</span> —
+                butuh <span className="font-bold">{nextTarget.min}</span> untuk
+                grade <span className="font-bold">{nextTarget.grade}</span>{" "}
+                <span className="text-neutral-500">
+                  (kurang {nextTarget.min - myGrade.score} poin)
+                </span>
+              </>
+            ) : (
+              <>
+                Skor-mu <span className="font-bold">{myGrade.score}/100</span> —
+                grade S+ tertinggi, pertahankan!
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Progres + tips per komponen grade */}
+        <div className="space-y-3">
+          {gradeSteps.map((s) => {
+            const part = partByKey.get(s.key);
+            const pct = part ? Math.round((part.earned / part.max) * 100) : 0;
+            return (
+              <div key={s.key}>
+                <div className="mb-1 flex items-center justify-between text-xs">
+                  <span className="font-medium text-neutral-700">{s.label}</span>
+                  <span className="text-neutral-400">
+                    {part
+                      ? `${part.earned.toLocaleString("id-ID")}/${part.max} poin`
+                      : `0/${s.max} poin · belum dihitung`}
+                  </span>
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-neutral-100">
+                  <div
+                    className="h-full rounded-full bg-neutral-900"
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                <p className="mt-1 text-xs text-neutral-400">{s.tip}</p>
+              </div>
+            );
+          })}
         </div>
       </section>
 

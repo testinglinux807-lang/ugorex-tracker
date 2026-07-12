@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+import { notifyNewTask } from "@/lib/wa-notify";
 
 // Admin memberi tugas manual ke satu / banyak sales sekaligus — muncul di
 // tab Tugas masing-masing sales (satu baris Task per sales).
@@ -41,19 +42,33 @@ export async function createTask(formData: FormData) {
     return { error: "Tujuan tugas harus akun sales." };
   }
 
-  const due = dueRaw ? new Date(dueRaw) : null;
+  const dueParsed = dueRaw ? new Date(dueRaw) : null;
+  const due =
+    dueParsed && !Number.isNaN(dueParsed.getTime()) ? dueParsed : null;
 
   await prisma.task.createMany({
     data: ids.map((assignedToId) => ({
       title,
       note: note || null,
       priority,
-      dueDate: due && !Number.isNaN(due.getTime()) ? due : null,
+      dueDate: due,
       storeId,
       assignedToId,
       createdById: user.id,
     })),
   });
+
+  // Kabari sales yang ditugaskan: lonceng in-app + WA + web push
+  // (lib/wa-notify.ts) — kegagalan notifikasi tidak menggagalkan tugas.
+  await notifyNewTask({
+    salesIds: ids,
+    title,
+    note: note || null,
+    priority,
+    dueDate: due,
+    storeId,
+  });
+
   revalidatePath("/tugas");
   return { ok: true, count: ids.length };
 }

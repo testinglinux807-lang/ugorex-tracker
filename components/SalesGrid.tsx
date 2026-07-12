@@ -26,6 +26,7 @@ export type SalesRowData = {
   levelName: string; // Trainee | Sales | Sales Expert | Top Performer | Sales Captain
   captainArea: string | null; // wilayah yang dipimpin (hanya level 5)
   kpi: SalesKpi; // 4 KPI operasional bulan berjalan (lib/sales-kpi.ts)
+  rating: { avg: number; count: number } | null; // rating dari owner konter
   pct: number; // persen komisi affiliator (0 = belum diatur)
   commission: number; // komisi Rupiah = pct × omzet periode terpilih
 };
@@ -107,14 +108,19 @@ export function SalesGrid({ rows }: { rows: SalesRowData[] }) {
                   >
                     <LevelBadge level={r.level} name={r.levelName} />
                   </p>
-                  {r.stars !== null && (
+                  {/* Rating bintang dari owner konter (bukan grade tugas) —
+                      detail ulasannya di halaman detail sales */}
+                  {r.rating && (
                     <p className="mt-1 flex items-center gap-1">
-                      <StarRating value={r.stars} size="h-3.5 w-3.5" />
+                      <StarRating value={r.rating.avg} size="h-3.5 w-3.5" />
                       <span className="text-xs font-bold text-neutral-700">
-                        {r.stars.toLocaleString("id-ID", {
+                        {r.rating.avg.toLocaleString("id-ID", {
                           minimumFractionDigits: 1,
                           maximumFractionDigits: 1,
                         })}
+                      </span>
+                      <span className="text-xs text-neutral-400">
+                        ({r.rating.count} owner)
                       </span>
                     </p>
                   )}

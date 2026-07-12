@@ -32,7 +32,7 @@ export default async function SalesPage({
   // Jendela KPI operasional: bulan berjalan (WIB)
   const monthStart = wibMonthStart();
 
-  const [salesUsers, prospects, saleRows, stores, tasks, saleTotals, kpiOrders, kpiSales] =
+  const [salesUsers, prospects, saleRows, stores, tasks, saleTotals, kpiOrders, kpiSales, ratingAgg] =
     await Promise.all([
     prisma.user.findMany({ where: { role: "SALES" }, orderBy: { name: "asc" } }),
     prisma.prospect.findMany({
@@ -75,6 +75,12 @@ export default async function SalesPage({
       where: { createdAt: { gte: monthStart } },
       select: { storeId: true, createdAt: true, qty: true, total: true },
     }),
+    // Rating bintang dari owner konter per sales (rata-rata + jumlah ulasan)
+    prisma.salesRating.groupBy({
+      by: ["salesId"],
+      _avg: { stars: true },
+      _count: { _all: true },
+    }),
   ]);
 
   const kpiOrderRows = kpiOrders.map((o) => ({
@@ -82,6 +88,16 @@ export default async function SalesPage({
     createdAt: o.createdAt,
     pcs: o.items.reduce((a, it) => a + it.qty, 0),
   }));
+
+  const ratingBySales = new Map(
+    ratingAgg.map((r) => [
+      r.salesId,
+      {
+        avg: Math.round((r._avg.stars ?? 0) * 10) / 10,
+        count: r._count._all,
+      },
+    ]),
+  );
 
   // Omzet per konter
   const revenueByStore = new Map<string, number>();
@@ -159,6 +175,7 @@ export default async function SalesPage({
         loyal,
         terbengkalai,
         stars,
+        rating: ratingBySales.get(u.id)?.avg ?? null,
       });
       // Level 1-5 (lib/sales-grade.ts) — dari grade huruf; level 5 kalau
       // diangkat admin jadi Sales Captain sebuah wilayah
@@ -185,6 +202,7 @@ export default async function SalesPage({
         levelName: lvl.name,
         captainArea: u.captainArea,
         kpi,
+        rating: ratingBySales.get(u.id) ?? null,
         // Komisi affiliator: persen (diatur admin di detail sales) × omzet
         // periode terpilih.
         pct: u.commissionPct,

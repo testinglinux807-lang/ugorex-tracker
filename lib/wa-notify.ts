@@ -34,6 +34,95 @@ export async function sendWa(phone: string, message: string) {
   }
 }
 
+// Kabari sales soal tugas baru dari admin — riwayat in-app (lonceng)
+// selalu dicatat, WA & Web Push menyusul kalau dikonfigurasi. Dipanggil
+// dari createTask (app/actions/tasks.ts); tidak pernah melempar error.
+export async function notifyNewTask(input: {
+  salesIds: string[];
+  title: string;
+  note: string | null;
+  priority: string; // HIGH | NORMAL
+  dueDate: Date | null;
+  storeId: string | null;
+}) {
+  const waEnabled = !!process.env.FONNTE_TOKEN;
+  const pushEnabled =
+    !!process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY &&
+    !!process.env.VAPID_PRIVATE_KEY;
+
+  const [salesUsers, store] = await Promise.all([
+    prisma.user.findMany({
+      where: { id: { in: input.salesIds } },
+      select: { id: true, phone: true },
+    }),
+    input.storeId
+      ? prisma.store.findUnique({
+          where: { id: input.storeId },
+          select: { name: true },
+        })
+      : null,
+  ]);
+  if (salesUsers.length === 0) return;
+
+  const penting = input.priority === "HIGH";
+  const due = input.dueDate
+    ? new Date(input.dueDate).toLocaleDateString("id-ID", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+        timeZone: "Asia/Jakarta",
+      })
+    : null;
+
+  const push = {
+    title: penting
+      ? `Tugas PENTING baru: ${input.title}`
+      : `Tugas baru: ${input.title}`,
+    body:
+      [store?.name, due ? `tenggat ${due}` : null, input.note]
+        .filter(Boolean)
+        .join(" · ") || "Cek detailnya di menu Tugas",
+    url: "/tugas",
+  };
+
+  const appUrl = process.env.APP_URL?.replace(/\/$/, "");
+  const message = [
+    penting ? "TUGAS PENTING dari Admin" : "Tugas Baru dari Admin",
+    ``,
+    input.title,
+    ...(input.note ? [input.note] : []),
+    ``,
+    ...(store ? [`Konter: ${store.name}`] : []),
+    ...(due ? [`Tenggat: ${due}`] : []),
+    ...(appUrl ? [``, `Kerjakan: ${appUrl}/tugas`] : []),
+  ].join("\n");
+
+  const jobs: Promise<unknown>[] = [
+    prisma.notification.createMany({
+      data: salesUsers.map((u) => ({
+        userId: u.id,
+        title: push.title,
+        body: push.body,
+        url: push.url,
+      })),
+    }),
+  ];
+  if (waEnabled) {
+    jobs.push(
+      ...salesUsers.filter((u) => u.phone).map((u) => sendWa(u.phone, message)),
+    );
+  }
+  if (pushEnabled) {
+    jobs.push(
+      sendPushToUsers(
+        salesUsers.map((u) => u.id),
+        push,
+      ),
+    );
+  }
+  await Promise.allSettled(jobs);
+}
+
 // Kabari soal order restok lewat WA (Fonnte, kalau token diisi) dan
 // Web Push (kalau VAPID diisi). Penerima tergantung jenis kabar:
 // kind "paid"      = pembayaran Midtrans lunas → sales pemegang toko + admin;
