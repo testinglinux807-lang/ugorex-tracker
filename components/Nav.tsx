@@ -49,6 +49,7 @@ const NAV: Record<string, Item[]> = {
     { href: "/konter/baru", label: "Tambah", icon: PlusCircle },
     { href: "/request", label: "Request", icon: Inbox },
   ],
+  
   OWNER: [
     { href: "/pos", label: "Penjualan", icon: ShoppingCart },
     { href: "/order", label: "Restock", icon: ShoppingBag },
