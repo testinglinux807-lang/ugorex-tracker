@@ -112,7 +112,7 @@ export function ProductPicker({
                       p.id === value ? "bg-neutral-50 font-medium" : ""
                     }`}
                   >
-                    <span className="min-w-0 truncate">
+                    <span className="min-w-0 break-words leading-snug">
                       {p.code && (
                         <span className="mr-1.5 rounded bg-neutral-900 px-1 py-0.5 text-[10px] font-bold text-white">
                           {p.code}

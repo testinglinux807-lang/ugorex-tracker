@@ -146,7 +146,7 @@ export function PosForm({
                 className="flex items-center gap-1.5 border-b border-dashed border-neutral-200 py-1.5 text-sm last:border-b-0"
               >
                 <div className="min-w-0 flex-1">
-                  <p className="truncate">{p.name}</p>
+                  <p className="break-words leading-snug">{p.name}</p>
                   {low && (
                     <p className="text-[10px] font-semibold text-amber-600">
                       Sisa stok {p.remaining}

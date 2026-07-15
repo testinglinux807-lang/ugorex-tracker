@@ -9,9 +9,8 @@ import {
   updateSalesAccount,
   deleteSalesAccount,
 } from "@/app/actions/users";
-import { UpdateProductPhotoForm } from "@/components/ProductPhoto";
 import { SubmitButton, PendingLabel } from "@/components/SubmitButton";
-import { Package, Pencil, Trash2, X } from "lucide-react";
+import { Pencil, Trash2, X } from "lucide-react";
 
 const inputCls = "w-full rounded-lg border border-neutral-300 px-2 py-1.5 text-sm";
 
@@ -87,7 +86,6 @@ export function ProductRow({
     code: string | null;
     price: number;
     description: string | null;
-    imageUrl: string | null;
     centralStock: number;
   };
   // Jumlah barang (termasuk ini) yang memakai kode yang sama — barang
@@ -113,26 +111,16 @@ export function ProductRow({
       {/* Baris utama: cuma thumb + info + 2 tombol (Edit, Hapus) — sisanya
           (stok pusat, foto) pindah ke panel edit supaya tidak sempit di HP */}
       <div className="flex items-center justify-between gap-2 text-sm">
-        {product.imageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={product.imageUrl}
-            alt={product.name}
-            className="h-9 w-9 shrink-0 rounded-lg border border-neutral-200 object-cover"
-          />
-        ) : (
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-neutral-100">
-            <Package className="h-4 w-4 text-neutral-300" />
-          </div>
-        )}
         <div className="min-w-0 flex-1">
-          <p className="flex items-center gap-1.5 truncate font-medium">
+          <p className="flex items-start gap-1.5 font-medium">
             {product.code && (
-              <span className="shrink-0 rounded bg-neutral-900 px-1.5 py-0.5 text-[10px] font-bold text-white">
+              <span className="mt-0.5 shrink-0 rounded bg-neutral-900 px-1.5 py-0.5 text-[10px] font-bold text-white">
                 {product.code}
               </span>
             )}
-            <span className="truncate">{product.name}</span>
+            <span className="min-w-0 break-words leading-snug">
+              {product.name}
+            </span>
           </p>
           <p className="truncate text-xs text-neutral-400">
             {rupiah(product.price)}
@@ -223,11 +211,6 @@ export function ProductRow({
               {pending ? <PendingLabel text="Menyimpan…" /> : "Simpan Perubahan"}
             </button>
           </form>
-
-          <div className="border-t border-neutral-200 pt-2">
-            <p className="mb-1 text-xs text-neutral-500">Foto barang</p>
-            <UpdateProductPhotoForm productId={product.id} />
-          </div>
         </div>
       )}
     </div>

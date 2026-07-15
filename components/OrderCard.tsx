@@ -10,7 +10,6 @@ import {
   MessageCircle,
   MapPin,
   Navigation,
-  Package,
   PackageCheck,
   Store,
   Truck,
@@ -58,20 +57,10 @@ function ItemRow({
   const short = it.product.centralStock < it.qty;
   return (
     <div className="flex items-center gap-3">
-      {it.product.imageUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={it.product.imageUrl}
-          alt={it.product.name}
-          className="h-12 w-12 shrink-0 rounded-lg border border-neutral-200 object-cover"
-        />
-      ) : (
-        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-neutral-100">
-          <Package className="h-5 w-5 text-neutral-300" />
-        </span>
-      )}
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium">{it.product.name}</p>
+        <p className="break-words text-sm font-medium leading-snug">
+          {it.product.name}
+        </p>
         <p className="text-xs text-neutral-500">
           {it.qty} × {rupiah(it.price)}
         </p>

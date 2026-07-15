@@ -100,117 +100,25 @@ export async function createSale(formData: FormData) {
   });
 
   await prisma.sale.createMany({ data: rows });
+
+  // Simpan harga satuan terakhir ke Prospect.price — jadi prefill harga di
+  // POS untuk transaksi berikutnya (form "atur harga jual" di /stok dihapus,
+  // harga langganan belajar otomatis dari transaksi nyata).
+  await Promise.all(
+    lines.map((l) =>
+      prisma.prospect.update({
+        where: { storeId_productId: { storeId, productId: l.productId } },
+        data: { price: l.price },
+      }),
+    ),
+  );
+
   revalidatePath("/pos");
-  return { ok: true };
-}
-
-// Owner menetapkan harga jual barang di tokonya. Disimpan di Prospect.price
-// (per toko+barang); null/tak diisi = pakai harga katalog default. Harga ini
-// jadi prefill saat catat penjualan di POS.
-export async function setOwnerPrice(formData: FormData) {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-  if (user.role !== "OWNER" || !user.ownedStore) {
-    return { error: "Hanya owner toko yang bisa mengatur harga." };
-  }
-
-  const productId = String(formData.get("productId") ?? "");
-  const priceRaw = String(formData.get("price") ?? "").trim();
-  const price = parseInt(priceRaw, 10);
-  if (!productId || priceRaw === "" || Number.isNaN(price) || price < 0) {
-    return { error: "Isi harga yang benar (angka 0 atau lebih)." };
-  }
-
-  const product = await prisma.product.findUnique({ where: { id: productId } });
-  if (!product) return { error: "Barang tidak ditemukan." };
-
-  const storeId = user.ownedStore.id;
-  // Barang katalog yang belum pernah di-drop sales: buatkan catatannya dulu
-  // supaya harga tetap bisa disetel walau stoknya masih 0.
-  await prisma.prospect.upsert({
-    where: { storeId_productId: { storeId, productId } },
-    update: { price },
-    create: {
-      storeId,
-      productId,
-      stage: "ACTION",
-      stock: 0,
-      price,
-      salesId: user.ownedStore.salesId,
-    },
-  });
-
   revalidatePath("/stok");
-  revalidatePath("/pos");
-  revalidatePath(`/konter/${storeId}`);
   return { ok: true };
 }
 
-// Owner mengoreksi sisa stok fisik barang di tokonya.
-// Sisa stok = stok drop-an sales - terjual; koreksi menggeser stok drop-an
-// supaya sisa cocok dengan hitungan fisik, dan tercatat di StockAdjustment.
-export async function adjustStock(formData: FormData) {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-  if (user.role !== "OWNER" || !user.ownedStore) {
-    return { error: "Hanya owner toko yang bisa koreksi stok." };
-  }
-
-  const productId = String(formData.get("productId") ?? "");
-  const afterRaw = String(formData.get("remaining") ?? "").trim();
-  const after = parseInt(afterRaw, 10);
-  const note = String(formData.get("note") ?? "").trim();
-  if (!productId || afterRaw === "" || Number.isNaN(after) || after < 0) {
-    return { error: "Isi sisa stok yang benar (angka 0 atau lebih)." };
-  }
-
-  const product = await prisma.product.findUnique({ where: { id: productId } });
-  if (!product) return { error: "Barang tidak ditemukan." };
-
-  const storeId = user.ownedStore.id;
-  let prospect = await prisma.prospect.findUnique({
-    where: { storeId_productId: { storeId, productId } },
-  });
-
-  const sold = await prisma.sale.aggregate({
-    where: { storeId, productId },
-    _sum: { qty: true },
-  });
-  const before = Math.max(0, (prospect?.stock ?? 0) - (sold._sum.qty ?? 0));
-  if (before === after) return { error: "Sisa stok tidak berubah." };
-
-  // Barang katalog yang belum pernah di-drop sales: buatkan catatannya dulu.
-  // Toko sudah memegang barangnya, jadi tahap funnel langsung ACTION.
-  if (!prospect) {
-    prospect = await prisma.prospect.create({
-      data: {
-        storeId,
-        productId,
-        stage: "ACTION",
-        stock: 0,
-        salesId: user.ownedStore.salesId,
-      },
-    });
-  }
-
-  await prisma.$transaction([
-    prisma.prospect.update({
-      where: { id: prospect.id },
-      data: { stock: after + (sold._sum.qty ?? 0) },
-    }),
-    prisma.stockAdjustment.create({
-      data: {
-        prospectId: prospect.id,
-        before,
-        after,
-        note: note || null,
-        createdById: user.id,
-      },
-    }),
-  ]);
-
-  revalidatePath("/stok");
-  revalidatePath("/pos");
-  revalidatePath(`/konter/${storeId}`);
-  return { ok: true };
-}
+// Edit oleh owner (koreksi stok & atur harga) DIHAPUS dari /stok — rawan
+// disalahgunakan. Kalau stok fisik tidak sinkron / kurang / lebih, owner
+// mengajukan lewat halaman Tiket Keluhan (diproses 1–2 hari kerja). Harga
+// jual tersimpan otomatis dari transaksi POS terakhir.

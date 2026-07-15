@@ -5,10 +5,8 @@ import { createProduct, createStore } from "@/app/actions/tracker";
 import { CreateSalesForm } from "@/components/AccountForms";
 import { Paginated } from "@/components/Paginated";
 import { KonterList } from "@/components/KonterList";
-import { ProductImageInput } from "@/components/ProductPhoto";
 import { SalesRow } from "@/components/DataActions";
 import { ProductTable } from "@/components/ProductTable";
-import { productImageSrcMap } from "@/lib/product-image";
 import { SubmitButton } from "@/components/SubmitButton";
 import { DataTabs } from "@/components/DataTabs";
 import { VoucherManager } from "@/components/VoucherManager";
@@ -35,10 +33,9 @@ export default async function DataPage() {
 
   const isAdmin = user.role === "ADMIN";
 
-  const [products, productImg, stores, salesList, vouchers, grosirTiers] =
+  const [products, stores, salesList, vouchers, grosirTiers] =
     await Promise.all([
       prisma.product.findMany({ orderBy: { name: "asc" } }),
-      productImageSrcMap(),
       prisma.store.findMany({
         where: isAdmin ? {} : { salesId: user.id },
         include: { sales: true, ownerUser: true },
@@ -96,7 +93,6 @@ export default async function DataPage() {
             code: p.code,
             price: p.price,
             description: p.description,
-            imageUrl: productImg.get(p.id) ?? null,
             centralStock: p.centralStock,
           }))}
         />
@@ -148,7 +144,6 @@ export default async function DataPage() {
               placeholder="Deskripsi (opsional)"
               className={inputCls}
             />
-            <ProductImageInput />
             <SubmitButton
               pendingText="Menyimpan…"
               className={`${btnCls} w-full disabled:opacity-60`}

@@ -9,7 +9,7 @@ import { OrderList } from "@/components/OrderList";
 import { OrderPaymentWatcher } from "@/components/OrderPaymentWatcher";
 import { OrderTabs } from "@/components/OrderTabs";
 import { RestockCheckout } from "@/components/RequestForm";
-import { deliveryPhotoSrcMap, productImageSrcMap } from "@/lib/product-image";
+import { deliveryPhotoSrcMap } from "@/lib/product-image";
 import { ShoppingBag } from "lucide-react";
 
 const rupiah = (n: number) =>
@@ -87,19 +87,10 @@ export default async function OrderPage({
 
   // Kolom foto (base64) di-omit global — susun URL route API dari metadata
   // ringan (lihat lib/product-image.ts) lalu tempelkan ke hasil query.
-  const [imgSrc, photoSrc] = await Promise.all([
-    productImageSrcMap([
-      ...new Set(rawOrders.flatMap((r) => r.items.map((it) => it.product.id))),
-    ]),
-    deliveryPhotoSrcMap(rawOrders.map((r) => r.id)),
-  ]);
+  const photoSrc = await deliveryPhotoSrcMap(rawOrders.map((r) => r.id));
   const orders = rawOrders.map((r) => ({
     ...r,
     deliveryPhoto: photoSrc.get(r.id) ?? null,
-    items: r.items.map((it) => ({
-      ...it,
-      product: { ...it.product, imageUrl: imgSrc.get(it.product.id) ?? null },
-    })),
   }));
   // Urutan: yang terbaru paling atas (createdAt desc dari DB) supaya order
   // baru / checkout langsung kelihatan di pucuk. Untuk mencari order yang
@@ -116,7 +107,7 @@ export default async function OrderPage({
   // ===== Tampilan OWNER: checkout + riwayat order toko =====
   if (isOwner) {
     const storeId = user.ownedStore!.id;
-    const [products, prospects, sold, catalogImg, grosirTiers] =
+    const [products, prospects, sold, grosirTiers] =
       await Promise.all([
         prisma.product.findMany({ orderBy: { name: "asc" } }),
         prisma.prospect.findMany({ where: { storeId } }),
@@ -125,7 +116,6 @@ export default async function OrderPage({
           where: { storeId },
           _sum: { qty: true },
         }),
-        productImageSrcMap(),
         prisma.grosirTier.findMany({
           where: { active: true },
           select: { minQty: true, percent: true },
@@ -148,14 +138,22 @@ export default async function OrderPage({
 
     const stockBy = new Map(prospects.map((p) => [p.productId, p.stock]));
     const soldBy = new Map(sold.map((s) => [s.productId, s._sum.qty ?? 0]));
-    const ownerProducts = products.map((p) => ({
-      id: p.id,
-      name: p.name,
-      price: p.price,
-      remaining: Math.max(0, (stockBy.get(p.id) ?? 0) - (soldBy.get(p.id) ?? 0)),
-      central: p.centralStock,
-      imageUrl: catalogImg.get(p.id) ?? null,
-    }));
+    // Hanya barang yang ada di inventory toko ini (pernah dikasih stok
+    // sales) — katalog pusat yang belum pernah dimiliki owner tidak tampil;
+    // barang baru masuk lewat sales dulu.
+    const ownerProducts = products
+      .filter((p) => (stockBy.get(p.id) ?? 0) > 0)
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        code: p.code,
+        price: p.price,
+        remaining: Math.max(
+          0,
+          (stockBy.get(p.id) ?? 0) - (soldBy.get(p.id) ?? 0),
+        ),
+        central: p.centralStock,
+      }));
 
     return (
       <div className="space-y-5">

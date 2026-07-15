@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { StockEditor } from "@/components/StockEditor";
-import { ArrowRight, History, ShoppingBag } from "lucide-react";
+import { ArrowRight, Info, ShoppingBag } from "lucide-react";
 
 export default async function StokPage() {
   const user = await getCurrentUser();
@@ -19,16 +19,10 @@ export default async function StokPage() {
   }
 
   const storeId = user.ownedStore.id;
-  const [products, sales, prospects, adjustments] = await Promise.all([
+  const [products, sales, prospects] = await Promise.all([
     prisma.product.findMany({ orderBy: { name: "asc" } }),
     prisma.sale.findMany({ where: { storeId } }),
     prisma.prospect.findMany({ where: { storeId } }),
-    prisma.stockAdjustment.findMany({
-      where: { prospect: { storeId } },
-      include: { prospect: { include: { product: true } } },
-      orderBy: { createdAt: "desc" },
-      take: 10,
-    }),
   ]);
 
   // Sisa stok per barang = stok dikasih sales - total terjual
@@ -68,7 +62,24 @@ export default async function StokPage() {
       <div>
         <h1 className="text-2xl font-bold">Stok Barang</h1>
         <p className="text-sm text-neutral-500">
-          Sisa stok barang di tokomu — koreksi kalau beda dengan fisik
+          Sisa stok barang di tokomu
+        </p>
+      </div>
+
+      {/* Koreksi stok mandiri dihapus — selisih stok diajukan lewat tiket
+          supaya diverifikasi admin/sales dulu */}
+      <div className="flex items-start gap-2 rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-600">
+        <Info className="mt-0.5 h-4 w-4 shrink-0 text-neutral-400" />
+        <p>
+          Stok tidak sinkron dengan fisik (kurang / lebih)? Ajukan lewat
+          halaman{" "}
+          <Link
+            href="/tiket"
+            className="font-semibold text-neutral-900 underline underline-offset-2"
+          >
+            Tiket Keluhan
+          </Link>{" "}
+          — pengaduan diproses dalam 1–2 hari kerja.
         </p>
       </div>
 
@@ -103,54 +114,6 @@ export default async function StokPage() {
         <StockEditor products={productsWithStock} />
       </div>
 
-      {adjustments.length > 0 && (
-        <div className="rounded-2xl border border-neutral-200 bg-white p-5">
-          <p className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-400">
-            <History className="h-3.5 w-3.5" />
-            Riwayat Koreksi
-          </p>
-          <ul className="divide-y divide-neutral-100">
-            {adjustments.map((a) => {
-              const delta = a.after - a.before;
-              return (
-                <li
-                  key={a.id}
-                  className="flex items-center justify-between gap-3 py-2 text-xs"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate font-medium text-neutral-800">
-                      {a.prospect.product.name}
-                    </p>
-                    {a.note && (
-                      <p className="truncate text-neutral-400">{a.note}</p>
-                    )}
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <span className="font-mono text-neutral-500">
-                      {a.before} → {a.after}
-                    </span>
-                    <span
-                      className={`rounded-full px-1.5 py-0.5 font-semibold ${
-                        delta >= 0
-                          ? "bg-brand/30 text-neutral-900"
-                          : "bg-neutral-100 text-neutral-600"
-                      }`}
-                    >
-                      {delta >= 0 ? `+${delta}` : delta}
-                    </span>
-                    <span className="text-neutral-400">
-                      {new Date(a.createdAt).toLocaleDateString("id-ID", {
-                        day: "numeric",
-                        month: "short",
-                      })}
-                    </span>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      )}
     </div>
   );
 }

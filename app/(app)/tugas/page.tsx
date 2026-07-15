@@ -9,8 +9,10 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { DeliveryReportForm } from "@/components/DeliveryReportForm";
 import { TaskAssignForm } from "@/components/TaskAssignForm";
 import { TugasTabs } from "@/components/TugasTabs";
-import { StarRating } from "@/components/StarRating";
-import { taskGrade, gradeSummary } from "@/lib/task-grade";
+import { GradeBadge, LevelBadge } from "@/components/Badge";
+import { taskGrade } from "@/lib/task-grade";
+import { salesGrade, salesLevel, gradePartsSummary } from "@/lib/sales-grade";
+import { STAGES, type Stage } from "@/lib/constants";
 import { waLink } from "@/lib/wa";
 import {
   ArrowRight,
@@ -35,6 +37,10 @@ const rupiah = (n: number) =>
 
 const fmtDate = (d: Date) =>
   new Date(d).toLocaleDateString("id-ID", { day: "numeric", month: "short" });
+
+// Konter dianggap "terbengkalai" kalau > 30 hari tak ada aktivitas funnel
+// (sama dengan halaman Performa Sales).
+const NEGLECT_DAYS = 30;
 
 // Header sub-kelompok di dalam tab (state alur kerja)
 function StateHeader({
@@ -103,20 +109,44 @@ export default async function TugasPage() {
   ]);
 
   // Tugas manual dari admin: admin lihat semua, sales lihat miliknya.
-  const [tasks, salesList] = await Promise.all([
-    prisma.task.findMany({
-      where: isAdmin ? {} : { assignedToId: user.id },
-      include: { assignedTo: true, store: true },
-      orderBy: [{ status: "asc" }, { createdAt: "desc" }],
-    }),
-    isAdmin
-      ? prisma.user.findMany({
-          where: { role: "SALES" },
-          select: { id: true, name: true },
-          orderBy: { name: "asc" },
-        })
-      : Promise.resolve([] as { id: string; name: string }[]),
-  ]);
+  // gradeStores/prospects/saleTotals/ratingAgg = bahan grade huruf & level
+  // (lib/sales-grade.ts) — semua konter & omzet semua waktu tetap diambil
+  // penuh karena pembandingnya omzet terbaik satu tim.
+  const [tasks, salesList, gradeStores, prospects, saleTotals, ratingAgg] =
+    await Promise.all([
+      prisma.task.findMany({
+        where: isAdmin ? {} : { assignedToId: user.id },
+        include: { assignedTo: true, store: true },
+        orderBy: [{ status: "asc" }, { createdAt: "desc" }],
+      }),
+      isAdmin
+        ? prisma.user.findMany({
+            where: { role: "SALES" },
+            select: { id: true, name: true, captainArea: true },
+            orderBy: { name: "asc" },
+          })
+        : Promise.resolve(
+            [] as { id: string; name: string; captainArea: string | null }[],
+          ),
+      prisma.store.findMany({
+        select: { id: true, salesId: true, createdAt: true },
+      }),
+      prisma.prospect.findMany({
+        where: { store: storeScope },
+        select: {
+          storeId: true,
+          stage: true,
+          updatedAt: true,
+          logs: {
+            orderBy: { createdAt: "desc" },
+            take: 1,
+            select: { createdAt: true },
+          },
+        },
+      }),
+      prisma.sale.groupBy({ by: ["storeId"], _sum: { total: true } }),
+      prisma.salesRating.groupBy({ by: ["salesId"], _avg: { stars: true } }),
+    ]);
   const pendingTasks = tasks.filter((t) => t.status !== "DONE");
 
   const kirim = orders.filter(
@@ -244,28 +274,86 @@ export default async function TugasPage() {
     </Link>
   );
 
-  // Grade KPI per sales dari tugas admin (lihat lib/task-grade.ts).
-  // Admin: papan grade semua sales; sales: grade dirinya sendiri.
+  // Grade huruf & level per sales — rumus yang sama dengan halaman
+  // Performa Sales (lib/sales-grade.ts): omzet vs terbaik tim, konter
+  // loyal, keaktifan, KPI tugas, dan rating owner.
+  const loyalIdx = STAGES.indexOf("LOYALTY");
+  const neglectCut = now.getTime() - NEGLECT_DAYS * 86_400_000;
+  const storeAgg = new Map<string, { furthestIdx: number; lastTs: number }>();
+  for (const p of prospects) {
+    const a = storeAgg.get(p.storeId) ?? { furthestIdx: -1, lastTs: 0 };
+    const idx = STAGES.indexOf(p.stage as Stage);
+    if (idx > a.furthestIdx) a.furthestIdx = idx;
+    const ts = p.logs[0]
+      ? new Date(p.logs[0].createdAt).getTime()
+      : new Date(p.updatedAt).getTime();
+    if (ts > a.lastTs) a.lastTs = ts;
+    storeAgg.set(p.storeId, a);
+  }
+
+  const allTimeByStore = new Map(
+    saleTotals.map((t) => [t.storeId, t._sum.total ?? 0]),
+  );
+  const allTimeBySales = new Map<string, number>();
+  for (const s of gradeStores) {
+    if (!s.salesId) continue;
+    allTimeBySales.set(
+      s.salesId,
+      (allTimeBySales.get(s.salesId) ?? 0) + (allTimeByStore.get(s.id) ?? 0),
+    );
+  }
+  const maxRevenue = Math.max(0, ...allTimeBySales.values());
+  const ratingBySales = new Map(
+    ratingAgg.map((r) => [r.salesId, Math.round((r._avg.stars ?? 0) * 10) / 10]),
+  );
+
+  const gradeFor = (salesId: string) => {
+    const myStores = gradeStores.filter((s) => s.salesId === salesId);
+    let loyal = 0;
+    let terbengkalai = 0;
+    for (const s of myStores) {
+      const agg = storeAgg.get(s.id);
+      if (agg && agg.furthestIdx >= loyalIdx) loyal++;
+      // aktivitas terakhir; konter tanpa prospek pakai tanggal dibuatnya
+      const lastTs = agg?.lastTs || new Date(s.createdAt).getTime();
+      if (lastTs < neglectCut) terbengkalai++;
+    }
+    return salesGrade({
+      revenue: allTimeBySales.get(salesId) ?? 0,
+      maxRevenue,
+      konter: myStores.length,
+      loyal,
+      terbengkalai,
+      stars: taskGrade(tasks.filter((t) => t.assignedToId === salesId)).stars,
+      rating: ratingBySales.get(salesId) ?? null,
+    });
+  };
+
+  // Admin: papan grade & level semua sales; sales: grade dirinya sendiri.
   const gradeBoard = salesList
-    .map((s) => ({
-      ...s,
-      grade: taskGrade(tasks.filter((t) => t.assignedToId === s.id)),
-    }))
-    .sort((a, b) => (b.grade.stars ?? -1) - (a.grade.stars ?? -1));
-  const myGrade = isAdmin ? null : taskGrade(tasks);
-  const gradeRule =
-    "Tepat waktu = poin penuh · telat = setengah · lewat tenggat belum selesai = 0 · tugas Penting bobot 2×";
+    .map((s) => {
+      const g = gradeFor(s.id);
+      return { ...s, g, lvl: salesLevel(g.grade, s.captainArea) };
+    })
+    .sort((a, b) => (b.g.score ?? -1) - (a.g.score ?? -1));
+  const myGrade = isAdmin ? null : gradeFor(user.id);
+  const myLevel = isAdmin
+    ? null
+    : salesLevel(myGrade!.grade, user.captainArea);
 
   // Tab penugasan: admin = form beri tugas + daftar; sales = tugas dari admin
   const penugasanNode = isAdmin ? (
     <div className="space-y-4">
-      {/* Papan grade KPI sales — dihitung dari penyelesaian tugas di bawah */}
+      {/* Papan grade huruf & level sales — rumus sama dengan Performa Sales */}
       <div className="rounded-2xl border border-neutral-200 bg-white p-5">
         <h2 className="mb-1 flex items-center gap-2 font-semibold">
           <Award className="h-4 w-4 text-neutral-500" />
-          Grade Sales (KPI)
+          Grade & Level Sales
         </h2>
-        <p className="mb-3 text-xs text-neutral-400">{gradeRule}</p>
+        <p className="mb-3 text-xs text-neutral-400">
+          Gabungan omzet, konter loyal, keaktifan, KPI tugas, dan rating owner
+          — klik nama untuk detailnya.
+        </p>
         {gradeBoard.length === 0 ? (
           <p className="text-sm text-neutral-400">Belum ada akun sales.</p>
         ) : (
@@ -273,27 +361,25 @@ export default async function TugasPage() {
             {gradeBoard.map((s) => (
               <div
                 key={s.id}
-                className="flex items-center justify-between gap-3 py-2.5"
+                className="flex flex-wrap items-center justify-between gap-2 py-2.5"
               >
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{s.name}</p>
+                  <Link
+                    href={`/sales/${s.id}`}
+                    className="block truncate text-sm font-medium hover:underline"
+                  >
+                    {s.name}
+                  </Link>
                   <p className="truncate text-xs text-neutral-400">
-                    {gradeSummary(s.grade)}
+                    {s.g.score === null
+                      ? "Belum ada data untuk dinilai"
+                      : `Skor ${s.g.score}/100 · ${gradePartsSummary(s.g.parts)}`}
                   </p>
                 </div>
-                {s.grade.stars === null ? (
-                  <span className="shrink-0 text-xs text-neutral-400">—</span>
-                ) : (
-                  <span className="flex shrink-0 items-center gap-1.5">
-                    <StarRating value={s.grade.stars} />
-                    <span className="w-7 text-right text-sm font-bold">
-                      {s.grade.stars.toLocaleString("id-ID", {
-                        minimumFractionDigits: 1,
-                        maximumFractionDigits: 1,
-                      })}
-                    </span>
-                  </span>
-                )}
+                <span className="flex shrink-0 items-center gap-1.5">
+                  <LevelBadge level={s.lvl.level} name={s.lvl.name} />
+                  {s.g.grade && <GradeBadge grade={s.g.grade} />}
+                </span>
               </div>
             ))}
           </div>
@@ -327,7 +413,7 @@ export default async function TugasPage() {
     <EmptyCard text="Belum ada tugas dari admin." />
   ) : (
     <div className="space-y-4">
-      {/* Grade KPI pribadi — naik dengan menyelesaikan tugas tepat waktu */}
+      {/* Grade huruf & level pribadi — rumus sama dengan Beranda */}
       <div className="rounded-2xl border border-neutral-200 bg-white p-5">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
@@ -335,28 +421,25 @@ export default async function TugasPage() {
               <Award className="h-4 w-4 text-neutral-500" />
               Grade Kamu
             </h2>
-            <p className="mt-0.5 text-xs text-neutral-400">
-              {gradeSummary(myGrade!)}
+            <p className="mt-1.5">
+              <LevelBadge level={myLevel!.level} name={myLevel!.name} />
+            </p>
+            <p className="mt-1 text-xs text-neutral-400">
+              {myGrade!.score === null
+                ? "Belum ada data untuk dinilai"
+                : `Skor ${myGrade!.score}/100 · ${gradePartsSummary(myGrade!.parts)}`}
             </p>
           </div>
-          {myGrade!.stars === null ? (
+          {myGrade!.grade ? (
+            <GradeBadge grade={myGrade!.grade} size="lg" />
+          ) : (
             <span className="shrink-0 text-xs text-neutral-400">
               Belum dinilai
-            </span>
-          ) : (
-            <span className="flex shrink-0 items-center gap-1.5">
-              <StarRating value={myGrade!.stars} size="h-5 w-5" />
-              <span className="text-lg font-bold">
-                {myGrade!.stars.toLocaleString("id-ID", {
-                  minimumFractionDigits: 1,
-                  maximumFractionDigits: 1,
-                })}
-              </span>
             </span>
           )}
         </div>
         <p className="mt-2 border-t border-neutral-100 pt-2 text-[11px] text-neutral-400">
-          {gradeRule}
+          Cara menaikkan grade & level ada di Beranda, bagian Cara Naik Level.
         </p>
       </div>
 

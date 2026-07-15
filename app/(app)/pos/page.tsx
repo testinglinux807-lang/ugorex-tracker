@@ -55,17 +55,21 @@ export default async function PosPage() {
         (soldByProduct.get(s.productId) ?? 0) + s.qty,
       );
   }
-  const productsWithStock = products.map((p) => ({
-    id: p.id,
-    name: p.name,
-    code: p.code,
-    // Harga owner (kalau sudah disetel) jadi prefill; jika belum, harga katalog
-    price: priceByProduct.get(p.id) ?? p.price,
-    remaining: Math.max(
-      0,
-      (stockByProduct.get(p.id) ?? 0) - (soldByProduct.get(p.id) ?? 0),
-    ),
-  }));
+  const productsWithStock = products
+    // Hanya barang yang pernah dikasih stok ke toko ini — katalog pusat
+    // yang belum pernah dimiliki owner tidak ikut tampil di POS.
+    .filter((p) => (stockByProduct.get(p.id) ?? 0) > 0)
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      code: p.code,
+      // Harga owner (kalau sudah disetel) jadi prefill; jika belum, harga katalog
+      price: priceByProduct.get(p.id) ?? p.price,
+      remaining: Math.max(
+        0,
+        (stockByProduct.get(p.id) ?? 0) - (soldByProduct.get(p.id) ?? 0),
+      ),
+    }));
 
   const startOfDay = wibDayStart();
   const todaySales = sales.filter((s) => new Date(s.createdAt) >= startOfDay);

@@ -12,7 +12,6 @@ type Product = {
   code: string | null;
   price: number;
   description: string | null;
-  imageUrl: string | null;
   centralStock: number;
 };
 

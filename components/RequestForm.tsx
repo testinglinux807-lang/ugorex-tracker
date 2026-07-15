@@ -1,18 +1,11 @@
 "use client";
 
-import { useActionState, useMemo, useState, useTransition } from "react";
+import { useActionState, useState, useTransition } from "react";
 import Script from "next/script";
 import { createRequest, createRestockRequest } from "@/app/actions/requests";
-import {
-  Search,
-  ChevronLeft,
-  ChevronRight,
-  Minus,
-  Plus,
-  X,
-  Package,
-} from "lucide-react";
+import { X } from "lucide-react";
 import { PendingLabel } from "@/components/SubmitButton";
+import { ProductPicker } from "@/components/ProductPicker";
 import { VoucherInput, type AppliedVoucher } from "@/components/VoucherInput";
 import {
   voucherDiscount,
@@ -58,7 +51,6 @@ function tokenizeCard(card: CardFields): Promise<string | null> {
 }
 
 const inputCls = "w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm";
-const PER_PAGE = 6;
 
 const rupiah = (n: number) =>
   new Intl.NumberFormat("id-ID", {
@@ -70,44 +62,15 @@ const rupiah = (n: number) =>
 type RestockProduct = {
   id: string;
   name: string;
+  code: string | null;
   price: number; // harga satuan
   remaining: number; // sisa di toko owner
   central: number; // stok pusat yang bisa di-order
-  imageUrl: string | null;
 };
 
 // Tier diskon grosir aktif (aturan admin) — dipakai untuk preview di
 // keranjang; perhitungan final tetap di server.
 export type GrosirTierInfo = { minQty: number; percent: number };
-
-// Foto barang kecil dengan fallback ikon
-function Thumb({
-  src,
-  alt,
-  size = "h-10 w-10",
-}: {
-  src: string | null;
-  alt: string;
-  size?: string;
-}) {
-  if (src) {
-    return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={src}
-        alt={alt}
-        className={`${size} shrink-0 rounded-lg border border-neutral-200 object-cover`}
-      />
-    );
-  }
-  return (
-    <div
-      className={`flex ${size} shrink-0 items-center justify-center rounded-lg bg-neutral-100`}
-    >
-      <Package className="h-4 w-4 text-neutral-300" />
-    </div>
-  );
-}
 
 // Checkout restok: pilih barang + jumlah langsung dari stok pusat
 function RestockForm({
@@ -125,8 +88,7 @@ function RestockForm({
   const [, startTransition] = useTransition();
 
   const [qtys, setQtys] = useState<Record<string, number>>({});
-  const [q, setQ] = useState("");
-  const [page, setPage] = useState(0);
+  const [pickerId, setPickerId] = useState("");
   const [showReceipt, setShowReceipt] = useState(false);
   const [voucher, setVoucher] = useState<AppliedVoucher | null>(null);
   const [method, setMethod] = useState<PaymentMethod>("CASH");
@@ -183,19 +145,6 @@ function RestockForm({
     startTransition(() => formAction(fd));
   }
 
-  const filtered = useMemo(
-    () =>
-      products.filter((p) =>
-        p.name.toLowerCase().includes(q.trim().toLowerCase()),
-      ),
-    [products, q],
-  );
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
-  const safePage = Math.min(page, pageCount - 1);
-  const view = filtered.slice(
-    safePage * PER_PAGE,
-    safePage * PER_PAGE + PER_PAGE,
-  );
   const chosen = Object.entries(qtys).filter(([, n]) => n > 0);
   const cartSubtotal = chosen.reduce((a, [id, n]) => {
     const p = products.find((x) => x.id === id);
@@ -219,222 +168,136 @@ function RestockForm({
     setQtys((s) => ({ ...s, [id]: Math.min(max, Math.max(0, n)) }));
   }
 
+  // Pilih barang dari picker → masuk keranjang (atau qty +1 kalau sudah
+  // ada), picker direset supaya siap pilih barang berikutnya — pola yang
+  // sama dengan form Catat Penjualan (POS).
+  function addProduct(id: string) {
+    if (!id) return;
+    setPickerId("");
+    const p = products.find((x) => x.id === id);
+    if (!p || p.central <= 0) return; // stok pusat habis
+    setQty(id, (qtys[id] ?? 0) + 1);
+  }
+
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
-      <div className="relative">
-        <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
-        <input
-          type="text"
-          value={q}
-          onChange={(e) => {
-            setQ(e.target.value);
-            setPage(0);
-          }}
-          placeholder="Cari barang…"
-          className="w-full rounded-lg border border-neutral-300 py-2 pl-8 pr-3 text-sm"
+      {/* Pilih barang ala POS: dropdown dengan pencarian nama/kode — pola
+          yang sama dengan form Catat Penjualan */}
+      <div>
+        <label className="mb-1 block text-sm font-medium text-neutral-700">
+          Tambah Barang
+        </label>
+        <ProductPicker
+          products={products.map((p) => ({
+            id: p.id,
+            name: p.name,
+            code: p.code,
+            price: p.price,
+            remaining: p.central, // di konteks restok: sisa = stok pusat
+          }))}
+          value={pickerId}
+          onChange={addProduct}
         />
+        <p className="mt-1 text-xs text-neutral-400">
+          Cari pakai nama atau kode barang — pilih lagi untuk menambah jumlah.
+        </p>
       </div>
 
-      {/* Kartu produk ala marketplace (Shopee/Tokopedia) — pola yang sudah
-          akrab buat owner: foto besar, harga, lalu tombol Tambah / stepper */}
-      {view.length === 0 ? (
-        <p className="px-1 py-2 text-sm text-neutral-400">
-          Barang tidak ditemukan.
-        </p>
-      ) : (
-        <div className="grid grid-cols-2 gap-2">
-          {view.map((p) => {
-            const n = qtys[p.id] ?? 0;
-            const empty = p.central === 0;
-            return (
-              <div
-                key={p.id}
-                className={`overflow-hidden rounded-xl border bg-white ${
-                  n > 0 ? "border-neutral-900" : "border-neutral-200"
-                }`}
-              >
-                <div className="relative aspect-square w-full bg-neutral-100">
-                  {p.imageUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={p.imageUrl}
-                      alt={p.name}
-                      className={`h-full w-full object-cover ${empty ? "opacity-40" : ""}`}
-                    />
-                  ) : (
-                    <span className="flex h-full w-full items-center justify-center">
-                      <Package className="h-8 w-8 text-neutral-300" />
-                    </span>
-                  )}
-                  {empty && (
-                    <span className="absolute inset-x-0 top-1/2 -translate-y-1/2 bg-neutral-900/70 py-1 text-center text-[11px] font-bold text-white">
-                      STOK PUSAT HABIS
-                    </span>
-                  )}
-                  {n > 0 && (
-                    <span className="absolute right-1.5 top-1.5 rounded-full bg-brand px-2 py-0.5 text-xs font-bold text-neutral-900">
-                      ×{n}
-                    </span>
-                  )}
-                </div>
-                <div className="space-y-1 p-2">
-                  <p className="line-clamp-2 min-h-8 text-xs font-medium leading-4">
-                    {p.name}
-                  </p>
-                  <p className="text-sm font-bold">{rupiah(p.price)}</p>
-                  <p className="text-[10px]">
-                    <span
-                      className={
-                        empty
-                          ? "font-semibold text-red-600"
-                          : p.central <= 10
-                            ? "font-semibold text-amber-600"
-                            : "text-neutral-400"
-                      }
-                    >
-                      Pusat: {p.central}
-                    </span>
-                    <span className="text-neutral-400"> · toko: {p.remaining}</span>
-                  </p>
-                  {n === 0 ? (
-                    <button
-                      type="button"
-                      onClick={() => setQty(p.id, 1)}
-                      disabled={empty}
-                      className="w-full rounded-lg bg-neutral-900 py-1.5 text-xs font-semibold text-white hover:bg-neutral-800 disabled:opacity-40"
-                    >
-                      + Keranjang
-                    </button>
-                  ) : (
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => setQty(p.id, n - 1)}
-                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-neutral-300 text-neutral-600 hover:bg-neutral-100"
-                        aria-label={`Kurangi ${p.name}`}
-                      >
-                        <Minus className="h-3.5 w-3.5" />
-                      </button>
-                      <input
-                        type="number"
-                        min={0}
-                        max={p.central}
-                        value={n}
-                        onChange={(e) =>
-                          setQty(p.id, parseInt(e.target.value, 10) || 0)
-                        }
-                        aria-label={`Jumlah ${p.name}`}
-                        className="h-7 w-full min-w-0 rounded-lg border border-neutral-300 px-1 text-center text-sm"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setQty(p.id, n + 1)}
-                        disabled={n >= p.central}
-                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-neutral-300 text-neutral-600 hover:bg-neutral-100 disabled:opacity-40"
-                        aria-label={`Tambah ${p.name}`}
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {pageCount > 1 && (
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-neutral-400">
-            Hal {safePage + 1}/{pageCount}
-          </span>
-          <div className="flex gap-1">
-            <button
-              type="button"
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
-              disabled={safePage === 0}
-              className="flex h-7 w-7 items-center justify-center rounded-lg border border-neutral-300 text-neutral-600 hover:bg-neutral-100 disabled:opacity-40"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
-              disabled={safePage >= pageCount - 1}
-              className="flex h-7 w-7 items-center justify-center rounded-lg border border-neutral-300 text-neutral-600 hover:bg-neutral-100 disabled:opacity-40"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Ringkasan keranjang + kirim qty semua barang terpilih (lintas halaman) */}
+      {/* Keranjang gaya nota: baris teks tipis, hemat tempat */}
       {chosen.length > 0 && (
-        <div className="space-y-1 rounded-lg bg-neutral-100 px-3 py-2 text-xs text-neutral-600">
+        <div className="border-y border-dashed border-neutral-300">
           {chosen.map(([id, n]) => {
             const p = products.find((x) => x.id === id);
             if (!p) return null;
+            const low = p.central <= 10;
             return (
-              <div key={id} className="flex items-center justify-between gap-2">
-                <span className="min-w-0 truncate">
-                  {p.name} ×{n}
+              <div
+                key={id}
+                className="flex items-center gap-1.5 border-b border-dashed border-neutral-200 py-1.5 text-sm last:border-b-0"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="break-words leading-snug">
+                    {p.code && (
+                      <span className="mr-1.5 rounded bg-neutral-900 px-1 py-0.5 text-[10px] font-bold text-white">
+                        {p.code}
+                      </span>
+                    )}
+                    {p.name}
+                  </p>
+                  <p
+                    className={`text-[10px] ${
+                      low
+                        ? "font-semibold text-amber-600"
+                        : "text-neutral-400"
+                    }`}
+                  >
+                    @{rupiah(p.price)} · stok pusat {p.central}
+                  </p>
+                </div>
+                <input
+                  type="number"
+                  min={1}
+                  max={p.central}
+                  value={n}
+                  onChange={(e) =>
+                    setQty(id, parseInt(e.target.value, 10) || 1)
+                  }
+                  aria-label={`Jumlah ${p.name}`}
+                  className="w-10 shrink-0 border-0 border-b border-neutral-300 bg-transparent p-0 text-center text-sm focus:border-neutral-900 focus:outline-none focus:ring-0"
+                />
+                <span className="w-16 shrink-0 text-right text-sm font-semibold">
+                  {(n * p.price).toLocaleString("id-ID")}
                 </span>
-                <span className="shrink-0 font-medium text-neutral-900">
-                  {rupiah(p.price * n)}
-                </span>
+                <button
+                  type="button"
+                  onClick={() => setQty(id, 0)}
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+                  aria-label={`Hapus ${p.name}`}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+                <input type="hidden" name={`qty__${id}`} value={n} />
               </div>
             );
           })}
-          {(grosir > 0 || discount > 0) && (
-            <>
-              <div className="flex items-center justify-between border-t border-neutral-200 pt-1">
-                <span>Subtotal</span>
-                <span>{rupiah(cartSubtotal)}</span>
-              </div>
-              {grosir > 0 && (
-                <div className="flex items-center justify-between">
-                  <span>
-                    Diskon grosir {grosirTier!.percent}% (≥{grosirTier!.minQty}{" "}
-                    pcs)
-                  </span>
-                  <span>−{rupiah(grosir)}</span>
-                </div>
-              )}
-              {discount > 0 && (
-                <div className="flex items-center justify-between">
-                  <span>Diskon ({voucher!.code})</span>
-                  <span>−{rupiah(discount)}</span>
-                </div>
-              )}
-            </>
-          )}
-          {fee > 0 && (
-            <div className="flex items-center justify-between border-t border-neutral-200 pt-1">
-              <span>Biaya layanan</span>
-              <span>{rupiah(fee)}</span>
-            </div>
-          )}
-          <div
-            className={`flex items-center justify-between pt-1 ${
-              grosir > 0 || discount > 0 || fee > 0
-                ? ""
-                : "border-t border-neutral-200"
-            }`}
-          >
-            <span className="font-semibold text-neutral-900">
-              {fee > 0 ? "Total Bayar" : "Total"}
-            </span>
-            <span className="text-sm font-bold text-neutral-900">
-              {rupiah(grandTotal)}
-            </span>
-          </div>
         </div>
       )}
-      {chosen.map(([id, n]) => (
-        <input key={id} type="hidden" name={`qty__${id}`} value={n} />
-      ))}
+
+      {/* Total otomatis, gaya nota */}
+      <div className="space-y-0.5 px-0.5">
+        {(grosir > 0 || discount > 0 || fee > 0) && (
+          <div className="flex items-baseline justify-between text-sm text-neutral-500">
+            <span>Subtotal</span>
+            <span>{rupiah(cartSubtotal)}</span>
+          </div>
+        )}
+        {grosir > 0 && (
+          <div className="flex items-baseline justify-between text-sm text-neutral-500">
+            <span>
+              Diskon grosir {grosirTier!.percent}% (≥{grosirTier!.minQty} pcs)
+            </span>
+            <span>−{rupiah(grosir)}</span>
+          </div>
+        )}
+        {discount > 0 && (
+          <div className="flex items-baseline justify-between text-sm text-neutral-500">
+            <span>Diskon ({voucher!.code})</span>
+            <span>−{rupiah(discount)}</span>
+          </div>
+        )}
+        {fee > 0 && (
+          <div className="flex items-baseline justify-between text-sm text-neutral-500">
+            <span>Biaya layanan</span>
+            <span>{rupiah(fee)}</span>
+          </div>
+        )}
+        <div className="flex items-baseline justify-between">
+          <span className="text-sm font-semibold text-neutral-700">
+            TOTAL{chosen.length > 0 ? ` (${chosen.length} barang)` : ""}
+          </span>
+          <span className="text-lg font-bold">{rupiah(grandTotal)}</span>
+        </div>
+      </div>
 
       {/* Voucher toko (opsional, dibuat admin) */}
       {chosen.length > 0 && (
@@ -499,9 +362,15 @@ function RestockForm({
                 if (!p) return null;
                 return (
                   <div key={id} className="flex items-center gap-2">
-                    <Thumb src={p.imageUrl} alt={p.name} size="h-9 w-9" />
                     <div className="min-w-0 flex-1">
-                      <p className="truncate font-medium">{p.name}</p>
+                      <p className="break-words font-medium leading-snug">
+                        {p.code && (
+                          <span className="mr-1.5 rounded bg-neutral-900 px-1 py-0.5 text-[10px] font-bold text-white">
+                            {p.code}
+                          </span>
+                        )}
+                        {p.name}
+                      </p>
                       <div className="flex justify-between text-neutral-500">
                         <span>
                           {n} × {rupiah(p.price)}
