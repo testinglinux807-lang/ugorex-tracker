@@ -79,19 +79,35 @@ export default async function BerandaPage() {
       where,
       include: {
         store: true,
-        product: true,
+        // Cukup nama barang — description (daftar HP kompatibel) berat
+        product: { select: { name: true } },
         logs: { orderBy: { createdAt: "desc" }, take: 1 },
       },
     }),
+    // Riwayat penuh dipakai banyak hitungan (KPI, grafik, terlaris, stok
+    // menipis, peta omzet) — tarik kolom seperlunya saja, tanpa join user
+    // penuh (createdBy: true ikut menyeret passwordHash dkk.)
     prisma.sale.findMany({
       where,
-      include: { store: true, createdBy: true },
+      select: {
+        id: true,
+        storeId: true,
+        productId: true,
+        productName: true,
+        qty: true,
+        total: true,
+        createdAt: true,
+        store: { select: { name: true, area: true } },
+        createdBy: { select: { name: true } },
+      },
       orderBy: { createdAt: "desc" },
     }),
     prisma.stageLog.findMany({
       where: { prospect: where },
       include: {
-        prospect: { include: { store: true, product: true } },
+        prospect: {
+          include: { store: true, product: { select: { name: true } } },
+        },
         sales: true,
       },
       orderBy: { createdAt: "desc" },

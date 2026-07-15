@@ -50,7 +50,12 @@ export default async function OrderPage({
   const orderInclude = {
     store: { include: { sales: true } },
     createdBy: true,
-    items: { include: { product: true } },
+    // Cukup nama + stok pusat — description (daftar HP kompatibel) berat
+    items: {
+      include: {
+        product: { select: { id: true, name: true, centralStock: true } },
+      },
+    },
   } as const;
   // take: riwayat lama tidak perlu ditarik ulang tiap buka halaman — angka
   // ringkasan dihitung terpisah lewat aggregate di bawah.
@@ -109,7 +114,17 @@ export default async function OrderPage({
     const storeId = user.ownedStore!.id;
     const [products, prospects, sold, grosirTiers] =
       await Promise.all([
-        prisma.product.findMany({ orderBy: { name: "asc" } }),
+        prisma.product.findMany({
+          // description berat & tak dipakai di checkout restok
+          select: {
+            id: true,
+            name: true,
+            code: true,
+            price: true,
+            centralStock: true,
+          },
+          orderBy: { name: "asc" },
+        }),
         prisma.prospect.findMany({ where: { storeId } }),
         prisma.sale.groupBy({
           by: ["productId"],

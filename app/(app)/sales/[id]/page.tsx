@@ -98,12 +98,14 @@ export default async function SalesDetailPage({
       },
       orderBy: { name: "asc" },
     }),
-    prisma.sale.findMany({
+    // Omzet per konter dalam periode — agregat di DB, bukan tarik semua baris
+    prisma.sale.groupBy({
+      by: ["storeId"],
       where: {
         store: { salesId: id },
         ...(start ? { createdAt: { gte: start } } : {}),
       },
-      select: { storeId: true, total: true },
+      _sum: { total: true },
     }),
     prisma.task.findMany({
       where: { assignedToId: id },
@@ -161,12 +163,9 @@ export default async function SalesDetailPage({
   const kpiNow = salesKpi(kpiInput, { from: monthStart, to: null });
   const kpiPrev = salesKpi(kpiInput, { from: prevMonthStart, to: monthStart });
 
-  const revenueByStore = new Map<string, number>();
-  for (const s of saleRows)
-    revenueByStore.set(
-      s.storeId,
-      (revenueByStore.get(s.storeId) ?? 0) + s.total,
-    );
+  const revenueByStore = new Map(
+    saleRows.map((s) => [s.storeId, s._sum.total ?? 0]),
+  );
 
   const nowMs = new Date().getTime();
   const neglectCut = nowMs - NEGLECT_DAYS * 86_400_000;

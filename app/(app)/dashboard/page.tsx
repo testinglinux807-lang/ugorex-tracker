@@ -34,7 +34,11 @@ export default async function DashboardPage() {
 
   const [
     prospects,
-    sales,
+    saleAgg,
+    saleMonthAgg,
+    activeStoreRows,
+    salePointRows,
+    recentSales,
     recentLogs,
     totalStores,
     tickets,
@@ -43,14 +47,49 @@ export default async function DashboardPage() {
     targetConfig,
     paidOrders,
   ] = await Promise.all([
-    prisma.prospect.findMany({ include: { store: true, product: true } }),
+    prisma.prospect.findMany({
+      // Cukup nama barang — description (daftar HP kompatibel) berat
+      include: { store: true, product: { select: { name: true } } },
+    }),
+    // Total & unit dihitung di database — tabel Sale terus tumbuh, jangan
+    // menarik seluruh riwayat transaksi (plus join-nya) tiap render.
+    prisma.sale.aggregate({ _sum: { total: true, qty: true } }),
+    prisma.sale.aggregate({
+      where: { createdAt: { gte: monthStart } },
+      _sum: { total: true },
+    }),
+    prisma.sale.groupBy({ by: ["storeId"] }),
+    // Grafik tren + Produk Terlaris butuh riwayat penuh (difilter di client),
+    // tapi cukup kolom ringan ini — tanpa join user/harga/diskon.
     prisma.sale.findMany({
-      include: { store: { include: { sales: true } }, createdBy: true },
+      select: {
+        createdAt: true,
+        total: true,
+        qty: true,
+        productName: true,
+        store: { select: { area: true } },
+      },
+    }),
+    // Activity feed cukup 40 transaksi terakhir
+    prisma.sale.findMany({
+      select: {
+        id: true,
+        storeId: true,
+        productName: true,
+        qty: true,
+        total: true,
+        createdAt: true,
+        store: { select: { name: true } },
+        createdBy: { select: { name: true } },
+      },
       orderBy: { createdAt: "desc" },
+      take: 40,
     }),
     prisma.stageLog.findMany({
       include: {
-        prospect: { include: { store: true, product: true } },
+        prospect: {
+          include: { store: true, product: { select: { name: true } } },
+        },
         sales: true,
       },
       orderBy: { createdAt: "desc" },
@@ -79,9 +118,7 @@ export default async function DashboardPage() {
   ]);
 
   const monthlyTarget = parseInt(targetConfig?.value ?? "2000000", 10) || 0;
-  const monthSalesRevenue = sales
-    .filter((s) => new Date(s.createdAt) >= monthStart)
-    .reduce((a, s) => a + s.total, 0);
+  const monthSalesRevenue = saleMonthAgg._sum.total ?? 0;
   const totalOrderRevenue = paidOrders.reduce((a, o) => a + o.total, 0);
   const monthOrderRevenue = paidOrders
     .filter((o) => new Date(o.createdAt) >= monthStart)
@@ -138,15 +175,15 @@ export default async function DashboardPage() {
 
   // --- Revenue --- Total Penjualan = POS (jual ke end customer) + Order
   // restok yang sudah dibayar owner (dua-duanya pendapatan yang masuk).
-  const totalSalesRevenue = sales.reduce((a, s) => a + s.total, 0);
+  const totalSalesRevenue = saleAgg._sum.total ?? 0;
   const totalRevenue = totalSalesRevenue + totalOrderRevenue;
-  const totalUnits = sales.reduce((a, s) => a + s.qty, 0);
+  const totalUnits = saleAgg._sum.qty ?? 0;
 
   // --- Konter aktif (punya transaksi) ---
-  const activeStoresCount = new Set(sales.map((s) => s.storeId)).size;
+  const activeStoresCount = activeStoreRows.length;
 
   // Titik penjualan untuk grafik (bisa difilter rentangnya di client)
-  const salesPoints = sales.map((s) => ({
+  const salesPoints = salePointRows.map((s) => ({
     ts: new Date(s.createdAt).getTime(),
     total: s.total,
   }));
@@ -190,7 +227,7 @@ export default async function DashboardPage() {
     result: log.result,
   }));
 
-  const saleActs = sales.slice(0, 40).map((s) => ({
+  const saleActs = recentSales.map((s) => ({
     id: `sale-${s.id}`,
     type: "SALE" as const,
     ts: new Date(s.createdAt).getTime(),
@@ -311,7 +348,7 @@ export default async function DashboardPage() {
               <div className="flex h-full flex-col rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
                 <h2 className="mb-3 font-semibold">Produk Terlaris</h2>
                 <div className="flex-1">
-                  <TopProductsInteractive sales={sales} />
+                  <TopProductsInteractive sales={salePointRows} />
                 </div>
               </div>
             ),

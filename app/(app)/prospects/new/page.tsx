@@ -17,7 +17,10 @@ export default async function NewProspectPage() {
     where: user.role === "SALES" ? { salesId: user.id } : {},
     orderBy: { name: "asc" },
   });
-  const products = await prisma.product.findMany({ orderBy: { name: "asc" } });
+  const products = await prisma.product.findMany({
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+  });
 
   return (
     <div className="space-y-4">

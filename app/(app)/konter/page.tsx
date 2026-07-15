@@ -47,24 +47,34 @@ export default async function KonterPage({
         ownerUser: true,
         prospects: {
           include: {
-            product: true,
+            // Cukup nama barang — description (daftar HP kompatibel) berat
+            product: { select: { name: true } },
             logs: { orderBy: { createdAt: "desc" }, take: 1 },
           },
         },
       },
       orderBy: { createdAt: "desc" },
     }),
-    prisma.product.findMany({ orderBy: { name: "asc" } }),
-    prisma.sale.findMany({
+    prisma.product.findMany({
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+    // Agregat per konter+barang dihitung di database, bukan menarik semua
+    // baris transaksi (tabel Sale terus tumbuh).
+    prisma.sale.groupBy({
+      by: ["storeId", "productId"],
       where: user.role === "SALES" ? { store: { salesId: user.id } } : {},
-      select: { storeId: true, productId: true, qty: true, total: true },
+      _sum: { qty: true, total: true },
     }),
   ]);
 
   // Terlaris: total penjualan per konter, diberi peringkat 1-3 teratas
   const revenueByStore = new Map<string, number>();
   for (const s of sales) {
-    revenueByStore.set(s.storeId, (revenueByStore.get(s.storeId) ?? 0) + s.total);
+    revenueByStore.set(
+      s.storeId,
+      (revenueByStore.get(s.storeId) ?? 0) + (s._sum.total ?? 0),
+    );
   }
   const rankByStore = new Map<string, number>();
   [...revenueByStore.entries()]
@@ -102,8 +112,7 @@ export default async function KonterPage({
   const soldMap = new Map<string, number>();
   for (const s of sales) {
     if (!s.productId) continue;
-    const k = `${s.storeId}__${s.productId}`;
-    soldMap.set(k, (soldMap.get(k) ?? 0) + s.qty);
+    soldMap.set(`${s.storeId}__${s.productId}`, s._sum.qty ?? 0);
   }
 
 

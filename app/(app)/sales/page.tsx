@@ -38,9 +38,11 @@ export default async function SalesPage({
     prisma.prospect.findMany({
       include: { logs: { orderBy: { createdAt: "desc" }, take: 1 } },
     }),
-    prisma.sale.findMany({
+    // Omzet per konter dalam periode — agregat di DB, bukan tarik semua baris
+    prisma.sale.groupBy({
+      by: ["storeId"],
       where: start ? { createdAt: { gte: start } } : {},
-      select: { storeId: true, total: true },
+      _sum: { total: true },
     }),
     prisma.store.findMany({
       select: { id: true, salesId: true, createdAt: true },
@@ -100,12 +102,9 @@ export default async function SalesPage({
   );
 
   // Omzet per konter
-  const revenueByStore = new Map<string, number>();
-  for (const s of saleRows)
-    revenueByStore.set(
-      s.storeId,
-      (revenueByStore.get(s.storeId) ?? 0) + s.total,
-    );
+  const revenueByStore = new Map(
+    saleRows.map((s) => [s.storeId, s._sum.total ?? 0]),
+  );
 
   // Per konter: tahap terjauh + aktivitas terakhir (ms)
   const nowMs = new Date().getTime();

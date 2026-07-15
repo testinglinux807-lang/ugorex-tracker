@@ -21,7 +21,11 @@ export type OrderRequest = Prisma.RequestGetPayload<{
   include: {
     store: { include: { sales: true } };
     createdBy: true;
-    items: { include: { product: true } };
+    items: {
+      include: {
+        product: { select: { id: true; name: true; centralStock: true } };
+      };
+    };
   };
 }>;
 

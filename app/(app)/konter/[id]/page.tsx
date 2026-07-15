@@ -56,7 +56,11 @@ export default async function StoreDetailPage({
       sales: true,
       ownerUser: true,
       prospects: {
-        include: { product: true, logs: { orderBy: { createdAt: "desc" }, take: 1 } },
+        include: {
+          // Cukup nama barang — description (daftar HP kompatibel) berat
+          product: { select: { name: true } },
+          logs: { orderBy: { createdAt: "desc" }, take: 1 },
+        },
       },
       tickets: { orderBy: { createdAt: "desc" } },
     },
@@ -66,17 +70,33 @@ export default async function StoreDetailPage({
 
   const isAdmin = user.role === "ADMIN";
 
+  // Grafik & timeline butuh riwayat penuh toko ini, tapi cukup kolom yang
+  // dipakai saja (tanpa discount/price/storeId dsb.)
   const sales = await prisma.sale.findMany({
     where: { storeId: store.id },
-    include: { createdBy: true },
+    select: {
+      id: true,
+      total: true,
+      qty: true,
+      productId: true,
+      productName: true,
+      createdAt: true,
+      createdBy: { select: { name: true } },
+    },
     orderBy: { createdAt: "desc" },
   });
-  const products = await prisma.product.findMany({ orderBy: { name: "asc" } });
+  const products = await prisma.product.findMany({
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+  });
 
   // Semua log funnel toko ini (bukan cuma yang terbaru) buat timeline aktivitas
   const stageLogs = await prisma.stageLog.findMany({
     where: { prospect: { storeId: store.id } },
-    include: { prospect: { include: { product: true } }, sales: true },
+    include: {
+      prospect: { include: { product: { select: { name: true } } } },
+      sales: true,
+    },
     orderBy: { createdAt: "desc" },
   });
   const totalRevenue = sales.reduce((a, s) => a + s.total, 0);

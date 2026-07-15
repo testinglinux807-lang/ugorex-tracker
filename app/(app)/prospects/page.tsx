@@ -28,7 +28,8 @@ export default async function ProspectsPage() {
     where: scopeWhere(user),
     include: {
       store: true,
-      product: true,
+      // Cukup nama barang — description (daftar HP kompatibel) berat
+      product: { select: { name: true } },
       sales: true,
       logs: { orderBy: { createdAt: "desc" }, take: 1 },
     },

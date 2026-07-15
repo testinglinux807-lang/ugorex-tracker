@@ -19,9 +19,18 @@ export default async function StokPage() {
   }
 
   const storeId = user.ownedStore.id;
-  const [products, sales, prospects] = await Promise.all([
-    prisma.product.findMany({ orderBy: { name: "asc" } }),
-    prisma.sale.findMany({ where: { storeId } }),
+  // Terjual per barang dihitung di database (groupBy), bukan menarik semua
+  // baris transaksi; description product juga tak dipakai di halaman ini.
+  const [products, sold, prospects] = await Promise.all([
+    prisma.product.findMany({
+      select: { id: true, name: true, price: true },
+      orderBy: { name: "asc" },
+    }),
+    prisma.sale.groupBy({
+      by: ["productId"],
+      where: { storeId },
+      _sum: { qty: true },
+    }),
     prisma.prospect.findMany({ where: { storeId } }),
   ]);
 
@@ -33,12 +42,8 @@ export default async function StokPage() {
     if (p.price != null) priceByProduct.set(p.productId, p.price);
   }
   const soldByProduct = new Map<string, number>();
-  for (const s of sales) {
-    if (s.productId)
-      soldByProduct.set(
-        s.productId,
-        (soldByProduct.get(s.productId) ?? 0) + s.qty,
-      );
+  for (const s of sold) {
+    if (s.productId) soldByProduct.set(s.productId, s._sum.qty ?? 0);
   }
   const productsWithStock = products.map((p) => ({
     id: p.id,

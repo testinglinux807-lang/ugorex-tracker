@@ -18,27 +18,24 @@ export default async function FunnelPage() {
   if (user.role === "OWNER") redirect("/pos");
   if (user.role === "SALES") redirect("/beranda");
 
-  const [prospects, saleRows] = await Promise.all([
+  const [prospects, revenueRows] = await Promise.all([
     prisma.prospect.findMany({
       include: {
         store: { include: { sales: true } },
-        product: true,
         logs: { orderBy: { createdAt: "desc" }, take: 1 },
       },
       orderBy: { updatedAt: "desc" },
     }),
-    prisma.sale.findMany({ select: { storeId: true, total: true } }),
+    // Omzet per konter dihitung di database, bukan menarik semua transaksi
+    prisma.sale.groupBy({ by: ["storeId"], _sum: { total: true } }),
   ]);
 
   const stageIdx = (s: string) => STAGES.indexOf(s as Stage);
 
   // Omzet per konter (dari transaksi POS)
-  const revenueByStore = new Map<string, number>();
-  for (const s of saleRows)
-    revenueByStore.set(
-      s.storeId,
-      (revenueByStore.get(s.storeId) ?? 0) + s.total,
-    );
+  const revenueByStore = new Map(
+    revenueRows.map((r) => [r.storeId, r._sum.total ?? 0]),
+  );
 
   // --- Ringkasan funnel keseluruhan (per prospek) ---
   const counts: Record<Stage, number> = {

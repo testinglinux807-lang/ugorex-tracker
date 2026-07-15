@@ -4,6 +4,11 @@ import { SignJWT, jwtVerify } from "jose";
 import { prisma } from "./prisma";
 import type { Role } from "./constants";
 
+// Tanpa AUTH_SECRET di production, JWT bisa dipalsukan siapa pun yang tahu
+// fallback dev — lebih baik gagal keras daripada jalan dengan pintu terbuka.
+if (!process.env.AUTH_SECRET && process.env.NODE_ENV === "production") {
+  throw new Error("AUTH_SECRET wajib di-set di production.");
+}
 const SECRET = new TextEncoder().encode(
   process.env.AUTH_SECRET ?? "ugorex-dev-secret",
 );

@@ -55,6 +55,7 @@ export default async function ProspectDetailPage({
   // --- Analisa ---
   const salesRows = await prisma.sale.findMany({
     where: { storeId: prospect.storeId, productId: prospect.productId },
+    select: { qty: true, total: true, createdAt: true },
   });
   const unitsSold = salesRows.reduce((a, s) => a + s.qty, 0);
   const revenue = salesRows.reduce((a, s) => a + s.total, 0);

@@ -21,24 +21,41 @@ export default async function PosPage() {
   }
 
   const storeId = user.ownedStore.id;
-  const [products, sales, prospects, mySales, myRating] = await Promise.all([
-    prisma.product.findMany({ orderBy: { name: "asc" } }),
-    prisma.sale.findMany({
-      where: { storeId },
-      orderBy: { createdAt: "desc" },
-    }),
-    prisma.prospect.findMany({ where: { storeId } }),
-    // Sales pemegang konter + rating yang pernah diberikan owner ini —
-    // untuk form "Nilai Sales Kamu" di bawah
-    user.ownedStore.salesId
-      ? prisma.user.findUnique({
-          where: { id: user.ownedStore.salesId },
-          select: { name: true },
-        })
-      : null,
-    prisma.salesRating.findUnique({ where: { storeId } }),
-  ]);
-  const recent = sales.slice(0, 20);
+  const startOfDay = wibDayStart();
+  // Hitung agregat (terjual per barang, total hari ini) di database — jangan
+  // menarik seluruh riwayat transaksi tiap render; tabel Sale terus tumbuh.
+  const [products, recent, sold, todayAgg, prospects, mySales, myRating] =
+    await Promise.all([
+      prisma.product.findMany({
+        // description (daftar HP kompatibel) berat & tak dipakai di POS
+        select: { id: true, name: true, code: true, price: true },
+        orderBy: { name: "asc" },
+      }),
+      prisma.sale.findMany({
+        where: { storeId },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+      }),
+      prisma.sale.groupBy({
+        by: ["productId"],
+        where: { storeId },
+        _sum: { qty: true },
+      }),
+      prisma.sale.aggregate({
+        where: { storeId, createdAt: { gte: startOfDay } },
+        _sum: { total: true, qty: true },
+      }),
+      prisma.prospect.findMany({ where: { storeId } }),
+      // Sales pemegang konter + rating yang pernah diberikan owner ini —
+      // untuk form "Nilai Sales Kamu" di bawah
+      user.ownedStore.salesId
+        ? prisma.user.findUnique({
+            where: { id: user.ownedStore.salesId },
+            select: { name: true },
+          })
+        : null,
+      prisma.salesRating.findUnique({ where: { storeId } }),
+    ]);
 
   // Sisa stok per barang = stok dikasih sales - total terjual
   const stockByProduct = new Map<string, number>();
@@ -48,12 +65,8 @@ export default async function PosPage() {
     if (p.price != null) priceByProduct.set(p.productId, p.price);
   }
   const soldByProduct = new Map<string, number>();
-  for (const s of sales) {
-    if (s.productId)
-      soldByProduct.set(
-        s.productId,
-        (soldByProduct.get(s.productId) ?? 0) + s.qty,
-      );
+  for (const s of sold) {
+    if (s.productId) soldByProduct.set(s.productId, s._sum.qty ?? 0);
   }
   const productsWithStock = products
     // Hanya barang yang pernah dikasih stok ke toko ini — katalog pusat
@@ -71,10 +84,8 @@ export default async function PosPage() {
       ),
     }));
 
-  const startOfDay = wibDayStart();
-  const todaySales = sales.filter((s) => new Date(s.createdAt) >= startOfDay);
-  const todayTotal = todaySales.reduce((a, s) => a + s.total, 0);
-  const todayQty = todaySales.reduce((a, s) => a + s.qty, 0);
+  const todayTotal = todayAgg._sum.total ?? 0;
+  const todayQty = todayAgg._sum.qty ?? 0;
 
   return (
     <div className="space-y-5">
