@@ -2,8 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+import { notifyStockEmpty } from "@/lib/wa-notify";
 import { findUsableVoucher, consumeVoucher } from "@/lib/voucher";
 import { voucherDiscount } from "@/lib/voucher-calc";
 
@@ -100,6 +102,22 @@ export async function createSale(formData: FormData) {
   });
 
   await prisma.sale.createMany({ data: rows });
+
+  // Rolling restock: barang yang sisa stoknya jadi 0 karena transaksi ini →
+  // tugas follow-up + notif ke sales pemegang konter (slot kosong harus
+  // segera diisi lagi). Validasi di atas menjamin qty ≤ remaining.
+  const zeroed = lines
+    .filter(
+      (l) =>
+        (stockBy.get(l.productId) ?? 0) -
+          (soldBy.get(l.productId) ?? 0) -
+          l.qty <=
+        0,
+    )
+    .map((l) => l.productId);
+  if (zeroed.length > 0) {
+    after(() => notifyStockEmpty(storeId, zeroed));
+  }
 
   // Simpan harga satuan terakhir ke Prospect.price — jadi prefill harga di
   // POS untuk transaksi berikutnya (form "atur harga jual" di /stok dihapus,

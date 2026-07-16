@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { after } from "next/server";
-import { notifyOrder } from "@/lib/wa-notify";
+import { notifyOrder, notifyRequestReply } from "@/lib/wa-notify";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
@@ -473,12 +473,31 @@ export async function markOrderPaidCash(id: string) {
   return { ok: true };
 }
 
-// Owner mengajukan request bebas (mis. minta dikunjungi)
+// Owner mengajukan request bebas (mis. minta dikunjungi). Sales juga bisa —
+// kadang konter menyampaikan keluhan langsung ke sales, jadi sales yang
+// mencatatkan atas nama konter yang dia pegang (pilih konter di form).
 export async function createRequest(formData: FormData) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  if (user.role !== "OWNER" || !user.ownedStore) {
-    return { error: "Hanya owner toko yang bisa mengajukan request." };
+
+  let storeId: string;
+  if (user.role === "OWNER") {
+    if (!user.ownedStore) {
+      return { error: "Akun ini belum terhubung ke toko." };
+    }
+    storeId = user.ownedStore.id;
+  } else if (user.role === "SALES") {
+    storeId = String(formData.get("storeId") ?? "");
+    if (!storeId) return { error: "Pilih konter dulu." };
+    const store = await prisma.store.findUnique({
+      where: { id: storeId },
+      select: { salesId: true },
+    });
+    if (!store || store.salesId !== user.id) {
+      return { error: "Konter ini bukan tanggung jawabmu." };
+    }
+  } else {
+    return { error: "Hanya owner toko atau sales yang bisa mengajukan request." };
   }
 
   const subject = String(formData.get("subject") ?? "").trim();
@@ -489,7 +508,7 @@ export async function createRequest(formData: FormData) {
 
   await prisma.request.create({
     data: {
-      storeId: user.ownedStore.id,
+      storeId,
       subject,
       message,
       createdById: user.id,
@@ -497,6 +516,47 @@ export async function createRequest(formData: FormData) {
   });
   revalidatePath("/request");
   revalidatePath("/dashboard");
+  return { ok: true };
+}
+
+// Sales (pemegang toko) atau admin membalas request bebas — balasan tampil
+// di kartu request dan pembuatnya dikabari (in-app + WA + push).
+export async function respondRequest(id: string, formData: FormData) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+
+  const req = await prisma.request.findUnique({
+    where: { id },
+    include: { store: true, items: { select: { id: true }, take: 1 } },
+  });
+  if (!req) return { error: "Request tidak ditemukan." };
+  if (req.items.length > 0) {
+    return { error: "Order restok tidak dibalas di sini." };
+  }
+
+  const allowed =
+    user.role === "ADMIN" ||
+    (user.role === "SALES" && req.store.salesId === user.id);
+  if (!allowed) return { error: "Request ini bukan dari toko yang kamu pegang." };
+
+  const response = String(formData.get("response") ?? "").trim();
+  if (!response) return { error: "Isi balasan dulu." };
+
+  const roleLabel = user.role === "ADMIN" ? "Admin" : "Sales";
+  await prisma.request.update({
+    where: { id },
+    data: {
+      response,
+      respondedBy: `${user.name} (${roleLabel})`,
+      respondedAt: new Date(),
+    },
+  });
+
+  // Kabari pembuat request — kecuali dia membalas request-nya sendiri
+  if (req.createdById && req.createdById !== user.id) {
+    after(() => notifyRequestReply(id));
+  }
+  revalidatePath("/request");
   return { ok: true };
 }
 

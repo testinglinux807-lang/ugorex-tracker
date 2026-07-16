@@ -3,10 +3,17 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { FreeRequestForm } from "@/components/RequestForm";
+import { RequestReplyForm } from "@/components/RequestReplyForm";
 import { SubmitButton } from "@/components/SubmitButton";
 import { updateRequestStatus } from "@/app/actions/requests";
 import { waLink } from "@/lib/wa";
-import { MessageCircle, ShoppingBag, Inbox, ArrowRight } from "lucide-react";
+import {
+  MessageCircle,
+  ShoppingBag,
+  Inbox,
+  ArrowRight,
+  MessageSquareReply,
+} from "lucide-react";
 
 const STATUS_LABEL: Record<string, string> = {
   PENDING: "Menunggu",
@@ -38,6 +45,17 @@ export default async function RequestPage() {
   });
 
   const canRespond = !isOwner;
+
+  // Sales bisa mencatatkan request atas nama konter yang dia pegang
+  // (kadang konter menyampaikan keluhan langsung ke sales, bukan lewat app)
+  const salesStores =
+    user.role === "SALES"
+      ? await prisma.store.findMany({
+          where: { salesId: user.id },
+          select: { id: true, name: true },
+          orderBy: { name: "asc" },
+        })
+      : null;
 
   // Nomor WA admin — buat tombol "Chat Admin" di kartu request (khusus sales).
   const admin =
@@ -75,6 +93,22 @@ export default async function RequestPage() {
           </span>
         </div>
         <p className="mt-1 text-sm text-neutral-600">{r.message}</p>
+        {r.response && (
+          <div className="mt-2 rounded-lg border border-neutral-200 bg-neutral-50 p-2.5">
+            <p className="flex items-center gap-1 text-[11px] font-semibold text-neutral-500">
+              <MessageSquareReply className="h-3 w-3" />
+              Balasan · {r.respondedBy ?? "—"}
+              {r.respondedAt &&
+                ` · ${new Date(r.respondedAt).toLocaleDateString("id-ID", {
+                  day: "numeric",
+                  month: "short",
+                })}`}
+            </p>
+            <p className="mt-0.5 whitespace-pre-line text-sm text-neutral-800">
+              {r.response}
+            </p>
+          </div>
+        )}
         <p className="mt-1 text-xs text-neutral-400">
           {canRespond ? `${r.store.name} · ` : ""}
           {r.createdBy?.name ?? "—"} ·{" "}
@@ -85,7 +119,8 @@ export default async function RequestPage() {
           })}
         </p>
         {canRespond && (
-          <div className="mt-2 flex flex-wrap gap-2">
+          <div className="mt-2 flex flex-wrap items-start gap-2">
+            <RequestReplyForm requestId={r.id} hasResponse={!!r.response} />
             {wa && (
               <a
                 href={wa}
@@ -155,7 +190,7 @@ export default async function RequestPage() {
           {isOwner
             ? "Ajukan kebutuhan ke sales/admin (restok barang lewat menu Order)"
             : user.role === "SALES"
-              ? "Permintaan dari toko yang kamu pegang"
+              ? "Permintaan dari toko yang kamu pegang — bisa juga catat keluhan yang disampaikan langsung ke kamu"
               : "Semua permintaan dari toko"}
         </p>
       </div>
@@ -180,6 +215,11 @@ export default async function RequestPage() {
       ) : isOwner ? (
         <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
           <FreeRequestForm />
+          {list}
+        </div>
+      ) : salesStores && salesStores.length > 0 ? (
+        <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
+          <FreeRequestForm stores={salesStores} />
           {list}
         </div>
       ) : (

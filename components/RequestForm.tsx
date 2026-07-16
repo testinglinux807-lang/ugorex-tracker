@@ -66,6 +66,7 @@ type RestockProduct = {
   price: number; // harga satuan
   remaining: number; // sisa di toko owner
   central: number; // stok pusat yang bisa di-order
+  search?: string | null; // daftar model HP kompatibel (utk pencarian)
 };
 
 // Tier diskon grosir aktif (aturan admin) — dipakai untuk preview di
@@ -194,12 +195,14 @@ function RestockForm({
             code: p.code,
             price: p.price,
             remaining: p.central, // di konteks restok: sisa = stok pusat
+            search: p.search,
           }))}
           value={pickerId}
           onChange={addProduct}
         />
         <p className="mt-1 text-xs text-neutral-400">
-          Cari pakai nama atau kode barang — pilih lagi untuk menambah jumlah.
+          Cari pakai nama barang, kode, atau tipe HP (mis. &quot;Redmi Note
+          7&quot;) — pilih lagi untuk menambah jumlah.
         </p>
       </div>
 
@@ -488,8 +491,12 @@ function RestockForm({
   );
 }
 
-// Request bebas (mis. minta dikunjungi sales)
-function FreeForm() {
+// Konter pilihan di form request versi sales (yang dia pegang)
+export type RequestStoreOption = { id: string; name: string };
+
+// Request bebas (mis. minta dikunjungi sales). Owner: toko otomatis toko
+// miliknya. Sales: wajib pilih konter yang dia pegang (prop stores).
+function FreeForm({ stores }: { stores?: RequestStoreOption[] }) {
   const [state, formAction, pending] = useActionState(
     async (_prev: unknown, fd: FormData) => (await createRequest(fd)) ?? null,
     null,
@@ -497,6 +504,23 @@ function FreeForm() {
 
   return (
     <form action={formAction} className="space-y-3">
+      {stores && (
+        <div>
+          <label className="mb-1 block text-sm font-medium text-neutral-700">
+            Konter <span className="text-neutral-900">*</span>
+          </label>
+          <select name="storeId" required defaultValue="" className={inputCls}>
+            <option value="" disabled>
+              Pilih konter…
+            </option>
+            {stores.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
       <div>
         <label className="mb-1 block text-sm font-medium text-neutral-700">
           Judul <span className="text-neutral-900">*</span>
@@ -575,15 +599,18 @@ export function RestockCheckout({
   );
 }
 
-// Kartu request bebas — dipakai di halaman Request owner
-export function FreeRequestForm() {
+// Kartu request bebas — dipakai di halaman Request. Owner tanpa prop stores;
+// sales kirim daftar konter yang dia pegang (catat keluhan atas nama konter).
+export function FreeRequestForm({ stores }: { stores?: RequestStoreOption[] }) {
   return (
     <div className="space-y-3 rounded-2xl border border-neutral-200 bg-white p-5">
       <h2 className="font-semibold">Ajukan Request</h2>
       <p className="text-xs text-neutral-400">
-        Mis. minta dikunjungi sales, komplain, dll.
+        {stores
+          ? "Catat keluhan/permintaan yang disampaikan konter langsung ke kamu."
+          : "Mis. minta dikunjungi sales, komplain, dll."}
       </p>
-      <FreeForm />
+      <FreeForm stores={stores} />
     </div>
   );
 }

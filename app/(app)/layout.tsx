@@ -52,6 +52,8 @@ export default async function AppLayout({
           <UserMenu
             name={user.name}
             role={ROLE_LABEL[user.role as Role] ?? user.role}
+            phone={user.phone}
+            canManageAccount={user.role === "ADMIN"}
           />
           {/* Lonceng riwayat notifikasi — paling kanan */}
           <NotifBell

@@ -60,6 +60,15 @@ model User {
 
   // Catatan keuangan yang dibuat (admin)
   financeEntries FinanceEntry[] @relation("FinanceCreator")
+
+  // Ganti no HP via OTP WA (menu akun di header): nomor baru disimpan dulu
+  // di sini sampai kode 6 digit (hash bcrypt) diverifikasi. Attempts dibatasi
+  // 5x salah, kirim ulang minimal berjarak 60 detik (otpSentAt).
+  pendingPhone String?
+  otpHash      String?
+  otpExpiresAt DateTime?
+  otpAttempts  Int       @default(0)
+  otpSentAt    DateTime?
 }
 
 // Langganan Web Push per perangkat/browser (notifikasi order untuk admin/sales)
@@ -331,6 +340,12 @@ model Request {
   qrUrl           String?   // URL gambar QR (QRIS/GoPay)
   paymentDeeplink String?   // deeplink app GoPay (mobile)
   paymentExpiry   DateTime? // kedaluwarsa charge saat ini
+
+  // Balasan sales/admin untuk request bebas (bukan order restok) — pembuat
+  // request dapat notifikasi isinya (in-app + WA + push)
+  response    String?
+  respondedBy String?   // snapshot "Nama (Role)" pembalas
+  respondedAt DateTime?
 
   // Bukti pengiriman (report sales saat barang sampai ke owner)
   deliveryPhoto String?   // data URL foto barang — disajikan via /api/delivery-photo

@@ -115,13 +115,15 @@ export default async function OrderPage({
     const [products, prospects, sold, grosirTiers] =
       await Promise.all([
         prisma.product.findMany({
-          // description berat & tak dipakai di checkout restok
           select: {
             id: true,
             name: true,
             code: true,
             price: true,
             centralStock: true,
+            // Tier kompatibilitas + kode mold (teks pendek) — dipakai badge
+            // & pencarian di picker restok
+            description: true,
           },
           orderBy: { name: "asc" },
         }),
@@ -168,6 +170,7 @@ export default async function OrderPage({
           (stockBy.get(p.id) ?? 0) - (soldBy.get(p.id) ?? 0),
         ),
         central: p.centralStock,
+        search: p.description,
       }));
 
     return (
