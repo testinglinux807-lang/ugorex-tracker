@@ -109,6 +109,22 @@ export default async function OrderPage({
   if (focusIdx > 0) orders.unshift(orders.splice(focusIdx, 1)[0]);
   const isFocused = (id: string) => focusIdx !== -1 && id === focus;
 
+  // Teks pencarian per order untuk kotak cari di OrderList — no resi, kode
+  // penjemputan, no order, toko/owner/area, pembuat, dan nama barang.
+  const searchOf = (r: (typeof orders)[number]) =>
+    [
+      r.id.slice(-8),
+      r.resiNo,
+      r.pickupCode,
+      r.store.name,
+      r.store.ownerName,
+      r.store.area,
+      r.createdBy?.name,
+      ...r.items.map((i) => i.product.name),
+    ]
+      .filter(Boolean)
+      .join(" ");
+
   // ===== Tampilan OWNER: checkout + riwayat order toko =====
   if (isOwner) {
     const storeId = user.ownedStore!.id;
@@ -205,6 +221,7 @@ export default async function OrderPage({
                 emptyAll="Belum ada order. Checkout lewat form Buat Order."
                 items={orders.map((r) => ({
                   status: r.status,
+                  search: searchOf(r),
                   node: (
                     <OrderCard
                       key={r.id}
@@ -310,6 +327,7 @@ export default async function OrderPage({
       <OrderList
         items={orders.map((r) => ({
           status: r.status,
+          search: searchOf(r),
           node: (
             <OrderCard
               key={r.id}
