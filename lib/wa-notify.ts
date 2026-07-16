@@ -271,7 +271,7 @@ export async function notifyRequestReply(requestId: string) {
 // kind "delivered" = barang sampai (report sales) → OWNER toko.
 export async function notifyOrder(
   requestId: string,
-  kind: "new" | "paid" | "shipped" | "delivered",
+  kind: "new" | "paid" | "shipped" | "delivered" | "cancelled" | "refunded",
 ) {
   const waEnabled = !!process.env.FONNTE_TOKEN;
   const pushEnabled =
@@ -289,7 +289,13 @@ export async function notifyOrder(
   });
   if (!order || order.items.length === 0) return;
 
-  const toOwner = kind === "shipped" || kind === "delivered";
+  // cancelled: yang dikabari pihak seberang — owner batalkan sendiri →
+  // sales/admin yang diberi tahu; dibatalkan admin/sales/sistem → owner.
+  const toOwner =
+    kind === "shipped" ||
+    kind === "delivered" ||
+    kind === "refunded" ||
+    (kind === "cancelled" && !order.cancelledBy?.includes("(Owner)"));
   const phones = new Set<string>();
   const userIds = new Set<string>();
   if (toOwner) {
@@ -321,7 +327,35 @@ export async function notifyOrder(
     : null;
 
   const message =
-    kind === "shipped"
+    kind === "refunded"
+      ? [
+          `Order #${no} DANA DIKEMBALIKAN`,
+          ``,
+          `Dana order yang dibatalkan sudah dikembalikan.`,
+          `Jumlah: ${rupiah(order.total + order.paymentFee)}`,
+          ...(order.refundNote ? [`Keterangan: ${order.refundNote}`] : []),
+          `Oleh: ${order.refundedBy ?? "-"}`,
+          ...(appUrl ? [``, `Detail: ${appUrl}/order`] : []),
+        ].join("\n")
+      : kind === "cancelled"
+      ? [
+          `Order #${no} DIBATALKAN`,
+          ``,
+          `Dibatalkan oleh: ${order.cancelledBy ?? "-"}`,
+          ...(order.cancelReason ? [`Alasan: ${order.cancelReason}`] : []),
+          ``,
+          ...lines,
+          ``,
+          `Total: ${rupiah(order.total)}`,
+          ...(order.paymentStatus === "PAID"
+            ? [
+                ``,
+                `Order ini sudah terlanjur dibayar — pengembalian dana diurus admin.`,
+              ]
+            : []),
+          ...(appUrl ? [``, `Detail: ${appUrl}/order`] : []),
+        ].join("\n")
+      : kind === "shipped"
       ? [
           `Order #${no} SEDANG DIKIRIM`,
           ``,
@@ -363,7 +397,19 @@ export async function notifyOrder(
   // (dipindah ke urutan teratas + di-highlight)
   const orderUrl = `/order?focus=${order.id}`;
   const push =
-    kind === "shipped"
+    kind === "refunded"
+      ? {
+          title: `Dana order #${no} dikembalikan`,
+          body: `${rupiah(order.total + order.paymentFee)}${order.refundNote ? ` — ${order.refundNote}` : ""}`,
+          url: orderUrl,
+        }
+      : kind === "cancelled"
+      ? {
+          title: `Order #${no} dibatalkan`,
+          body: `${order.store.name} — ${order.cancelReason || `oleh ${order.cancelledBy ?? "-"}`}${order.paymentStatus === "PAID" ? " · sudah dibayar, refund diurus admin" : ""}`,
+          url: orderUrl,
+        }
+      : kind === "shipped"
       ? {
           title: `Order #${no} sedang dikirim`,
           body: `Barang restok Anda sedang dikirim, mohon ditunggu — ${order.items.length} barang`,

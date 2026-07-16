@@ -112,7 +112,13 @@ export default async function DashboardPage() {
     // Penjualan & Target Bulanan bareng transaksi POS. Ambil semua (bukan
     // cuma 20 terbaru di atas, yang buat activity feed) supaya total akurat.
     prisma.request.findMany({
-      where: { paymentStatus: "PAID", items: { some: {} } },
+      // Order batal dikecualikan — yang terlanjur dibayar bakal direfund,
+      // jangan dihitung omzet.
+      where: {
+        paymentStatus: "PAID",
+        status: { not: "CANCELLED" },
+        items: { some: {} },
+      },
       select: { total: true, createdAt: true },
     }),
   ]);

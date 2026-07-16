@@ -317,7 +317,7 @@ model Request {
   store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
   subject     String
   message     String
-  status      String   @default("PENDING") // PENDING | COMPLETED
+  status      String   @default("PENDING") // PENDING | SHIPPED | COMPLETED | CANCELLED
   createdById String?
   createdBy   User?    @relation("RequestCreator", fields: [createdById], references: [id])
   createdAt   DateTime @default(now())
@@ -357,6 +357,22 @@ model Request {
   // admin/sales pertama klik Cetak Resi di /order
   resiNo     String? @unique // nomor resi, mis. UGX260716123456
   pickupCode String? // kode penjemputan — ditunjukkan sales penjemput barang
+
+  // Reservasi stok & pembatalan. stockReserved = stok pusat sudah dipotong
+  // saat checkout (skema sejak 16 Jul 2026, anti rebutan stok); order yang
+  // dibuat sebelum itu false (stok baru dipotong saat COMPLETED, skema lama).
+  // Saat dibatalkan, stok reservasi dikembalikan & flag di-nol-kan atomik.
+  stockReserved Boolean   @default(false)
+  cancelledAt   DateTime?
+  cancelledBy   String? // snapshot "Nama (Role)" / "Sistem" (sweep otomatis)
+  cancelReason  String?
+
+  // Pengembalian dana order batal yang terlanjur dibayar — refund uangnya
+  // manual di luar app (dashboard Midtrans / transfer / tunai), admin
+  // menandainya di sini supaya owner tahu dananya sudah balik.
+  refundedAt DateTime?
+  refundedBy String? // snapshot "Nama (Admin)"
+  refundNote String? // cara pengembalian, mis. "transfer BCA a.n. owner"
 
   items RequestItem[]
 }

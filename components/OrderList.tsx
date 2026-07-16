@@ -12,6 +12,7 @@ const TABS = [
   { key: "SHIPPED", label: "Dikirim" },
   { key: "PENDING", label: "Menunggu" },
   { key: "COMPLETED", label: "Sampai" },
+  { key: "CANCELLED", label: "Batal" },
 ] as const;
 
 export function OrderList({

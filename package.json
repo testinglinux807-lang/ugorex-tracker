@@ -10,7 +10,9 @@
     "postinstall": "prisma generate",
     "db:push": "prisma db push",
     "db:seed": "prisma db seed",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "catalog:export": "node scripts/export-catalog.mjs",
+    "catalog:seed": "node scripts/seed-catalog.mjs"
   },
   "prisma": {
     "seed": "node prisma/seed.mjs"

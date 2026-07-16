@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { isTransactionPaid } from "@/lib/midtrans";
 import { notifyOrder } from "@/lib/wa-notify";
+import { sweepExpiredOrders } from "@/app/actions/requests";
 import { OrderCard } from "@/components/OrderCard";
 import { OrderList } from "@/components/OrderList";
 import { OrderPaymentWatcher } from "@/components/OrderPaymentWatcher";
@@ -29,6 +30,10 @@ export default async function OrderPage({
 
   const isOwner = user.role === "OWNER";
   const { focus } = await searchParams;
+
+  // Order online yang tagihannya kedaluwarsa >24 jam dibatalkan otomatis
+  // (stok reservasi balik) — disapu tiap halaman order dibuka.
+  await sweepExpiredOrders();
 
   if (isOwner && !user.ownedStore) {
     return (
@@ -84,7 +89,7 @@ export default async function OrderPage({
       _sum: { total: true },
     }),
     prisma.request.count({
-      where: { ...orderWhere, status: { not: "COMPLETED" } },
+      where: { ...orderWhere, status: { notIn: ["COMPLETED", "CANCELLED"] } },
     }),
   ]);
   const orderCount = orderAgg._count;
@@ -164,7 +169,8 @@ export default async function OrderPage({
           r.paymentStatus !== "PAID" &&
           r.paymentMethod &&
           r.paymentMethod !== "CASH" &&
-          r.status !== "COMPLETED",
+          r.status !== "COMPLETED" &&
+          r.status !== "CANCELLED",
       )
       .slice(0, 5)
       .map((r) => r.id);
@@ -251,7 +257,8 @@ export default async function OrderPage({
         r.paymentStatus !== "PAID" &&
         r.paymentMethod &&
         r.paymentMethod !== "CASH" &&
-        r.status !== "COMPLETED",
+        r.status !== "COMPLETED" &&
+        r.status !== "CANCELLED",
     )
     .slice(0, 5);
   const paidNow = (
@@ -333,6 +340,7 @@ export default async function OrderPage({
               key={r.id}
               order={r}
               canRespond
+              canRefund={user.role === "ADMIN"}
               remaining={remaining}
               highlighted={isFocused(r.id)}
             />

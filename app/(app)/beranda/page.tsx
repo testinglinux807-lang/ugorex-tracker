@@ -117,7 +117,7 @@ export default async function BerandaPage() {
     prisma.request.findMany({
       where: {
         items: { some: {} },
-        status: { not: "COMPLETED" },
+        status: { notIn: ["COMPLETED", "CANCELLED"] },
         store: { salesId: user.id },
       },
       include: { store: true },

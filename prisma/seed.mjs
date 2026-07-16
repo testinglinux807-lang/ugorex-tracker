@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { seedCatalog } from "../scripts/seed-catalog.mjs";
 
 const prisma = new PrismaClient();
 
@@ -32,71 +33,30 @@ async function main() {
     },
   });
 
-  // --- Product ---
-  const antigores = await prisma.product.upsert({
-    where: { id: "prod-antigores" },
-    update: { price: 25000, code: "AG01" },
-    create: {
-      id: "prod-antigores",
-      name: "Antigores Ugorex",
-      code: "AG01",
-      description: "Pelindung layar anti gores premium",
-      price: 25000,
-      centralStock: 100,
-    },
-  });
+  // --- Katalog produk: snapshot sheet "base sku" (prisma/catalog-seed.json,
+  // 1 produk = 1 model HP, kode mold AA01-AA75 dipakai bersama) ---
+  // Hanya untuk DB yang katalognya masih kosong; DB hidup jangan diganti
+  // dari sini (ganti total manual: node scripts/seed-catalog.mjs --force).
+  if ((await prisma.product.count()) === 0) {
+    await seedCatalog(prisma);
+  } else {
+    console.log("Katalog sudah terisi - lewati seed produk.");
+  }
 
-  await prisma.product.upsert({
-    where: { id: "prod-tempered" },
-    update: { price: 30000, code: "TG01" },
-    create: {
-      id: "prod-tempered",
-      name: "Tempered Glass",
-      code: "TG01",
-      description: "Pelindung layar kaca tempered",
-      price: 30000,
-      centralStock: 100,
-    },
+  // Barang contoh untuk demo prospek & stok diambil dari katalog asli:
+  // dua barang sekode (kompatibel, satu stok fisik) buat nguji pencarian
+  // POS — cari salah satu modelnya, model sekode lain ikut muncul.
+  const antigores = await prisma.product.findFirst({
+    orderBy: { code: "asc" },
   });
-  await prisma.product.upsert({
-    where: { id: "prod-softcase" },
-    update: { price: 15000, code: "SC01" },
-    create: {
-      id: "prod-softcase",
-      name: "Softcase",
-      code: "SC01",
-      description: "Pelindung casing HP",
-      price: 15000,
-      centralStock: 100,
-    },
+  if (!antigores) throw new Error("Katalog kosong - seed produk gagal?");
+  const sameCode = await prisma.product.findMany({
+    where: { code: antigores.code },
+    orderBy: { name: "asc" },
+    take: 2,
   });
-
-  // Dua barang beda nama tapi KODE SAMA (AA01) = kompatibel — buat nguji
-  // pencarian di POS: cari "AA01" / "oppo a98" / "xiaomi note 10" semua ketemu.
-  const tgOppo = await prisma.product.upsert({
-    where: { id: "prod-tg-oppo-a98" },
-    update: { price: 30000, code: "AA01" },
-    create: {
-      id: "prod-tg-oppo-a98",
-      name: "Tempered Glass Oppo A98",
-      code: "AA01",
-      description: "TG anti-spy — layar sama dg Xiaomi Note 10 (kode AA01)",
-      price: 30000,
-      centralStock: 100,
-    },
-  });
-  const tgXiaomi = await prisma.product.upsert({
-    where: { id: "prod-tg-xiaomi-note10" },
-    update: { price: 30000, code: "AA01" },
-    create: {
-      id: "prod-tg-xiaomi-note10",
-      name: "Tempered Glass Xiaomi Note 10",
-      code: "AA01",
-      description: "TG anti-spy — layar sama dg Oppo A98 (kode AA01)",
-      price: 30000,
-      centralStock: 100,
-    },
-  });
+  const tgOppo = sameCode[0] ?? antigores;
+  const tgXiaomi = sameCode[1] ?? antigores;
 
   // --- Stores (Konter) ---
   const konterA = await prisma.store.upsert({

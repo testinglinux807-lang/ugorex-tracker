@@ -85,7 +85,7 @@ export default async function TugasPage() {
     prisma.request.findMany({
       where: {
         items: { some: {} },
-        status: { not: "COMPLETED" },
+        status: { notIn: ["COMPLETED", "CANCELLED"] },
         store: storeScope,
       },
       include: { store: true },

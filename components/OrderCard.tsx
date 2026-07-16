@@ -7,6 +7,8 @@ import {
 } from "@/app/actions/requests";
 import { SubmitButton } from "@/components/SubmitButton";
 import { PayOrderButton } from "@/components/PayOrderButton";
+import { CancelOrderForm } from "@/components/CancelOrderForm";
+import { RefundOrderForm } from "@/components/RefundOrderForm";
 import { DeliveryReportForm } from "@/components/DeliveryReportForm";
 import { PAYMENT_METHOD_LABEL } from "@/lib/payment-fee";
 import { fmtDate } from "@/lib/date";
@@ -20,6 +22,8 @@ import {
   ChevronDown,
   Banknote,
   Printer,
+  XCircle,
+  BadgeCheck,
 } from "lucide-react";
 
 export type OrderRequest = Prisma.RequestGetPayload<{
@@ -38,13 +42,16 @@ const STATUS_LABEL: Record<string, string> = {
   PENDING: "Menunggu",
   SHIPPED: "Dikirim",
   COMPLETED: "Sampai",
+  CANCELLED: "Dibatalkan",
 };
 // Gradasi monokrom mengikuti progres: abu tipis → outline hitam → hitam
 // solid — biar kartu tidak jadi pelangi (gaya app: monokrom + aksen lime).
+// Merah khusus status batal (konsisten dengan pemakaian merah utk negatif).
 const STATUS_CLS: Record<string, string> = {
   PENDING: "border-neutral-300 bg-white text-neutral-500",
   SHIPPED: "border-neutral-900 bg-white text-neutral-900",
   COMPLETED: "border-neutral-900 bg-neutral-900 text-white",
+  CANCELLED: "border-red-200 bg-red-50 text-red-600",
 };
 
 const rupiah = (n: number) =>
@@ -96,11 +103,13 @@ function ItemRow({
 export function OrderCard({
   order: r,
   canRespond,
+  canRefund = false,
   remaining,
   highlighted = false,
 }: {
   order: OrderRequest;
   canRespond: boolean;
+  canRefund?: boolean; // ADMIN — boleh menandai dana order batal dikembalikan
   remaining: Map<string, number>;
   highlighted?: boolean; // datang dari klik notifikasi — kartu disorot
 }) {
@@ -115,6 +124,18 @@ export function OrderCard({
   );
   const shown = r.items.slice(0, 2);
   const rest = r.items.slice(2);
+
+  const cancelled = r.status === "CANCELLED";
+  // Owner: bayar hanya order online bertagihan (> 0) yang belum lunas &
+  // masih hidup — total 0 tidak bisa ditagih Midtrans, dilunasi manual
+  const ownerCanPay =
+    r.paymentStatus !== "PAID" &&
+    r.paymentMethod !== "CASH" &&
+    r.total + r.paymentFee > 0 &&
+    r.status !== "COMPLETED" &&
+    !cancelled;
+  // Owner boleh membatalkan sendiri hanya sebelum dibayar & sebelum diproses
+  const ownerCanCancel = r.status === "PENDING" && r.paymentStatus !== "PAID";
 
   // Lokasi toko untuk sales/admin yang mengantar: koordinat (kalau ada)
   // membuka rute Google Maps langsung ke titiknya; tanpa koordinat,
@@ -245,6 +266,54 @@ export function OrderCard({
           </div>
         )}
 
+        {/* Order dibatalkan: siapa, kapan, kenapa + peringatan refund */}
+        {cancelled && (
+          <div className="space-y-0.5 rounded-lg border border-red-200 bg-red-50 px-2.5 py-2 text-xs">
+            <p className="flex items-center gap-1 font-semibold text-red-700">
+              <XCircle className="h-3.5 w-3.5" />
+              Order dibatalkan
+            </p>
+            {r.cancelReason && (
+              <p className="text-red-600">Alasan: {r.cancelReason}</p>
+            )}
+            <p className="text-red-400">
+              {r.cancelledBy ?? "—"}
+              {r.cancelledAt
+                ? ` · ${fmtDate(r.cancelledAt, {
+                    day: "numeric",
+                    month: "short",
+                    year: "numeric",
+                  })}`
+                : ""}
+            </p>
+            {r.paymentStatus === "PAID" &&
+              (r.refundedAt ? (
+                <div className="pt-0.5">
+                  <p className="flex items-center gap-1 font-semibold text-neutral-800">
+                    <BadgeCheck className="h-3.5 w-3.5" />
+                    Dana sudah dikembalikan
+                  </p>
+                  {r.refundNote && (
+                    <p className="text-neutral-600">{r.refundNote}</p>
+                  )}
+                  <p className="text-neutral-400">
+                    {r.refundedBy ?? "—"} ·{" "}
+                    {fmtDate(r.refundedAt, {
+                      day: "numeric",
+                      month: "short",
+                      year: "numeric",
+                    })}
+                  </p>
+                </div>
+              ) : (
+                <p className="font-medium text-red-600">
+                  Order sudah terlanjur dibayar — menunggu pengembalian dana
+                  dari admin.
+                </p>
+              ))}
+          </div>
+        )}
+
         {/* Bukti pengiriman (report sales saat barang sampai) */}
         {r.status === "COMPLETED" && (r.deliveryPhoto || r.deliveredAt) && (
           <div className="flex items-start gap-2.5 rounded-lg border border-neutral-200 bg-neutral-50 p-2.5">
@@ -321,44 +390,42 @@ export function OrderCard({
         )}
       </div>
 
-      {/* Aksi owner: bayar order yang belum lunas + chat sales pemegang toko */}
-      {!canRespond &&
-        (waSales ||
-          (r.paymentStatus !== "PAID" &&
-            r.paymentMethod !== "CASH" &&
-            r.status !== "COMPLETED")) && (
-          <div className="flex flex-wrap justify-end gap-2 border-t border-neutral-100 bg-neutral-50 px-4 py-2.5">
-            {waSales && (
-              <a
-                href={waSales}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-100"
-              >
-                <MessageCircle className="h-3.5 w-3.5 text-green-600" />
-                Chat Sales{r.store.sales?.name ? ` (${r.store.sales.name})` : ""}
-              </a>
-            )}
-            {r.paymentStatus !== "PAID" &&
-              r.paymentMethod !== "CASH" &&
-              r.status !== "COMPLETED" && (
-                <PayOrderButton
-                  orderId={r.id}
-                  grandTotal={r.total + r.paymentFee}
-                />
-              )}
-          </div>
-        )}
+      {/* Aksi owner: bayar order belum lunas + chat sales + batalkan order
+          yang belum dibayar/diproses */}
+      {!canRespond && (waSales || ownerCanPay || ownerCanCancel) && (
+        <div className="grid grid-cols-2 gap-2 border-t border-neutral-100 bg-neutral-50 px-4 py-2.5">
+          {waSales && (
+            <a
+              href={waSales}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-1 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-100"
+            >
+              <MessageCircle className="h-3.5 w-3.5 text-green-600" />
+              Chat Sales{r.store.sales?.name ? ` (${r.store.sales.name})` : ""}
+            </a>
+          )}
+          {ownerCanPay && (
+            <div className="[&_button]:w-full [&_button]:justify-center">
+              <PayOrderButton
+                orderId={r.id}
+                grandTotal={r.total + r.paymentFee}
+              />
+            </div>
+          )}
+          {ownerCanCancel && <CancelOrderForm requestId={r.id} />}
+        </div>
+      )}
 
-      {/* Aksi */}
+      {/* Aksi — grid 2 kolom biar rapi di HP (tidak wrap acak) */}
       {canRespond && (
-        <div className="flex flex-wrap justify-end gap-2 border-t border-neutral-100 bg-neutral-50 px-4 py-2.5">
+        <div className="grid grid-cols-2 gap-2 border-t border-neutral-100 bg-neutral-50 px-4 py-2.5">
           {wa && (
             <a
               href={wa}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-100"
+              className="inline-flex items-center justify-center gap-1 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-100"
             >
               <MessageCircle className="h-3.5 w-3.5 text-green-600" />
               Hubungi Owner
@@ -366,36 +433,44 @@ export function OrderCard({
           )}
           {/* Cetak label resi (dibuat sekali di klik pertama) — halaman
               /order/[id]/resi berisi label siap print */}
-          <form
-            action={async () => {
-              "use server";
-              await printOrderResi(r.id);
-            }}
-          >
-            <SubmitButton
-              pendingText="Menyiapkan…"
-              overlayText="Menyiapkan resi…"
-              className="inline-flex items-center gap-1 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-100 disabled:opacity-60"
+          {!cancelled && (
+            <form
+              action={async () => {
+                "use server";
+                await printOrderResi(r.id);
+              }}
             >
-              <Printer className="h-3.5 w-3.5" />
-              Cetak Resi
-            </SubmitButton>
-          </form>
+              <SubmitButton
+                pendingText="Menyiapkan…"
+                overlayText="Menyiapkan resi…"
+                className="inline-flex w-full items-center justify-center gap-1 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-100 disabled:opacity-60"
+              >
+                <Printer className="h-3.5 w-3.5" />
+                Cetak Resi
+              </SubmitButton>
+            </form>
+          )}
           {/* Alur: Menunggu → Tandai Dikirim (notif owner) → report sampai */}
           {r.status === "PENDING" && (
             <form action={updateRequestStatus.bind(null, r.id, "SHIPPED")}>
               <SubmitButton
                 pendingText="Memproses…"
                 overlayText="Menandai order dikirim…"
-                className="inline-flex items-center gap-1 rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-neutral-800 disabled:opacity-60"
+                className="inline-flex w-full items-center justify-center gap-1 rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-neutral-800 disabled:opacity-60"
               >
                 <Truck className="h-3.5 w-3.5" />
                 Tandai Dikirim
               </SubmitButton>
             </form>
           )}
-          {r.status === "SHIPPED" && <DeliveryReportForm orderId={r.id} />}
-          {r.paymentMethod === "CASH" &&
+          {/* Tombol tertutup dibikin selebar sel grid; form terbuka (ada
+              <form> di dalam) melebar 2 kolom */}
+          {r.status === "SHIPPED" && (
+            <div className="has-[form]:col-span-2 [&>button]:w-full [&>button]:justify-center">
+              <DeliveryReportForm orderId={r.id} />
+            </div>
+          )}
+          {(r.paymentMethod === "CASH" || r.total + r.paymentFee === 0) &&
             r.paymentStatus !== "PAID" &&
             r.status === "COMPLETED" && (
               <form
@@ -407,7 +482,7 @@ export function OrderCard({
                 <SubmitButton
                   pendingText="Memproses…"
                   overlayText="Menandai lunas…"
-                  className="inline-flex items-center gap-1 rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-neutral-900 hover:opacity-90 disabled:opacity-60"
+                  className="inline-flex w-full items-center justify-center gap-1 rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-neutral-900 hover:opacity-90 disabled:opacity-60"
                 >
                   <Banknote className="h-3.5 w-3.5" />
                   Tandai Lunas (Cash)
@@ -419,12 +494,31 @@ export function OrderCard({
               <SubmitButton
                 pendingText="Memproses…"
                 overlayText="Membuka order lagi…"
-                className="rounded-lg border border-neutral-300 px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-100 disabled:opacity-60"
+                className="w-full rounded-lg border border-neutral-300 px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-100 disabled:opacity-60"
               >
                 Buka lagi
               </SubmitButton>
             </form>
           )}
+          {/* Batalkan (admin/sales) — order yang belum selesai; kalau sudah
+              lunas, form-nya mengingatkan refund manual */}
+          {(r.status === "PENDING" || r.status === "SHIPPED") && (
+            <CancelOrderForm
+              requestId={r.id}
+              warnPaid={r.paymentStatus === "PAID"}
+            />
+          )}
+          {/* Order batal yang terlanjur dibayar: admin tandai dananya sudah
+              dikembalikan (refund uang manual di luar app) */}
+          {canRefund &&
+            cancelled &&
+            r.paymentStatus === "PAID" &&
+            !r.refundedAt && (
+              <RefundOrderForm
+                requestId={r.id}
+                amount={r.total + r.paymentFee}
+              />
+            )}
         </div>
       )}
     </div>

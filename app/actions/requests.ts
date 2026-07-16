@@ -168,9 +168,13 @@ export async function createRestockRequest(formData: FormData) {
     return { error: "Pilih metode pembayaran." };
   }
 
-  // Diskon penuh (total 0) = tidak ada yang perlu dibayar → langsung lunas,
-  // metode/fee tidak relevan karena tidak ada yang dicharge ke Midtrans.
+  // freeOrder: tidak ada yang bisa dicharge ke Midtrans (total 0).
+  // Lunas OTOMATIS hanya untuk diskon penuh sungguhan (subtotal > 0) via
+  // metode online. CASH tidak pernah auto-lunas — dananya harus diterima
+  // dulu oleh sales/admin (tombol Tandai Lunas). Total 0 karena HARGA
+  // BARANG BELUM DIISI juga jangan dianggap lunas.
   const freeOrder = total === 0;
+  const autoPaid = freeOrder && subtotal > 0 && method !== "CASH";
   const fee = freeOrder || method === "CASH" ? 0 : paymentFee(method, total);
   const grandTotal = total + fee;
 
@@ -211,6 +215,39 @@ export async function createRestockRequest(formData: FormData) {
       : []),
   ];
 
+  // RESERVASI STOK: potong stok pusat SEKARANG, atomik lewat guard `gte`
+  // di WHERE — dua toko rebutan sisa terakhir, yang kalah gagal DI SINI
+  // sebelum ada uang yang dicharge (tidak perlu refund). Barang sekode
+  // dipotong bersama (stok fisik yang sama, nilai di-mirror antar baris).
+  // Stok balik kalau langkah setelahnya gagal / order dibatalkan.
+  const reserved: { target: { code: string } | { id: string }; qty: number }[] =
+    [];
+  const undoReserve = () =>
+    Promise.all(
+      reserved.map((r) =>
+        prisma.product.updateMany({
+          where: r.target,
+          data: { centralStock: { increment: r.qty } },
+        }),
+      ),
+    );
+  for (const [key, g] of stockGroups) {
+    const target = key.startsWith("id:")
+      ? { id: key.slice(3) }
+      : { code: key };
+    const res = await prisma.product.updateMany({
+      where: { ...target, centralStock: { gte: g.qty } },
+      data: { centralStock: { decrement: g.qty } },
+    });
+    if (res.count === 0) {
+      await undoReserve();
+      return {
+        error: `Stok pusat ${g.label} keburu diambil order lain — sisanya tidak cukup, kurangi jumlahnya.`,
+      };
+    }
+    reserved.push({ target, qty: g.qty });
+  }
+
   // Charge langsung ke metode yang dipilih (null kalau Midtrans belum
   // dikonfigurasi, gagal, CASH, atau order gratis penuh).
   const charge =
@@ -227,44 +264,55 @@ export async function createRestockRequest(formData: FormData) {
         )
       : null;
   if (!freeOrder && method !== "CASH" && !charge) {
+    await undoReserve();
     return { error: "Gagal membuat tagihan pembayaran, coba lagi." };
   }
 
   // Charge (atau fallback CASH/gratis) berhasil — baru sekarang konsumsi
   // kuota voucher, atomik terhadap pemakaian bersamaan.
   if (voucher && !(await consumeVoucher(voucher))) {
+    await undoReserve();
     return { error: "Kuota voucher sudah habis." };
   }
 
-  await prisma.request.create({
-    data: {
-      id: orderId,
-      storeId: user.ownedStore.id,
-      subject: `Restok ${items.length} barang`,
-      message: note || summary,
-      createdById: user.id,
-      total,
-      discount,
-      grosirDiscount: grosir,
-      voucherCode,
-      paymentStatus: freeOrder ? "PAID" : "UNPAID",
-      paymentMethod: method,
-      paymentFee: fee,
-      txnId: orderId,
-      vaNumber: charge?.vaNumber ?? null,
-      vaBank: charge?.vaBank ?? null,
-      qrUrl: charge?.qrUrl ?? null,
-      paymentDeeplink: charge?.deeplink ?? null,
-      paymentExpiry: charge?.expiryTime ? new Date(charge.expiryTime) : null,
-      items: { create: itemRows },
-    },
-  });
+  try {
+    await prisma.request.create({
+      data: {
+        id: orderId,
+        storeId: user.ownedStore.id,
+        subject: `Restok ${items.length} barang`,
+        message: note || summary,
+        createdById: user.id,
+        total,
+        stockReserved: true,
+        discount,
+        grosirDiscount: grosir,
+        voucherCode,
+        paymentStatus: autoPaid ? "PAID" : "UNPAID",
+        paymentMethod: method,
+        paymentFee: fee,
+        txnId: orderId,
+        vaNumber: charge?.vaNumber ?? null,
+        vaBank: charge?.vaBank ?? null,
+        qrUrl: charge?.qrUrl ?? null,
+        paymentDeeplink: charge?.deeplink ?? null,
+        paymentExpiry: charge?.expiryTime ? new Date(charge.expiryTime) : null,
+        items: { create: itemRows },
+      },
+    });
+  } catch {
+    // Insert gagal (jaringan/DB) — jangan biarkan stok tersandera
+    await undoReserve();
+    return { error: "Gagal menyimpan order, coba lagi." };
+  }
 
-  // Order gratis penuh atau CASH: tidak ada yang perlu ditunggu dari
-  // Midtrans, kabari sekarang. Metode online lain menunggu konfirmasi
+  // Order lunas otomatis / CASH / total 0: tidak ada yang perlu ditunggu
+  // dari Midtrans, kabari sekarang. Metode online lain menunggu konfirmasi
   // pembayaran (polling / getOrderPaymentInfo self-heal).
-  if (freeOrder) after(() => notifyOrder(orderId, "paid"));
-  else if (method === "CASH") after(() => notifyOrder(orderId, "new"));
+  if (autoPaid) after(() => notifyOrder(orderId, "paid"));
+  else if (method === "CASH" || freeOrder) {
+    after(() => notifyOrder(orderId, "new"));
+  }
 
   revalidatePath("/request");
   revalidatePath("/dashboard");
@@ -298,6 +346,7 @@ export async function syncOrderPayment(requestId: string): Promise<boolean> {
 
   const req = await prisma.request.findUnique({ where: { id: requestId } });
   if (!req || req.storeId !== user.ownedStore.id) return false;
+  if (req.status === "CANCELLED") return false;
   if (req.paymentStatus === "PAID") return true;
 
   if (!(await isTransactionPaid(req.txnId ?? req.id))) return false;
@@ -343,6 +392,9 @@ export async function getOrderPaymentInfo(requestId: string) {
   });
   if (!req || req.storeId !== user.ownedStore.id) {
     return { error: "Order tidak ditemukan." };
+  }
+  if (req.status === "CANCELLED") {
+    return { error: "Order sudah dibatalkan, tidak bisa dibayar." };
   }
   if (req.paymentStatus === "PAID") return { error: "Order sudah lunas." };
   if (!req.paymentMethod || req.paymentMethod === "CASH") {
@@ -457,9 +509,12 @@ export async function markOrderPaidCash(id: string) {
     user.role === "ADMIN" ||
     (user.role === "SALES" && req.store.salesId === user.id);
   if (!allowed) return { error: "Order ini bukan dari toko yang kamu pegang." };
-  if (req.paymentMethod !== "CASH") {
+  // Selain CASH, order bertotal 0 (harga barang belum diisi / diskon penuh
+  // via CASH) juga dilunasi manual — Midtrans tidak bisa menagih Rp0.
+  if (req.paymentMethod !== "CASH" && req.total + req.paymentFee > 0) {
     return { error: "Order ini bukan pembayaran cash." };
   }
+  if (req.status === "CANCELLED") return { error: "Order sudah dibatalkan." };
   if (req.paymentStatus === "PAID") return { error: "Order sudah lunas." };
 
   const res = await prisma.request.updateMany({
@@ -579,6 +634,8 @@ export async function updateRequestStatus(id: string, status: string) {
     user.role === "ADMIN" ||
     (user.role === "SALES" && req.store.salesId === user.id);
   if (!allowed) return;
+  // Order batal tidak bisa diproses lagi (stok reservasinya sudah balik)
+  if (req.status === "CANCELLED") return;
 
   const fulfilling =
     status === "COMPLETED" && req.status !== "COMPLETED" && req.items.length > 0;
@@ -620,6 +677,7 @@ export async function completeOrderWithReport(id: string, formData: FormData) {
     (user.role === "SALES" && req.store.salesId === user.id);
   if (!allowed) return { error: "Order ini bukan dari toko yang kamu pegang." };
   if (req.status === "COMPLETED") return { error: "Order sudah selesai." };
+  if (req.status === "CANCELLED") return { error: "Order sudah dibatalkan." };
 
   const photo = String(formData.get("photo") ?? "");
   const note = String(formData.get("note") ?? "").trim();
@@ -654,6 +712,192 @@ export async function completeOrderWithReport(id: string, formData: FormData) {
 
   revalidateOrderPaths(req.storeId);
   return { ok: true };
+}
+
+// Kembalikan stok pusat untuk item order yang stoknya sudah direservasi
+// checkout — dipakai saat order dibatalkan / sweep tagihan kedaluwarsa.
+// Barang sekode berbagi stok fisik: qty dijumlah per kode dulu, lalu
+// increment di-mirror ke semua baris sekode (pola yang sama dgn stockMoveOps).
+async function restoreCentralStock(
+  items: { productId: string; qty: number }[],
+) {
+  const codeOf = new Map(
+    (
+      await prisma.product.findMany({
+        where: { id: { in: items.map((i) => i.productId) } },
+        select: { id: true, code: true },
+      })
+    ).map((p) => [p.id, p.code]),
+  );
+  const groups = new Map<string, number>();
+  for (const it of items) {
+    const code = codeOf.get(it.productId);
+    const key = code ? `c:${code}` : `id:${it.productId}`;
+    groups.set(key, (groups.get(key) ?? 0) + it.qty);
+  }
+  await Promise.all(
+    [...groups].map(([key, qty]) =>
+      prisma.product.updateMany({
+        where: key.startsWith("c:")
+          ? { code: key.slice(2) }
+          : { id: key.slice(3) },
+        data: { centralStock: { increment: qty } },
+      }),
+    ),
+  );
+}
+
+// Batalkan order restok. Admin/sales pemegang toko: order apa pun yang belum
+// selesai (order LUNAS pun bisa — refund uangnya diurus manual via dashboard
+// Midtrans/kesepakatan). Owner: hanya order tokonya yang masih Menunggu dan
+// BELUM dibayar. Stok pusat yang direservasi saat checkout dikembalikan;
+// order lama (pra-skema reservasi) memang belum memotong stok, jadi tidak
+// ada yang dikembalikan.
+export async function cancelOrder(id: string, formData: FormData) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+
+  const req = await prisma.request.findUnique({
+    where: { id },
+    include: { store: true, items: true },
+  });
+  if (!req || req.items.length === 0) {
+    return { error: "Order tidak ditemukan." };
+  }
+  if (req.status === "COMPLETED") {
+    return { error: "Order sudah selesai, tidak bisa dibatalkan." };
+  }
+  if (req.status === "CANCELLED") return { error: "Order sudah dibatalkan." };
+
+  const isStaff =
+    user.role === "ADMIN" ||
+    (user.role === "SALES" && req.store.salesId === user.id);
+  const isOwnOrder =
+    user.role === "OWNER" && user.ownedStore?.id === req.storeId;
+  if (!isStaff && !isOwnOrder) {
+    return { error: "Order ini bukan milikmu." };
+  }
+  if (!isStaff && (req.status !== "PENDING" || req.paymentStatus === "PAID")) {
+    return {
+      error: "Order sudah dibayar/diproses — hubungi sales untuk pembatalan.",
+    };
+  }
+
+  const reason = String(formData.get("reason") ?? "").trim();
+  const roleLabel =
+    user.role === "ADMIN" ? "Admin" : user.role === "SALES" ? "Sales" : "Owner";
+
+  // Guard status di WHERE: anti dobel-klik / balapan dengan proses kirim —
+  // hanya transisi pertama yang menang. stockReserved ikut di-nol-kan
+  // atomik di sini supaya stok tidak mungkin dikembalikan dua kali.
+  const res = await prisma.request.updateMany({
+    where: { id, status: { notIn: ["COMPLETED", "CANCELLED"] } },
+    data: {
+      status: "CANCELLED",
+      cancelledAt: new Date(),
+      cancelledBy: `${user.name} (${roleLabel})`,
+      cancelReason: reason || null,
+      stockReserved: false,
+    },
+  });
+  if (res.count === 0) {
+    return { error: "Status order keburu berubah, muat ulang halaman." };
+  }
+
+  if (req.stockReserved) await restoreCentralStock(req.items);
+
+  after(() => notifyOrder(id, "cancelled"));
+  revalidateOrderPaths(req.storeId);
+  return { ok: true };
+}
+
+// Admin menandai dana order batal sudah dikembalikan ke owner. Refund
+// uangnya sendiri terjadi di luar app (dashboard Midtrans / transfer /
+// tunai lewat sales) — ini pencatatan + kabar ke owner supaya jelas
+// dananya sudah balik. Anti dobel lewat guard refundedAt null di WHERE.
+export async function markOrderRefunded(id: string, formData: FormData) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (user.role !== "ADMIN") {
+    return { error: "Hanya admin yang bisa menandai pengembalian dana." };
+  }
+
+  const req = await prisma.request.findUnique({
+    where: { id },
+    include: { items: { select: { id: true }, take: 1 } },
+  });
+  if (!req || req.items.length === 0) {
+    return { error: "Order tidak ditemukan." };
+  }
+  if (req.status !== "CANCELLED") {
+    return { error: "Order ini tidak dibatalkan — tidak ada refund." };
+  }
+  if (req.paymentStatus !== "PAID") {
+    return { error: "Order ini belum dibayar, tidak ada dana yang kembali." };
+  }
+
+  const note = String(formData.get("note") ?? "").trim();
+  const res = await prisma.request.updateMany({
+    where: { id, refundedAt: null },
+    data: {
+      refundedAt: new Date(),
+      refundedBy: `${user.name} (Admin)`,
+      refundNote: note || null,
+    },
+  });
+  if (res.count === 0) return { error: "Refund sudah pernah ditandai." };
+
+  after(() => notifyOrder(id, "refunded"));
+  revalidateOrderPaths(req.storeId);
+  return { ok: true };
+}
+
+// Order online yang tagihannya sudah kedaluwarsa > 24 jam dan tetap tidak
+// dibayar dibatalkan otomatis supaya stok reservasinya tidak tersandera
+// order zombie. Grace 24 jam memberi ruang owner "bayar ulang" (charge baru
+// via getOrderPaymentInfo memperbarui paymentExpiry). Sebelum membatalkan,
+// verifikasi dulu ke Midtrans — bisa saja sudah dibayar tapi webhook tidak
+// sampai (kasus localhost). Dipanggil dari halaman /order tiap dibuka.
+export async function sweepExpiredOrders() {
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const candidates = await prisma.request.findMany({
+    where: {
+      status: "PENDING",
+      paymentStatus: "UNPAID",
+      paymentMethod: { not: "CASH" }, // CASH tanpa tagihan online, manual saja
+      paymentExpiry: { lt: cutoff },
+      items: { some: {} },
+    },
+    include: { items: true },
+    take: 10, // sisanya kena sweep kunjungan berikutnya
+  });
+
+  for (const req of candidates) {
+    // Self-heal: ternyata sudah dibayar → tandai lunas, jangan batalkan
+    if (await isTransactionPaid(req.txnId ?? req.id)) {
+      const res = await prisma.request.updateMany({
+        where: { id: req.id, paymentStatus: { not: "PAID" } },
+        data: { paymentStatus: "PAID" },
+      });
+      if (res.count > 0) after(() => notifyOrder(req.id, "paid"));
+      continue;
+    }
+    const res = await prisma.request.updateMany({
+      where: { id: req.id, status: "PENDING", paymentStatus: "UNPAID" },
+      data: {
+        status: "CANCELLED",
+        cancelledAt: new Date(),
+        cancelledBy: "Sistem",
+        cancelReason: "Tagihan tidak dibayar sampai kedaluwarsa",
+        stockReserved: false,
+      },
+    });
+    if (res.count > 0) {
+      if (req.stockReserved) await restoreCentralStock(req.items);
+      after(() => notifyOrder(req.id, "cancelled"));
+    }
+  }
+  if (candidates.length > 0) revalidatePath("/order");
 }
 
 // Admin/sales membuka label resi order. Nomor resi + kode penjemputan
@@ -710,7 +954,10 @@ export async function printOrderResi(id: string) {
 }
 
 // Op pemindahan stok saat order restok diselesaikan: stok pusat berkurang,
-// stok toko (prospek) bertambah. Kurangi stok pusat tanpa sampai minus:
+// stok toko (prospek) bertambah. Order baru (stockReserved) stok pusatnya
+// SUDAH dipotong saat checkout — di sini tinggal stok toko yang naik;
+// order lama (pra-reservasi) tetap dipotong di sini seperti dulu.
+// Kurangi stok pusat tanpa sampai minus:
 // (1) kalau stok < qty, nol-kan; (2) kalau cukup, kurangi qty.
 // Urutannya penting — kebalikannya bisa meng-nol-kan stok yang cukup.
 // Barang sekode berbagi satu stok pusat fisik, jadi pengurangan berlaku ke
@@ -720,6 +967,7 @@ async function stockMoveOps(req: {
   storeId: string;
   store: { salesId: string | null };
   items: { productId: string; qty: number }[];
+  stockReserved: boolean;
 }) {
   const codeOf = new Map(
     (
@@ -735,15 +983,19 @@ async function stockMoveOps(req: {
   };
   const ops: Prisma.PrismaPromise<unknown>[] = [];
   for (const item of req.items) {
+    if (!req.stockReserved) {
+      ops.push(
+        prisma.product.updateMany({
+          where: { ...target(item.productId), centralStock: { lt: item.qty } },
+          data: { centralStock: 0 },
+        }),
+        prisma.product.updateMany({
+          where: { ...target(item.productId), centralStock: { gte: item.qty } },
+          data: { centralStock: { decrement: item.qty } },
+        }),
+      );
+    }
     ops.push(
-      prisma.product.updateMany({
-        where: { ...target(item.productId), centralStock: { lt: item.qty } },
-        data: { centralStock: 0 },
-      }),
-      prisma.product.updateMany({
-        where: { ...target(item.productId), centralStock: { gte: item.qty } },
-        data: { centralStock: { decrement: item.qty } },
-      }),
       // Tambahkan ke stok toko
       prisma.prospect.upsert({
         where: {
