@@ -705,7 +705,8 @@ export async function printOrderResi(id: string) {
     }
     revalidatePath("/order");
   }
-  redirect(`/order/${id}/resi`);
+  // ?auto=1 → halaman label langsung membuka dialog print/Save-as-PDF
+  redirect(`/order/${id}/resi?auto=1`);
 }
 
 // Op pemindahan stok saat order restok diselesaikan: stok pusat berkurang,

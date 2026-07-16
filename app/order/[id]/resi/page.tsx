@@ -6,6 +6,8 @@ import { getCurrentUser } from "@/lib/auth";
 import { PAYMENT_METHOD_LABEL } from "@/lib/payment-fee";
 import { fmtDate } from "@/lib/date";
 import { PrintResiButton } from "@/components/PrintResiButton";
+import { AutoPrintResi } from "@/components/AutoPrintResi";
+import { ResiFitScale } from "@/components/ResiFitScale";
 import { ArrowLeft } from "lucide-react";
 
 const rupiah = (n: number) =>
@@ -51,13 +53,16 @@ function Barcode({ value, className }: { value: string; className?: string }) {
 // tercetak polos tanpa navbar. Dibuka lewat aksi Cetak Resi di /order.
 export default async function ResiPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ auto?: string }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
   const { id } = await params;
+  const { auto } = await searchParams;
   const req = await prisma.request.findUnique({
     where: { id },
     include: {
@@ -86,6 +91,37 @@ export default async function ResiPage({
 
   return (
     <div className="min-h-screen bg-neutral-100 py-6 print:bg-white print:py-0">
+      {/* Datang dari tombol Cetak Resi → dialog print langsung terbuka,
+          selesai/batal balik ke /order */}
+      {auto === "1" && <AutoPrintResi />}
+      {/* Auto-fit: label yang kepanjangan (item banyak) dikecilkan saat
+          print supaya selalu muat 1 halaman label */}
+      <ResiFitScale />
+      {/* Kertas label termal 100×150 mm (lebar × panjang) — ukuran halaman
+          dikunci @page, jadi tombol Cetak → "Save as PDF" langsung
+          menghasilkan PDF seukuran label untuk printer bluetooth, tanpa
+          atur kertas manual. Lebar label 90mm = jeda 5mm kiri-kanan.
+          position static meng-override aturan absolute #struk-print di
+          globals.css (punya struk POS); print-color-adjust supaya badge
+          hitam (LUNAS) tetap tercetak tanpa opsi Background graphics. */}
+      <style>{`
+        @media print {
+          @page { size: 100mm 150mm; margin: 0; }
+          #struk-print {
+            position: static !important;
+            /* --resi-w & --resi-zoom di-set ResiFitScale: label yang
+               kepanjangan dikecilkan (zoom < 1) + layout dilebarkan 90mm/z
+               supaya lebar tercetak tetap 90mm — hasilnya selalu 1 halaman */
+            width: var(--resi-w, 90mm) !important;
+            max-width: none !important;
+            zoom: var(--resi-zoom, 1);
+            margin: 4mm auto 0 !important;
+            padding: 0 !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+        }
+      `}</style>
       {/* Toolbar — hilang saat print */}
       <div className="mx-auto mb-4 flex w-full max-w-md items-center justify-between px-4 print:hidden">
         <Link
