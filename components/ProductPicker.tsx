@@ -13,40 +13,39 @@ const rupiah = (n: number) =>
 // Batas baris yang dirender di panel (katalog per-model bisa >1000 item)
 const MAX_ROWS = 150;
 
-// Tier kompatibilitas di awal description ("PAS SEMPURNA · mold ZH 5")
-function tierOf(search?: string | null): string | null {
-  if (!search) return null;
-  for (const t of ["PAS SEMPURNA", "KOMPATIBEL DGN CATATAN", "KOMPATIBEL"]) {
-    if (search.startsWith(t)) return t;
-  }
-  return null;
-}
-
-const TIER_CLS: Record<string, string> = {
-  "PAS SEMPURNA": "border-brand-dark text-brand-dark",
-  KOMPATIBEL: "border-neutral-400 text-neutral-600",
-  "KOMPATIBEL DGN CATATAN": "border-neutral-300 text-neutral-400",
+type PickerProduct = {
+  id: string;
+  name: string;
+  code?: string | null;
+  price: number;
+  remaining: number;
+  search?: string | null;
 };
 
+// Baris panel: item barang atau pembatas grup
+type Row =
+  | { kind: "item"; p: PickerProduct }
+  | { kind: "sep"; label: string };
+
+// Label mold dari description ("PAS SEMPURNA · mold ZH 5 · ...")
+function moldOf(search?: string | null): string | null {
+  const m = /mold ([^·]+)/.exec(search ?? "");
+  return m ? m[1].trim() : null;
+}
+
 // Dropdown barang dengan pencarian. Satu produk = satu model HP; barang
-// kompatibel berbagi `code` (kode mold, mis. AA44). Pencarian membaca
-// nama/kode + `search` (description: tier & kode mold), dan hasilnya
-// ditambah "teman satu kode" — cari "Infinix Zero 5G" juga memunculkan
-// model lain yang cocok dengan mold AA44 yang sama.
+// kompatibel berbagi `code` (kode mold, mis. AA44) = barang fisik yang sama.
+// Tanpa kata kunci: daftar dikelompokkan per kode dengan pembatas, biar
+// kelihatan mana yang satu kode. Dengan kata kunci: hasil langsung dulu,
+// lalu pembatas "satu kode" berisi model lain yang berbagi mold yang sama —
+// cari "Infinix Zero 5G" ikut memunculkan semua model se-AA44.
 // Nilai terpilih dikirim lewat hidden input name="productId".
 export function ProductPicker({
   products,
   value,
   onChange,
 }: {
-  products: {
-    id: string;
-    name: string;
-    code?: string | null;
-    price: number;
-    remaining: number;
-    search?: string | null;
-  }[];
+  products: PickerProduct[];
   value: string;
   onChange: (id: string) => void;
 }) {
@@ -73,8 +72,28 @@ export function ProductPicker({
 
   const picked = products.find((p) => p.id === value);
   const term = q.trim().toLowerCase();
-  const filtered = useMemo(() => {
-    if (!term) return products.map((p) => ({ p, mate: false }));
+
+  const rows = useMemo<Row[]>(() => {
+    if (!term) {
+      // Browsing: kelompokkan per kode, pembatas per grup
+      const groups = new Map<string, PickerProduct[]>();
+      for (const p of products) {
+        const key = p.code ?? "Tanpa kode";
+        (groups.get(key) ?? groups.set(key, []).get(key)!).push(p);
+      }
+      const out: Row[] = [];
+      for (const key of [...groups.keys()].sort()) {
+        const items = groups.get(key)!;
+        const mold = moldOf(items[0]?.search);
+        out.push({
+          kind: "sep",
+          label: `${key}${mold ? ` · mold ${mold}` : ""} — ${items.length} model`,
+        });
+        for (const p of items) out.push({ kind: "item", p });
+      }
+      return out;
+    }
+
     const direct = products.filter(
       (p) =>
         `${p.name} ${p.code ?? ""}`.toLowerCase().includes(term) ||
@@ -82,19 +101,20 @@ export function ProductPicker({
     );
     const hit = new Set(direct.map((p) => p.id));
     const codes = new Set(direct.map((p) => p.code).filter(Boolean));
-    // Barang lain yang sekode dengan hasil pencarian = barang fisik yang
-    // sama, cuma beda model HP — ditampilkan setelah hasil langsung.
+    // Barang lain sekode dengan hasil pencarian = barang fisik yang sama,
+    // cuma beda model HP — ditampilkan setelah pembatas.
     const mates = products.filter(
       (p) => p.code && codes.has(p.code) && !hit.has(p.id),
     );
-    return [
-      ...direct.map((p) => ({ p, mate: false })),
-      ...mates.map((p) => ({ p, mate: true })),
-    ];
+    const out: Row[] = direct.map((p) => ({ kind: "item", p }));
+    if (mates.length > 0) {
+      out.push({ kind: "sep", label: "Satu kode — cocok juga untuk model ini:" });
+      for (const p of mates) out.push({ kind: "item", p });
+    }
+    return out;
   }, [products, term]);
 
-  const shown = filtered.slice(0, MAX_ROWS);
-  const firstMateIdx = shown.findIndex((f) => f.mate);
+  const shown = rows.slice(0, MAX_ROWS);
 
   function pick(id: string) {
     onChange(id);
@@ -141,62 +161,55 @@ export function ProductPicker({
                 Barang tidak ditemukan.
               </li>
             ) : (
-              shown.map(({ p, mate }, idx) => {
-                const tier = tierOf(p.search);
-                return (
-                  <li key={p.id}>
-                    {idx === firstMateIdx && (
-                      <p className="border-y border-dashed border-neutral-200 bg-neutral-50 px-3 py-1 text-[11px] font-medium text-neutral-400">
-                        Satu kode — cocok juga untuk model ini:
-                      </p>
-                    )}
+              shown.map((row, idx) =>
+                row.kind === "sep" ? (
+                  <li key={`sep-${idx}`}>
+                    <p className="border-y border-dashed border-neutral-200 bg-neutral-50 px-3 py-1 text-[11px] font-medium text-neutral-400">
+                      {row.label}
+                    </p>
+                  </li>
+                ) : (
+                  <li key={row.p.id}>
                     <button
                       type="button"
-                      onClick={() => pick(p.id)}
+                      onClick={() => pick(row.p.id)}
                       className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-neutral-100 ${
-                        p.id === value ? "bg-neutral-50 font-medium" : ""
+                        row.p.id === value ? "bg-neutral-50 font-medium" : ""
                       }`}
                     >
                       <span className="min-w-0 break-words leading-snug">
-                        {p.code && (
+                        {row.p.code && (
                           <span className="mr-1.5 rounded bg-neutral-900 px-1 py-0.5 text-[10px] font-bold text-white">
-                            {p.code}
+                            {row.p.code}
                           </span>
                         )}
-                        {p.name}
+                        {row.p.name}
                         <span className="ml-1.5 text-xs text-neutral-400">
-                          {rupiah(p.price)}
+                          {rupiah(row.p.price)}
                         </span>
-                        {tier && (
-                          <span
-                            className={`ml-1.5 inline-block rounded border px-1 py-0.5 text-[10px] font-semibold ${TIER_CLS[tier]}`}
-                          >
-                            {tier}
-                          </span>
-                        )}
                       </span>
                       <span className="flex shrink-0 items-center gap-1.5">
                         <span
                           className={`text-xs ${
-                            p.remaining === 0
+                            row.p.remaining === 0
                               ? "text-neutral-300"
                               : "text-neutral-500"
                           }`}
                         >
-                          sisa {p.remaining}
+                          sisa {row.p.remaining}
                         </span>
-                        {p.id === value && (
+                        {row.p.id === value && (
                           <Check className="h-3.5 w-3.5 text-neutral-900" />
                         )}
                       </span>
                     </button>
                   </li>
-                );
-              })
+                ),
+              )
             )}
-            {filtered.length > MAX_ROWS && (
+            {rows.length > MAX_ROWS && (
               <li className="px-3 py-2 text-xs text-neutral-400">
-                +{filtered.length - MAX_ROWS} barang lagi — ketik untuk
+                +{rows.length - MAX_ROWS} baris lagi — ketik untuk
                 mempersempit.
               </li>
             )}

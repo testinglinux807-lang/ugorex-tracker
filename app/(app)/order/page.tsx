@@ -155,11 +155,12 @@ export default async function OrderPage({
 
     const stockBy = new Map(prospects.map((p) => [p.productId, p.stock]));
     const soldBy = new Map(sold.map((s) => [s.productId, s._sum.qty ?? 0]));
-    // Hanya barang yang ada di inventory toko ini (pernah dikasih stok
-    // sales) — katalog pusat yang belum pernah dimiliki owner tidak tampil;
-    // barang baru masuk lewat sales dulu.
+    // Semua barang yang stok pusatnya tersedia bisa di-order owner —
+    // termasuk model yang belum pernah ada di toko ini (dulu dibatasi
+    // "pernah dikasih sales dulu", dilonggarkan 16 Jul 2026: owner bebas
+    // restok model apa pun selama gudang pusat punya).
     const ownerProducts = products
-      .filter((p) => (stockBy.get(p.id) ?? 0) > 0)
+      .filter((p) => p.centralStock > 0 || (stockBy.get(p.id) ?? 0) > 0)
       .map((p) => ({
         id: p.id,
         name: p.name,
