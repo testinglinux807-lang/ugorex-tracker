@@ -353,6 +353,11 @@ model Request {
   deliveredAt   DateTime? // kapan barang diserahkan
   deliveredBy   String?   // nama pengantar (snapshot, bukan relasi)
 
+  // Resi pengiriman (label cetak ala marketplace) — dibuat sekali saat
+  // admin/sales pertama klik Cetak Resi di /order
+  resiNo     String? @unique // nomor resi, mis. UGX260716123456
+  pickupCode String? // kode penjemputan — ditunjukkan sales penjemput barang
+
   items RequestItem[]
 }
 

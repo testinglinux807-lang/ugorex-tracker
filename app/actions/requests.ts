@@ -656,6 +656,58 @@ export async function completeOrderWithReport(id: string, formData: FormData) {
   return { ok: true };
 }
 
+// Admin/sales membuka label resi order. Nomor resi + kode penjemputan
+// dibuat sekali di klik pertama (idempoten), lalu diarahkan ke halaman
+// cetak /order/[id]/resi. Kode penjemputan ditunjukkan sales yang jemput
+// barang di gudang; juga tampil di kartu order (HP sales).
+export async function printOrderResi(id: string) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+
+  const req = await prisma.request.findUnique({
+    where: { id },
+    include: { store: true, items: { select: { id: true }, take: 1 } },
+  });
+  if (!req) return { error: "Order tidak ditemukan." };
+  if (req.items.length === 0) {
+    return { error: "Resi hanya untuk order restok." };
+  }
+  const allowed =
+    user.role === "ADMIN" ||
+    (user.role === "SALES" && req.store.salesId === user.id);
+  if (!allowed) return { error: "Order ini bukan dari toko yang kamu pegang." };
+
+  if (!req.resiNo) {
+    const rand = (chars: string, n: number) =>
+      Array.from(
+        { length: n },
+        () => chars[Math.floor(Math.random() * chars.length)],
+      ).join("");
+    const d = new Date();
+    const ymd =
+      String(d.getFullYear()).slice(2) +
+      String(d.getMonth() + 1).padStart(2, "0") +
+      String(d.getDate()).padStart(2, "0");
+    // Retry kecil: resiNo unique — kalau kebetulan tabrakan, buat ulang
+    for (let i = 0; i < 5; i++) {
+      try {
+        await prisma.request.update({
+          where: { id },
+          data: {
+            resiNo: `UGX${ymd}${rand("0123456789", 6)}`,
+            pickupCode: `${rand("ABCDEFGHJKLMNPQRSTUVWXYZ", 2)}-${rand("0123456789", 2)}`,
+          },
+        });
+        break;
+      } catch {
+        if (i === 4) return { error: "Gagal membuat nomor resi, coba lagi." };
+      }
+    }
+    revalidatePath("/order");
+  }
+  redirect(`/order/${id}/resi`);
+}
+
 // Op pemindahan stok saat order restok diselesaikan: stok pusat berkurang,
 // stok toko (prospek) bertambah. Kurangi stok pusat tanpa sampai minus:
 // (1) kalau stok < qty, nol-kan; (2) kalau cukup, kurangi qty.

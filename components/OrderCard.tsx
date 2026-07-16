@@ -1,6 +1,10 @@
 import type { Prisma } from "@prisma/client";
 import { waLink } from "@/lib/wa";
-import { markOrderPaidCash, updateRequestStatus } from "@/app/actions/requests";
+import {
+  markOrderPaidCash,
+  printOrderResi,
+  updateRequestStatus,
+} from "@/app/actions/requests";
 import { SubmitButton } from "@/components/SubmitButton";
 import { PayOrderButton } from "@/components/PayOrderButton";
 import { DeliveryReportForm } from "@/components/DeliveryReportForm";
@@ -15,6 +19,7 @@ import {
   Truck,
   ChevronDown,
   Banknote,
+  Printer,
 } from "lucide-react";
 
 export type OrderRequest = Prisma.RequestGetPayload<{
@@ -188,6 +193,18 @@ export function OrderCard({
             </a>
           </div>
         )}
+        {/* Info resi — kode penjemputan ditunjukkan sales saat ambil barang
+            di gudang, jadi ikut tampil di kartu (HP sales) */}
+        {canRespond && r.resiNo && (
+          <div className="flex items-center justify-between gap-2 rounded-lg border border-dashed border-neutral-300 px-2.5 py-1.5 text-xs">
+            <span className="truncate font-mono text-neutral-600">
+              Resi {r.resiNo}
+            </span>
+            <span className="shrink-0 font-semibold">
+              Jemput: {r.pickupCode ?? "—"}
+            </span>
+          </div>
+        )}
         {shown.map((it) => (
           <ItemRow
             key={it.id}
@@ -347,6 +364,23 @@ export function OrderCard({
               Hubungi Owner
             </a>
           )}
+          {/* Cetak label resi (dibuat sekali di klik pertama) — halaman
+              /order/[id]/resi berisi label siap print */}
+          <form
+            action={async () => {
+              "use server";
+              await printOrderResi(r.id);
+            }}
+          >
+            <SubmitButton
+              pendingText="Menyiapkan…"
+              overlayText="Menyiapkan resi…"
+              className="inline-flex items-center gap-1 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-100 disabled:opacity-60"
+            >
+              <Printer className="h-3.5 w-3.5" />
+              Cetak Resi
+            </SubmitButton>
+          </form>
           {/* Alur: Menunggu → Tandai Dikirim (notif owner) → report sampai */}
           {r.status === "PENDING" && (
             <form action={updateRequestStatus.bind(null, r.id, "SHIPPED")}>
