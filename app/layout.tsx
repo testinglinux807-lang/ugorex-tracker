@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Ugorex Tracker",
-  description: "Tracker funnel barang per konter (Awareness → Loyalty)",
+  description: "Tracker funnel barang per konter (Awareness → Star Seller)",
 };
 
 export const viewport: Viewport = {

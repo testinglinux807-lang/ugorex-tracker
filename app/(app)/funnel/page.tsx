@@ -38,13 +38,9 @@ export default async function FunnelPage() {
   );
 
   // --- Ringkasan funnel keseluruhan (per prospek) ---
-  const counts: Record<Stage, number> = {
-    AWARENESS: 0,
-    INTEREST: 0,
-    DESIRE: 0,
-    ACTION: 0,
-    LOYALTY: 0,
-  };
+  const counts = Object.fromEntries(
+    STAGES.map((s) => [s, 0]),
+  ) as Record<Stage, number>;
   for (const p of prospects)
     if (p.stage in counts) counts[p.stage as Stage]++;
   const total = prospects.length;
@@ -66,13 +62,9 @@ export default async function FunnelPage() {
     if (!acc) {
       acc = {
         store: p.store,
-        stageCounts: {
-          AWARENESS: 0,
-          INTEREST: 0,
-          DESIRE: 0,
-          ACTION: 0,
-          LOYALTY: 0,
-        },
+        stageCounts: Object.fromEntries(
+          STAGES.map((s) => [s, 0]),
+        ) as Record<Stage, number>,
         totalProspek: 0,
         furthestIdx: -1,
         furthest: "AWARENESS",
@@ -121,8 +113,13 @@ export default async function FunnelPage() {
         (y.lastActivity ?? "").localeCompare(x.lastActivity ?? ""),
     );
 
-  const loyalCount = stores.filter((s) => s.furthest === "LOYALTY").length;
-  const actionCount = stores.filter((s) => s.furthest === "ACTION").length;
+  const loyalIdx = STAGES.indexOf("LOYALTY");
+  const isLoyal = (s: StoreFunnel | { furthest: Stage }) =>
+    STAGES.indexOf(s.furthest) >= loyalIdx;
+  const loyalCount = stores.filter(isLoyal).length;
+  const conversionCount = stores.filter(
+    (s) => s.furthest === "CONVERSION",
+  ).length;
 
   // --- Agregasi per sales (evaluasi) ---
   const nowMs = new Date().getTime();
@@ -156,8 +153,9 @@ export default async function FunnelPage() {
         name,
         konterCount: konter.length,
         revenue,
-        loyalCount: konter.filter((k) => k.furthest === "LOYALTY").length,
-        actionCount: konter.filter((k) => k.furthest === "ACTION").length,
+        loyalCount: konter.filter(isLoyal).length,
+        conversionCount: konter.filter((k) => k.furthest === "CONVERSION")
+          .length,
         terbengkalaiCount: konter.filter((k) => isNeglected(k.lastActivity))
           .length,
         best:
@@ -210,8 +208,8 @@ export default async function FunnelPage() {
             <p className="text-xs text-neutral-400">repeat order</p>
           </div>
           <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-            <p className="text-xs text-neutral-500">Sudah Action</p>
-            <p className="mt-1 text-2xl font-bold">{actionCount}</p>
+            <p className="text-xs text-neutral-500">Sudah Conversion</p>
+            <p className="mt-1 text-2xl font-bold">{conversionCount}</p>
             <p className="text-xs text-neutral-400">mulai jualan</p>
           </div>
         </div>

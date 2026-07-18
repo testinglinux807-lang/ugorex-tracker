@@ -1,47 +1,50 @@
-// Definisi tahap funnel AIDA + Loyalty dan nilai status
+// Definisi tahap funnel (Awareness → Star Seller) dan nilai status.
+// Nilai lama INTEREST/DESIRE/ACTION sudah dimigrasi ke skema ini
+// (scripts/migrate-stages.mjs): INTEREST & DESIRE → CONSIDERATION,
+// ACTION → CONVERSION.
 
 export const STAGES = [
   "AWARENESS",
-  "INTEREST",
-  "DESIRE",
-  "ACTION",
+  "CONSIDERATION",
+  "CONVERSION",
   "LOYALTY",
+  "STAR_SELLER",
 ] as const;
 
 export type Stage = (typeof STAGES)[number];
 
 export const STAGE_LABEL: Record<Stage, string> = {
   AWARENESS: "Awareness",
-  INTEREST: "Interest",
-  DESIRE: "Desire",
-  ACTION: "Action",
+  CONSIDERATION: "Consideration",
+  CONVERSION: "Conversion",
   LOYALTY: "Loyalty",
+  STAR_SELLER: "Star Seller",
 };
 
 export const STAGE_DESC: Record<Stage, string> = {
   AWARENESS: "Barang sudah ditawarkan / dikenalkan ke toko",
-  INTEREST: "Toko mulai tertarik & bertanya lebih lanjut",
-  DESIRE: "Toko ingin / mempertimbangkan ambil barang",
-  ACTION: "Toko sepakat / mulai jualan barang",
+  CONSIDERATION: "Toko tertarik & mempertimbangkan ambil barang",
+  CONVERSION: "Toko sudah order / mulai jualan barang",
   LOYALTY: "Toko repeat order & loyal",
+  STAR_SELLER: "Konter andalan — penjualan tinggi & konsisten",
 };
 
 // Warna tiap tahap — gradien hijau (sehue brand lime), makin gelap = makin maju
 export const STAGE_HEX: Record<Stage, string> = {
   AWARENESS: "#d2ec0a", // brand lime
-  INTEREST: "#9ad17f",
-  DESIRE: "#5cae4c",
-  ACTION: "#2f8f2f",
-  LOYALTY: "#1b5e20",
+  CONSIDERATION: "#9ad17f",
+  CONVERSION: "#5cae4c",
+  LOYALTY: "#2f8f2f",
+  STAR_SELLER: "#1b5e20",
 };
 
 // Warna teks di atas warna tahap (kontras)
 export const STAGE_ON: Record<Stage, string> = {
   AWARENESS: "#171717",
-  INTEREST: "#14401a",
-  DESIRE: "#0c2e0c",
-  ACTION: "#ffffff",
+  CONSIDERATION: "#14401a",
+  CONVERSION: "#0c2e0c",
   LOYALTY: "#ffffff",
+  STAR_SELLER: "#ffffff",
 };
 
 export const RESULTS = ["REJECTED", "NEUTRAL", "POSITIVE"] as const;

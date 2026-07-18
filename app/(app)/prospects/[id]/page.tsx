@@ -77,7 +77,10 @@ export default async function ProspectDetailPage({
   const positiveLogs = prospect.logs.filter((l) => l.result === "POSITIVE");
   const rejectedLogs = prospect.logs.filter((l) => l.result === "REJECTED");
   const latest = prospect.logs[0];
-  const won = prospect.stage === "ACTION" || prospect.stage === "LOYALTY";
+  const won =
+    prospect.stage === "CONVERSION" ||
+    prospect.stage === "LOYALTY" ||
+    prospect.stage === "STAR_SELLER";
   const rejected = !won && latest?.result === "REJECTED";
 
   const verdict = won

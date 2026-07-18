@@ -996,6 +996,18 @@ async function stockMoveOps(req: {
       );
     }
     ops.push(
+      // Prospek yang sudah CONVERSION dan order lagi = repeat order →
+      // naik ke LOYALTY. Harus jalan SEBELUM upsert/bump di bawah supaya
+      // prospek yang baru masuk CONVERSION di order ini tidak langsung
+      // ikut naik. STAR_SELLER tetap manual (sales/admin).
+      prisma.prospect.updateMany({
+        where: {
+          storeId: req.storeId,
+          productId: item.productId,
+          stage: "CONVERSION",
+        },
+        data: { stage: "LOYALTY" },
+      }),
       // Tambahkan ke stok toko
       prisma.prospect.upsert({
         where: {
@@ -1008,28 +1020,29 @@ async function stockMoveOps(req: {
         create: {
           storeId: req.storeId,
           productId: item.productId,
-          stage: "ACTION",
+          stage: "CONVERSION",
           stock: item.qty,
           salesId: req.store.salesId,
         },
       }),
       // Barang masuk = toko sudah membeli → tahap funnel naik minimal ke
-      // ACTION (yang sudah LOYALTY tidak diturunkan). Tanpa ini, prospek
-      // lama bisa nyangkut di AWARENESS padahal stoknya jalan terus.
+      // CONVERSION (yang sudah LOYALTY/STAR_SELLER tidak diturunkan).
+      // Tanpa ini, prospek lama bisa nyangkut di AWARENESS padahal
+      // stoknya jalan terus.
       prisma.prospect.updateMany({
         where: {
           storeId: req.storeId,
           productId: item.productId,
-          stage: { in: ["AWARENESS", "INTEREST", "DESIRE"] },
+          stage: { in: ["AWARENESS", "CONSIDERATION"] },
         },
-        data: { stage: "ACTION" },
+        data: { stage: "CONVERSION" },
       }),
     );
   }
   return ops;
 }
 
-// Catat kedatangan restok sebagai log funnel (ACTION/POSITIVE) supaya
+// Catat kedatangan restok sebagai log funnel (CONVERSION/POSITIVE) supaya
 // riwayat "Catat Kunjungan / Update Funnel" di detail konter nyambung
 // dengan barang yang benar-benar masuk lewat order.
 async function logRestockArrival(req: {
@@ -1050,7 +1063,7 @@ async function logRestockArrival(req: {
   await prisma.stageLog.createMany({
     data: prospects.map((p) => ({
       prospectId: p.id,
-      stage: "ACTION",
+      stage: "CONVERSION",
       result: "POSITIVE",
       note: `Restok masuk dari order #${req.id.slice(-8).toUpperCase()}`,
       quantity: qtyOf.get(p.productId) ?? 0,

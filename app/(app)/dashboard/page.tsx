@@ -2,7 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { type Stage, type Result } from "@/lib/constants";
+import { STAGES, type Stage, type Result } from "@/lib/constants";
 import { FunnelBar, type FunnelItem } from "@/components/FunnelBar";
 import { ActivityFeed } from "@/components/ActivityFeed";
 import { TrackerMap } from "@/components/TrackerMap";
@@ -147,25 +147,17 @@ export default async function DashboardPage() {
   }));
 
   // --- Funnel counts ---
-  const counts: Record<Stage, number> = {
-    AWARENESS: 0,
-    INTEREST: 0,
-    DESIRE: 0,
-    ACTION: 0,
-    LOYALTY: 0,
-  };
+  const counts = Object.fromEntries(
+    STAGES.map((s) => [s, 0]),
+  ) as Record<Stage, number>;
   for (const p of prospects) if (p.stage in counts) counts[p.stage as Stage]++;
   const total = prospects.length;
 
   // Detail per tahap — daftar konter/prospek buat expand di FunnelBar.
   // Hasil terakhir diambil dari recentLogs (sudah urut desc), default NEUTRAL.
-  const funnelItems: Record<Stage, FunnelItem[]> = {
-    AWARENESS: [],
-    INTEREST: [],
-    DESIRE: [],
-    ACTION: [],
-    LOYALTY: [],
-  };
+  const funnelItems = Object.fromEntries(
+    STAGES.map((s) => [s, [] as FunnelItem[]]),
+  ) as Record<Stage, FunnelItem[]>;
   for (const p of prospects) {
     if (!(p.stage in funnelItems)) continue;
     const last = recentLogs.find((l) => l.prospectId === p.id);

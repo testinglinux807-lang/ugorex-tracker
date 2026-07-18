@@ -161,16 +161,12 @@ export default async function BerandaPage() {
   // Ringkasan
   const konterCount = stores.length;
   const visited = stores.filter((s) => s._count.prospects > 0).length;
-  const counts: Record<Stage, number> = {
-    AWARENESS: 0,
-    INTEREST: 0,
-    DESIRE: 0,
-    ACTION: 0,
-    LOYALTY: 0,
-  };
+  const counts = Object.fromEntries(
+    STAGES.map((s) => [s, 0]),
+  ) as Record<Stage, number>;
   for (const p of prospects) if (p.stage in counts) counts[p.stage as Stage]++;
   const totalProspek = prospects.length;
-  const won = counts.ACTION + counts.LOYALTY;
+  const won = counts.CONVERSION + counts.LOYALTY + counts.STAR_SELLER;
   const conversion = totalProspek ? Math.round((won / totalProspek) * 100) : 0;
   const totalRevenue = sales.reduce((a, s) => a + s.total, 0);
 
@@ -546,7 +542,7 @@ export default async function BerandaPage() {
             <div className="rounded-2xl bg-white p-4 text-neutral-900">
               <p className="text-xs text-neutral-500">Konversi</p>
               <p className="mt-1 text-2xl font-bold">{conversion}%</p>
-              <p className="text-xs text-neutral-400">Action + Loyalty</p>
+              <p className="text-xs text-neutral-400">Conversion ke atas</p>
             </div>
             <Link
               href="/konter"

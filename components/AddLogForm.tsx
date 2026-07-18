@@ -34,7 +34,7 @@ export function AddLogForm({
       <div>
         <h2 className="font-semibold">Ubah Tahap / Tambah Update</h2>
         <p className="text-xs text-neutral-400">
-          Pilih tahap baru (Awareness → Loyalty) untuk memindahkan prospek
+          Pilih tahap baru (Awareness → Star Seller) untuk memindahkan prospek
         </p>
       </div>
 

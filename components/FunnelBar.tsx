@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { ChevronRight, ArrowUpRight } from "lucide-react";
 import {
+  STAGES,
   STAGE_LABEL,
   RESULT_LABEL,
   RESULT_COLOR,
@@ -37,17 +38,9 @@ export function FunnelBar({
   if (total === 0)
     return <p className="text-sm text-neutral-400">Belum ada data</p>;
 
-  const stages: Stage[] = [
-    "AWARENESS",
-    "INTEREST",
-    "DESIRE",
-    "ACTION",
-    "LOYALTY",
-  ];
-
   return (
     <div className="space-y-3">
-      {stages.map((stage) => {
+      {STAGES.map((stage) => {
         const value = counts[stage] || 0;
         const pct = total ? Math.round((value / total) * 100) : 0;
         const list = items?.[stage] ?? [];

@@ -12,7 +12,7 @@ export type SalesEval = {
   konterCount: number;
   revenue: number;
   loyalCount: number;
-  actionCount: number;
+  conversionCount: number;
   terbengkalaiCount: number;
   best: { storeId: string; name: string; revenue: number } | null;
   worst: { storeId: string; name: string; days: number | null } | null;
@@ -51,7 +51,7 @@ export function SalesEvaluation({ sales }: { sales: SalesEval[] }) {
 
       <div className="mt-3 grid grid-cols-3 gap-2">
         <Stat label="Loyal" value={s.loyalCount} />
-        <Stat label="Action" value={s.actionCount} />
+        <Stat label="Conversion" value={s.conversionCount} />
         <Stat label="Terbengkalai" value={s.terbengkalaiCount} />
       </div>
 

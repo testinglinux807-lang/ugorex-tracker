@@ -198,7 +198,9 @@ export default async function SalesDetailPage({
     .sort((a, b) => b.revenue - a.revenue);
 
   const totalRevenue = konter.reduce((a, s) => a + s.revenue, 0);
-  const loyal = konter.filter((s) => s.furthest === "LOYALTY").length;
+  const loyal = konter.filter(
+    (s) => s.furthest === "LOYALTY" || s.furthest === "STAR_SELLER",
+  ).length;
   const terbengkalai = konter.filter((s) => s.neglected).length;
   const taskDone = tasks.filter((t) => t.status === "DONE").length;
   // Grade KPI dari tugas admin — rumus sama dengan menu Tugas & /sales

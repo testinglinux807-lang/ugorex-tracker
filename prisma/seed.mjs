@@ -113,11 +113,11 @@ async function main() {
   for (const p of [tgOppo, tgXiaomi]) {
     await prisma.prospect.upsert({
       where: { storeId_productId: { storeId: konterB.id, productId: p.id } },
-      update: { stock: 10, stage: "ACTION" },
+      update: { stock: 10, stage: "CONVERSION" },
       create: {
         storeId: konterB.id,
         productId: p.id,
-        stage: "ACTION",
+        stage: "CONVERSION",
         stock: 10,
         salesId: sales.id,
       },
@@ -148,14 +148,14 @@ async function main() {
     },
   });
 
-  // --- Prospect: Antigores @ Konter B (tertarik, sampai interest) ---
+  // --- Prospect: Antigores @ Konter B (tertarik, sampai consideration) ---
   const prospectB = await prisma.prospect.upsert({
     where: { storeId_productId: { storeId: konterB.id, productId: antigores.id } },
     update: {},
     create: {
       storeId: konterB.id,
       productId: antigores.id,
-      stage: "INTEREST",
+      stage: "CONSIDERATION",
       salesId: sales.id,
     },
   });
@@ -173,7 +173,7 @@ async function main() {
       },
       {
         prospectId: prospectB.id,
-        stage: "INTEREST",
+        stage: "CONSIDERATION",
         result: "POSITIVE",
         note: "Tertarik, tanya harga grosir dan minta 5 unit untuk dicoba.",
         quantity: 5,

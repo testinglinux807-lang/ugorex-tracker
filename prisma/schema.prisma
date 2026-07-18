@@ -195,7 +195,7 @@ model Prospect {
   productId String
   product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
 
-  // Tahap funnel saat ini: AWARENESS | INTEREST | DESIRE | ACTION | LOYALTY
+  // Tahap funnel saat ini: AWARENESS | CONSIDERATION | CONVERSION | LOYALTY | STAR_SELLER
   stage     String   @default("AWARENESS")
 
   // Total stok barang yang sudah dikasih sales ke konter ini
@@ -223,7 +223,7 @@ model StageLog {
   prospectId String
   prospect   Prospect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
 
-  stage    String // AWARENESS | INTEREST | DESIRE | ACTION | LOYALTY
+  stage    String // AWARENESS | CONSIDERATION | CONVERSION | LOYALTY | STAR_SELLER
   result   String @default("NEUTRAL") // REJECTED | NEUTRAL | POSITIVE
   note     String // catatan (paling penting)
   quantity Int    @default(0) // jumlah/stok terkait
