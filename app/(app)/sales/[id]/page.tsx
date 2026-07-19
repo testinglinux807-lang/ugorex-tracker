@@ -4,12 +4,18 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { StageBadge, GradeBadge, LevelBadge } from "@/components/Badge";
 import { Paginated } from "@/components/Paginated";
-import { rupiahShort } from "@/lib/format";
+import { rupiah, rupiahShort } from "@/lib/format";
 import { STAGES, type Stage } from "@/lib/constants";
 import { StarRating } from "@/components/StarRating";
 import { PeriodeFilter } from "@/components/PeriodeFilter";
 import { CommissionForm } from "@/components/CommissionForm";
 import { CaptainForm } from "@/components/CaptainForm";
+import { DeleteWithConfirm } from "@/components/DataActions";
+import { PayoutForm } from "@/components/PayoutForm";
+import {
+  deleteSalesAccount,
+  deleteCommissionPayout,
+} from "@/app/actions/users";
 import { taskGrade, gradeSummary } from "@/lib/task-grade";
 import { salesGrade, salesLevel, gradePartsSummary } from "@/lib/sales-grade";
 import { salesKpi } from "@/lib/sales-kpi";
@@ -87,7 +93,7 @@ export default async function SalesDetailPage({
   const monthStart = wibMonthStart();
   const prevMonthStart = wibMonthStart(new Date(monthStart.getTime() - 1));
 
-  const [stores, saleRows, tasks, saleTotals, allStores, kpiOrders, kpiSales, ratings] =
+  const [stores, saleRows, tasks, saleTotals, allStores, kpiOrders, kpiSales, ratings, restokAgg, feeOrders, payouts] =
     await Promise.all([
     prisma.store.findMany({
       where: { salesId: id },
@@ -140,6 +146,33 @@ export default async function SalesDetailPage({
       where: { salesId: id },
       include: { store: { select: { name: true, ownerName: true } } },
       orderBy: { updatedAt: "desc" },
+    }),
+    // Omzet RESTOK (order lunas) konter sales ini dalam periode — dasar
+    // komisi affiliator (bukan POS: yang dihitung toko belanja barang kita).
+    prisma.request.aggregate({
+      where: {
+        items: { some: {} },
+        paymentStatus: "PAID",
+        status: { not: "CANCELLED" },
+        store: { salesId: id },
+        ...(start ? { createdAt: { gte: start } } : {}),
+      },
+      _sum: { total: true },
+    }),
+    // SEMUA order lunas (semua waktu) — bahan saldo fee belum dicairkan
+    // (fee dihitung per order, sama dengan halaman /penghasilan sales)
+    prisma.request.findMany({
+      where: {
+        items: { some: {} },
+        paymentStatus: "PAID",
+        status: { not: "CANCELLED" },
+        store: { salesId: id },
+      },
+      select: { total: true },
+    }),
+    prisma.commissionPayout.findMany({
+      where: { salesId: id },
+      orderBy: { createdAt: "desc" },
     }),
   ]);
 
@@ -205,8 +238,19 @@ export default async function SalesDetailPage({
   const taskDone = tasks.filter((t) => t.status === "DONE").length;
   // Grade KPI dari tugas admin — rumus sama dengan menu Tugas & /sales
   const grade = taskGrade(tasks);
-  // Komisi affiliator: persen (diatur admin di bawah) × omzet periode ini
-  const commission = Math.round((totalRevenue * sales.commissionPct) / 100);
+  // Komisi affiliator: persen (diatur admin di bawah) × omzet RESTOK
+  // (order lunas) konternya di periode ini — bukan POS.
+  const restokRevenue = restokAgg._sum.total ?? 0;
+  const commission = Math.round((restokRevenue * sales.commissionPct) / 100);
+
+  // Saldo pencairan fee (semua waktu, per order — rumus sama dengan
+  // halaman /penghasilan sales): total fee − total sudah dicairkan.
+  const feeAllTime = feeOrders.reduce(
+    (s, o) => s + Math.round((o.total * sales.commissionPct) / 100),
+    0,
+  );
+  const paidOutTotal = payouts.reduce((s, p) => s + p.amount, 0);
+  const feeOutstanding = feeAllTime - paidOutTotal;
 
   // Grade huruf leveling S+ … E (lib/sales-grade.ts) — dari data semua
   // waktu, tidak ikut filter periode
@@ -251,6 +295,11 @@ export default async function SalesDetailPage({
               <Phone className="h-3.5 w-3.5 shrink-0" />
               {sales.phone}
             </p>
+            {sales.nik && (
+              <p className="mt-0.5 text-xs text-neutral-400">
+                NIK {sales.nik}
+              </p>
+            )}
             <p className="mt-1.5 flex flex-wrap items-center gap-1.5">
               <LevelBadge level={lvl.level} name={lvl.name} />
               {sales.captainArea && (
@@ -365,13 +414,76 @@ export default async function SalesDetailPage({
       <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
         <h2 className="mb-1 font-semibold">Komisi Affiliator</h2>
         <p className="mb-3 text-xs text-neutral-400">
-          Persen dari omzet konter yang dipegang {sales.name}. Nilainya
-          dihitung otomatis mengikuti filter periode di atas — cocok untuk
-          rekap pembayaran komisi mingguan/bulanan.
+          Persen dari omzet restok (order lunas) konter yang dipegang{" "}
+          {sales.name} — yang dihitung uang toko belanja barang kita, bukan
+          penjualan POS. Nilainya mengikuti filter periode di atas — cocok
+          untuk rekap pembayaran komisi mingguan/bulanan.
         </p>
         <div className="max-w-xs">
           <CommissionForm salesId={id} currentPct={sales.commissionPct} />
         </div>
+      </section>
+
+      {/* Pencairan fee bagi hasil (admin) — saldo belum dicairkan reset ke 0
+          setelah dibayar penuh; tiap pencairan otomatis masuk buku kas */}
+      <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+        <h2 className="mb-1 font-semibold">Pencairan Fee</h2>
+        <p className="mb-3 text-xs text-neutral-400">
+          Saldo belum dicairkan = total fee semua waktu − total pencairan.
+          Tiap pencairan otomatis tercatat sebagai pengeluaran buku kas
+          (kategori &ldquo;Komisi sales&rdquo;) dan {sales.name} dapat
+          notifikasi.
+        </p>
+
+        <div className="mb-4 grid grid-cols-3 gap-2">
+          <div className="rounded-xl bg-neutral-50 p-3">
+            <p className="text-xs text-neutral-500">Total fee</p>
+            <p className="mt-0.5 truncate text-sm font-bold">
+              {rupiah(feeAllTime)}
+            </p>
+          </div>
+          <div className="rounded-xl bg-neutral-50 p-3">
+            <p className="text-xs text-neutral-500">Sudah dicairkan</p>
+            <p className="mt-0.5 truncate text-sm font-bold">
+              {rupiah(paidOutTotal)}
+            </p>
+          </div>
+          <div className="rounded-xl bg-neutral-900 p-3">
+            <p className="text-xs text-neutral-400">Belum dicairkan</p>
+            <p
+              className={`mt-0.5 truncate text-sm font-bold ${
+                feeOutstanding < 0 ? "text-red-400" : "text-brand"
+              }`}
+            >
+              {rupiah(feeOutstanding)}
+            </p>
+          </div>
+        </div>
+
+        <div className="max-w-md">
+          <PayoutForm salesId={id} suggested={feeOutstanding} />
+        </div>
+
+        {payouts.length > 0 && (
+          <ul className="mt-4 divide-y divide-neutral-100 border-t border-neutral-100">
+            {payouts.map((p) => (
+              <li key={p.id} className="flex items-center gap-3 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium">{rupiah(p.amount)}</p>
+                  <p className="truncate text-xs text-neutral-400">
+                    {fmtDate(p.createdAt)}
+                    {p.note ? ` · ${p.note}` : ""}
+                  </p>
+                </div>
+                <DeleteWithConfirm
+                  action={deleteCommissionPayout.bind(null, p.id)}
+                  title="Hapus pencairan"
+                  confirmText={`Hapus pencairan ${rupiah(p.amount)}? Entri buku kasnya ikut terhapus dan saldo belum dicairkan naik lagi.`}
+                />
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       {/* Angkat Sales Captain — level 5 rahasia (admin) */}
@@ -386,6 +498,28 @@ export default async function SalesDetailPage({
         <div className="max-w-xs">
           <CaptainForm salesId={id} currentArea={sales.captainArea} />
         </div>
+      </section>
+
+      {/* Hapus akun sales (admin) */}
+      <section className="rounded-2xl border border-red-200 bg-white p-5 shadow-sm">
+        <h2 className="mb-1 font-semibold text-red-600">Hapus Akun Sales</h2>
+        <p className="mb-3 text-xs text-neutral-400">
+          Akun {sales.name} dihapus permanen dan tidak bisa login lagi. Konter
+          yang dia pegang jadi tanpa sales (tinggal dialihkan di menu Data);
+          riwayat kunjungan & transaksi tetap tersimpan.
+        </p>
+        <DeleteWithConfirm
+          action={async () => {
+            "use server";
+            await deleteSalesAccount(id);
+            redirect("/sales");
+          }}
+          confirmText={`Hapus akun sales ${sales.name}? Tindakan ini tidak bisa dibatalkan.`}
+          title="Hapus akun sales"
+          className="rounded-lg border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-60"
+        >
+          Hapus Akun
+        </DeleteWithConfirm>
       </section>
 
       {/* Rating & ulasan dari owner konter (diisi owner di halaman POS) */}

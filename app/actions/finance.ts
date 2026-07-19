@@ -53,13 +53,44 @@ export async function saveFinanceEntry(formData: FormData) {
       return { error: "Entri otomatis dari order tidak bisa diubah." };
     }
     await prisma.financeEntry.update({ where: { id }, data: parsed.data });
+    revalidatePath("/keuangan");
+    return { ok: true as const, count: 1 };
+  }
+
+  // Rentang tanggal (blok, mis. 1-31): nominal yang SAMA dicatat satu entri
+  // per hari — buat pengeluaran rutin harian tanpa input satu-satu.
+  // Hanya untuk entri baru; saat edit, field "sampai" disembunyikan di form.
+  const endRaw = String(formData.get("dateEnd") ?? "").trim();
+  let count = 1;
+  if (endRaw) {
+    const end = new Date(`${endRaw}T00:00:00+07:00`);
+    if (isNaN(end.getTime())) return { error: "Tanggal 'sampai' tidak valid." };
+    const startDay = new Date(
+      `${new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(parsed.data.date)}T00:00:00+07:00`,
+    );
+    const days =
+      Math.round((end.getTime() - startDay.getTime()) / 86_400_000) + 1;
+    if (days < 1) {
+      return { error: "Tanggal 'sampai' harus sesudah tanggal mulai." };
+    }
+    if (days > 62) {
+      return { error: "Rentang maksimal 62 hari (2 bulan)." };
+    }
+    count = days;
+    await prisma.financeEntry.createMany({
+      data: Array.from({ length: days }, (_, i) => ({
+        ...parsed.data,
+        date: new Date(startDay.getTime() + i * 86_400_000),
+        createdById: user.id,
+      })),
+    });
   } else {
     await prisma.financeEntry.create({
       data: { ...parsed.data, createdById: user.id },
     });
   }
   revalidatePath("/keuangan");
-  return { ok: true };
+  return { ok: true as const, count };
 }
 
 // Hapus catatan keuangan — hanya admin.

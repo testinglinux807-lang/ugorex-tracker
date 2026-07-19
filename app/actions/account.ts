@@ -8,9 +8,9 @@ import { getCurrentUser } from "@/lib/auth";
 import { sendWa } from "@/lib/wa-notify";
 import { waNumber } from "@/lib/wa";
 
-// Menu akun admin di header (klik nama → Ganti Password / Ganti No HP).
-// Ganti password cukup verifikasi password lama; ganti no HP wajib OTP 6
-// digit yang dikirim via WA (Fonnte) ke NOMOR BARU — sekalian membuktikan
+// Menu akun di header — SEMUA role (klik nama → Ganti Password / Ganti No
+// HP). Ganti password cukup verifikasi password lama; ganti no HP wajib OTP
+// 6 digit yang dikirim via WA (Fonnte) ke NOMOR BARU — sekalian membuktikan
 // nomornya benar dan aktif, karena no HP dipakai sebagai username login.
 
 const OTP_TTL_MS = 5 * 60 * 1000; // kode berlaku 5 menit
@@ -20,7 +20,6 @@ const OTP_MAX_ATTEMPTS = 5; // salah 5x = wajib kirim ulang
 export async function changeOwnPassword(formData: FormData) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  if (user.role !== "ADMIN") return { error: "Hanya admin." };
 
   const oldPassword = String(formData.get("oldPassword") ?? "");
   const newPassword = String(formData.get("newPassword") ?? "");
@@ -50,7 +49,6 @@ export async function changeOwnPassword(formData: FormData) {
 export async function requestPhoneOtp(formData: FormData) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  if (user.role !== "ADMIN") return { error: "Hanya admin." };
 
   if (!process.env.FONNTE_TOKEN) {
     return { error: "Pengiriman WA belum aktif (FONNTE_TOKEN kosong)." };
@@ -110,7 +108,6 @@ export async function requestPhoneOtp(formData: FormData) {
 export async function confirmPhoneOtp(formData: FormData) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  if (user.role !== "ADMIN") return { error: "Hanya admin." };
 
   const code = String(formData.get("code") ?? "").trim();
   if (!/^\d{6}$/.test(code)) return { error: "Kode harus 6 digit angka." };

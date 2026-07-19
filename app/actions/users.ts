@@ -1,10 +1,13 @@
 "use server";
 
 import bcrypt from "bcryptjs";
+import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, createSession } from "@/lib/auth";
+import { notifyCommissionPayout } from "@/lib/wa-notify";
 
 // Sales/Admin membuat akun OWNER untuk sebuah toko (saat owner setuju)
 export async function createOwnerAccount(storeId: string, formData: FormData) {
@@ -38,6 +41,36 @@ export async function createOwnerAccount(storeId: string, formData: FormData) {
   return { ok: true };
 }
 
+// NIK KTP dari form — opsional; kalau diisi harus 16 digit dan belum
+// dipakai akun lain. Return { error } kalau tidak valid.
+async function parseNik(
+  formData: FormData,
+  excludeUserId?: string,
+): Promise<{ nik?: string | null; error?: string }> {
+  const nik = String(formData.get("nik") ?? "").replace(/\D/g, "");
+  if (!nik) return { nik: null };
+  if (nik.length !== 16) return { error: "NIK harus 16 digit angka." };
+  const taken = await prisma.user.findFirst({
+    where: { nik, ...(excludeUserId ? { id: { not: excludeUserId } } : {}) },
+    select: { name: true },
+  });
+  if (taken) return { error: `NIK sudah terdaftar atas nama ${taken.name}.` };
+  return { nik };
+}
+
+// Titik rumah sales dari form (homeLat/homeLng) — dua-duanya harus terisi
+// angka valid; selain itu dianggap tanpa titik (null).
+function parseHomePoint(formData: FormData) {
+  const latRaw = String(formData.get("homeLat") ?? "").trim();
+  const lngRaw = String(formData.get("homeLng") ?? "").trim();
+  const lat = latRaw ? Number.parseFloat(latRaw.replace(",", ".")) : NaN;
+  const lng = lngRaw ? Number.parseFloat(lngRaw.replace(",", ".")) : NaN;
+  if (Number.isNaN(lat) || Number.isNaN(lng)) {
+    return { homeLat: null, homeLng: null };
+  }
+  return { homeLat: lat, homeLng: lng };
+}
+
 // Admin membuat akun SALES
 export async function createSalesAccount(formData: FormData) {
   const user = await getCurrentUser();
@@ -48,18 +81,130 @@ export async function createSalesAccount(formData: FormData) {
   const phone = String(formData.get("phone") ?? "").trim();
   const password = String(formData.get("password") ?? "");
   if (!name || !phone || !password) {
-    return { error: "Semua field wajib diisi." };
+    return { error: "Nama, no HP, dan password wajib diisi." };
   }
 
   const existing = await prisma.user.findUnique({ where: { phone } });
   if (existing) return { error: "Nomor HP sudah terdaftar." };
 
+  const nikRes = await parseNik(formData);
+  if (nikRes.error) return { error: nikRes.error };
+
   const passwordHash = await bcrypt.hash(password, 10);
   await prisma.user.create({
-    data: { name, phone, passwordHash, role: "SALES", createdById: user.id },
+    data: {
+      name,
+      phone,
+      passwordHash,
+      role: "SALES",
+      createdById: user.id,
+      nik: nikRes.nik,
+      ...parseHomePoint(formData),
+    },
   });
   revalidatePath("/data");
+  revalidatePath("/sales");
   return { ok: true };
+}
+
+// ===== Link registrasi sales (undangan sekali pakai) =====
+
+const INVITE_DAYS = 7;
+
+// Admin membuat link undangan /daftar-sales/[token] — dibagikan ke calon
+// sales, dia isi datanya sendiri dari HP (termasuk GPS titik rumah).
+export async function createSalesInvite(formData: FormData) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (user.role !== "ADMIN") return { error: "Hanya admin." };
+
+  await prisma.salesInvite.create({
+    data: {
+      token: randomBytes(18).toString("base64url"),
+      note: String(formData.get("note") ?? "").trim() || null,
+      createdById: user.id,
+      expiresAt: new Date(Date.now() + INVITE_DAYS * 86_400_000),
+    },
+  });
+  revalidatePath("/sales");
+  return { ok: true };
+}
+
+// Admin menghapus / mencabut link undangan
+export async function deleteSalesInvite(id: string) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (user.role !== "ADMIN") return { error: "Hanya admin." };
+
+  await prisma.salesInvite.delete({ where: { id } });
+  revalidatePath("/sales");
+  return { ok: true };
+}
+
+// Registrasi sales lewat link undangan — PUBLIK (tanpa sesi), diamankan
+// token sekali-pakai. Sukses = akun SALES dibuat + langsung login.
+export async function registerSalesViaInvite(
+  token: string,
+  formData: FormData,
+) {
+  const invite = await prisma.salesInvite.findUnique({ where: { token } });
+  if (!invite || invite.usedAt || invite.expiresAt < new Date()) {
+    return { error: "Link registrasi tidak berlaku. Minta link baru ke admin." };
+  }
+
+  const name = String(formData.get("name") ?? "").trim();
+  const phone = String(formData.get("phone") ?? "").trim();
+  const password = String(formData.get("password") ?? "");
+  if (!name || !phone || !password) {
+    return { error: "Nama, no HP, dan password wajib diisi." };
+  }
+  if (password.length < 4) return { error: "Password minimal 4 karakter." };
+
+  const existing = await prisma.user.findUnique({ where: { phone } });
+  if (existing) return { error: "Nomor HP sudah terdaftar. Coba login." };
+
+  const nikRes = await parseNik(formData);
+  if (nikRes.error) return { error: nikRes.error };
+
+  // Klaim token dulu secara atomik (anti dobel submit / rebutan), baru
+  // buat akunnya; kalau pembuatan akun gagal, klaimnya dilepas lagi.
+  const claimed = await prisma.salesInvite.updateMany({
+    where: { token, usedAt: null, expiresAt: { gt: new Date() } },
+    data: { usedAt: new Date() },
+  });
+  if (claimed.count === 0) {
+    return { error: "Link registrasi baru saja terpakai. Minta link baru ke admin." };
+  }
+
+  let created;
+  try {
+    created = await prisma.user.create({
+      data: {
+        name,
+        phone,
+        passwordHash: await bcrypt.hash(password, 10),
+        role: "SALES",
+        createdById: invite.createdById,
+        nik: nikRes.nik,
+        ...parseHomePoint(formData),
+      },
+    });
+    await prisma.salesInvite.update({
+      where: { token },
+      data: { usedById: created.id },
+    });
+  } catch {
+    await prisma.salesInvite.updateMany({
+      where: { token },
+      data: { usedAt: null },
+    });
+    return { error: "Gagal membuat akun. Coba lagi." };
+  }
+
+  revalidatePath("/sales");
+  revalidatePath("/data");
+  await createSession({ userId: created.id, role: "SALES", name: created.name });
+  redirect("/beranda");
 }
 
 // Admin mengubah akun SALES (password hanya diganti kalau diisi)
@@ -83,15 +228,22 @@ export async function updateSalesAccount(userId: string, formData: FormData) {
     return { error: "Nomor HP sudah dipakai akun lain." };
   }
 
+  const nikRes = await parseNik(formData, userId);
+  if (nikRes.error) return { error: nikRes.error };
+
   await prisma.user.update({
     where: { id: userId },
     data: {
       name,
       phone,
       ...(password ? { passwordHash: await bcrypt.hash(password, 10) } : {}),
+      nik: nikRes.nik,
+      ...parseHomePoint(formData),
     },
   });
   revalidatePath("/data");
+  revalidatePath("/sales");
+  revalidatePath("/beranda");
   return { ok: true };
 }
 
@@ -159,6 +311,76 @@ export async function setSalesCaptain(userId: string, formData: FormData) {
   return { ok: true };
 }
 
+// ===== Pencairan fee bagi hasil (komisi) sales =====
+
+// Admin mencatat pencairan fee seorang sales — saldo "belum dicairkan" di
+// sisi sales berkurang (reset ke 0 kalau dibayar penuh), dan otomatis jadi
+// pengeluaran buku kas "Komisi sales" (terkunci, sourceId = id pencairan).
+export async function recordCommissionPayout(
+  salesId: string,
+  formData: FormData,
+) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (user.role !== "ADMIN") return { error: "Hanya admin." };
+
+  const target = await prisma.user.findUnique({ where: { id: salesId } });
+  if (!target || target.role !== "SALES") {
+    return { error: "Akun sales tidak ditemukan." };
+  }
+
+  const amount = Math.round(Number(formData.get("amount") ?? 0));
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return { error: "Jumlah pencairan harus lebih dari 0." };
+  }
+  const note = String(formData.get("note") ?? "").trim() || null;
+
+  const payout = await prisma.commissionPayout.create({
+    data: { salesId, amount, note, createdById: user.id },
+  });
+  await prisma.financeEntry.create({
+    data: {
+      type: "EXPENSE",
+      amount,
+      category: "Komisi sales",
+      note: `Pencairan fee ${target.name}${note ? ` — ${note}` : ""}`,
+      date: payout.createdAt,
+      sourceId: payout.id,
+      createdById: user.id,
+    },
+  });
+
+  after(() => notifyCommissionPayout(salesId, amount, note));
+  revalidatePath(`/sales/${salesId}`);
+  revalidatePath("/sales");
+  revalidatePath("/keuangan");
+  revalidatePath("/penghasilan");
+  revalidatePath("/beranda");
+  return { ok: true };
+}
+
+// Admin menghapus catatan pencairan (salah input) — entri buku kasnya ikut
+// terhapus supaya saldo kas balik benar.
+export async function deleteCommissionPayout(id: string) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (user.role !== "ADMIN") return { error: "Hanya admin." };
+
+  const payout = await prisma.commissionPayout.findUnique({ where: { id } });
+  if (!payout) return { error: "Catatan pencairan tidak ditemukan." };
+
+  await prisma.$transaction([
+    prisma.financeEntry.deleteMany({ where: { sourceId: id } }),
+    prisma.commissionPayout.delete({ where: { id } }),
+  ]);
+  revalidatePath(`/sales/${payout.salesId}`);
+  revalidatePath("/sales");
+  revalidatePath("/keuangan");
+  revalidatePath("/penghasilan");
+  revalidatePath("/beranda");
+  return { ok: true };
+}
+
 // Admin menghapus akun SALES (konter yang dia pegang jadi tanpa sales,
 // riwayat kunjungan/transaksi tetap ada)
 export async function deleteSalesAccount(userId: string) {
@@ -174,6 +396,7 @@ export async function deleteSalesAccount(userId: string) {
   await prisma.user.delete({ where: { id: userId } });
   revalidatePath("/data");
   revalidatePath("/dashboard");
+  revalidatePath("/sales");
   return { ok: true };
 }
 

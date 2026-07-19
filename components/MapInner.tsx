@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   MapContainer,
   TileLayer,
   GeoJSON,
   Marker,
+  Circle,
   CircleMarker,
   Popup,
   useMap,
@@ -29,6 +30,10 @@ export type MapPoint = {
   result: string; // POSITIVE | NEUTRAL | REJECTED
   lat: number;
   lng: number;
+  // Nama sales LAIN yang menggarap konter ini (peta beranda sales) —
+  // kalau terisi, titik digambar abu-abu sebagai penanda "sudah ada yang
+  // menawarkan & tertarik" dan tidak ikut filter Tertarik/Tidak.
+  otherSales?: string | null;
 };
 
 // Konter yang benar-benar berkontribusi ke penjualan (punya transaksi Sale)
@@ -56,13 +61,24 @@ const TILE_URL =
 const TILE_ATTR =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
 
+// Titik rumah sales — pusat lingkaran radius kerja (meter). name diisi
+// di peta admin (banyak sales); kosong = "Rumah kamu" (beranda sales).
+export type HomePoint = { lat: number; lng: number; name?: string };
+export const WORK_RADIUS_M = 7000;
+
 const COLOR_POS = "#16a34a"; // tertarik (hijau)
 const COLOR_NEG = "#ef4444"; // tidak tertarik (merah)
 const COLOR_NEU = "#ffffff"; // netral
+const COLOR_OTHER = "#9ca3af"; // digarap sales lain (abu-abu)
 
-function pinIcon(result: string) {
-  const bg =
-    result === "POSITIVE" ? COLOR_POS : result === "REJECTED" ? COLOR_NEG : COLOR_NEU;
+function pinIcon(result: string, other = false) {
+  const bg = other
+    ? COLOR_OTHER
+    : result === "POSITIVE"
+      ? COLOR_POS
+      : result === "REJECTED"
+        ? COLOR_NEG
+        : COLOR_NEU;
   return L.divIcon({
     className: "",
     html: `<div style="
@@ -73,6 +89,25 @@ function pinIcon(result: string) {
     iconSize: [18, 18],
     iconAnchor: [9, 9],
     popupAnchor: [0, -10],
+  });
+}
+
+// Ikon rumah sales (lucide "house" inline, lingkaran hitam)
+const ICON_HOUSE =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#d2ec0a" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
+
+function homeIcon() {
+  return L.divIcon({
+    className: "",
+    html: `<div style="
+      width:26px;height:26px;border-radius:9999px;
+      background:#171717;border:2px solid #fff;
+      display:flex;align-items:center;justify-content:center;
+      box-shadow:0 1px 4px rgba(0,0,0,.45);
+    ">${ICON_HOUSE}</div>`,
+    iconSize: [26, 26],
+    iconAnchor: [13, 13],
+    popupAnchor: [0, -14],
   });
 }
 
@@ -142,6 +177,33 @@ function FitKarawang({ geo }: { geo: GeoJsonObject | null }) {
   return null;
 }
 
+// Obat bug peta di HP: peta yang diinisialisasi saat kontainernya masih
+// tersembunyi (tab "Peta" di DataTabs pakai display:none) berukuran 0 →
+// tile abu-abu & marker meleset. Begitu kontainer berubah ukuran (tab
+// dibuka, rotasi layar, fullscreen), hitung ulang ukuran; kalau tadinya
+// tersembunyi, pas-kan lagi view ke Karawang.
+function KeepSized({ geo }: { geo: GeoJsonObject | null }) {
+  const map = useMap();
+  useEffect(() => {
+    const el = map.getContainer();
+    let lastW = el.clientWidth;
+    const ro = new ResizeObserver(() => {
+      const w = el.clientWidth;
+      if (w === lastW) return;
+      const wasHidden = lastW === 0;
+      lastW = w;
+      if (w === 0) return;
+      map.invalidateSize();
+      if (wasHidden && geo) {
+        map.fitBounds(L.geoJSON(geo).getBounds(), { padding: [12, 12] });
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [map, geo]);
+  return null;
+}
+
 // Grayscale seluruh peta kecuali Karawang
 function GrayscaleSpotlight({ ring }: { ring: [number, number][] | null }) {
   const map = useMap();
@@ -161,15 +223,24 @@ function GrayscaleSpotlight({ ring }: { ring: [number, number][] | null }) {
     }).addTo(map);
     const pane = map.getPane(PANE)!;
     const latlngs = ring.map(([lng, lat]) => L.latLng(lat, lng));
+    // Update di-throttle lewat requestAnimationFrame + ikut event "zoom"
+    // (bukan cuma zoomend) supaya overlay warna tetap nempel saat
+    // pinch-zoom di HP, tanpa ngelag.
+    let raf = 0;
     const update = () => {
+      raf = 0;
       const pts = latlngs.map((ll) => map.latLngToLayerPoint(ll));
       pane.style.clipPath =
         "polygon(" + pts.map((p) => `${p.x}px ${p.y}px`).join(",") + ")";
     };
+    const schedule = () => {
+      if (!raf) raf = requestAnimationFrame(update);
+    };
     update();
-    map.on("zoomend viewreset moveend resize", update);
+    map.on("zoom zoomend viewreset moveend resize", schedule);
     return () => {
-      map.off("zoomend viewreset moveend resize", update);
+      map.off("zoom zoomend viewreset moveend resize", schedule);
+      if (raf) cancelAnimationFrame(raf);
       map.removeLayer(colorLayer);
       if (basePane) basePane.style.filter = "";
       pane.style.clipPath = "";
@@ -182,10 +253,14 @@ export default function MapInner({
   points,
   filter,
   storePoints = [],
+  homePoints = [],
 }: {
   points: MapPoint[];
   filter: InterestFilter;
   storePoints?: StoreRevenuePoint[];
+  // Rumah sales — tiap titik digambar lingkaran radius kerja 7 km + ikon
+  // rumah. Beranda sales: 1 titik (miliknya); peta admin: semua sales.
+  homePoints?: HomePoint[];
 }) {
   const [geo, setGeo] = useState<GeoJsonObject | null>(null);
   const [kec, setKec] = useState<GeoJsonObject | null>(null);
@@ -213,7 +288,9 @@ export default function MapInner({
     else if (g.type === "MultiPolygon")
       r = (g.coordinates as [number, number][][][])[0][0];
     if (!r) return null;
-    const step = Math.max(1, Math.ceil(r.length / 800));
+    // 400 titik cukup halus untuk clip warna (outline tebal tetap full-res)
+    // dan setengah lebih ringan dihitung per frame di HP.
+    const step = Math.max(1, Math.ceil(r.length / 400));
     const out = r.filter((_, i) => i % step === 0);
     if (out[out.length - 1] !== r[r.length - 1]) out.push(r[r.length - 1]);
     return out;
@@ -257,7 +334,7 @@ export default function MapInner({
   };
 
   const shown = points.filter((p) =>
-    filter === "ALL" ? true : p.result === filter,
+    filter === "ALL" ? true : !p.otherSales && p.result === filter,
   );
 
   // Radius bubble sebanding akar(revenue) — supaya konter dengan omzet 4x
@@ -277,6 +354,7 @@ export default function MapInner({
 
       <FullscreenControl />
       <FitKarawang geo={geo} />
+      <KeepSized geo={geo} />
       <GrayscaleSpotlight ring={ring} />
 
       {/* Choropleth kecamatan: merah ↔ hijau by rasio tertarik */}
@@ -324,6 +402,36 @@ export default function MapInner({
         />
       )}
 
+      {/* Radius kerja sales: lingkaran 7 km dari titik rumah tiap sales */}
+      {homePoints.map((h, i) => (
+        <Fragment key={`home-${i}`}>
+          <Circle
+            center={[h.lat, h.lng]}
+            radius={WORK_RADIUS_M}
+            pathOptions={{
+              color: "#171717",
+              weight: 1.5,
+              dashArray: "6 6",
+              fillColor: "#d2ec0a",
+              fillOpacity: 0.07,
+            }}
+          />
+          <Marker position={[h.lat, h.lng]} icon={homeIcon()}>
+            <Popup>
+              <div className="space-y-1">
+                <p className="font-semibold">
+                  {h.name ? `Rumah ${h.name}` : "Rumah kamu"}
+                </p>
+                <p className="text-neutral-600">
+                  Lingkaran = radius kerja {WORK_RADIUS_M / 1000} km — konter
+                  di dalamnya paling gampang dijangkau.
+                </p>
+              </div>
+            </Popup>
+          </Marker>
+        </Fragment>
+      ))}
+
       {/* Bubble konter yang benar-benar berkontribusi ke penjualan —
           ukuran = besar kontribusinya, di bawah pin funnel */}
       {storePoints.map((s) => (
@@ -358,38 +466,58 @@ export default function MapInner({
       ))}
 
       {shown.map((p) => (
-        <Marker key={p.id} position={[p.lat, p.lng]} icon={pinIcon(p.result)}>
+        <Marker
+          key={p.id}
+          position={[p.lat, p.lng]}
+          icon={pinIcon(p.result, !!p.otherSales)}
+        >
           <Popup>
-            <div className="space-y-1">
-              <p className="font-semibold">{p.product}</p>
-              <p className="text-neutral-600">
-                <Link
-                  href={`/konter/${p.storeId}`}
-                  className="font-medium underline"
-                >
-                  {p.store}
-                </Link>
-                {p.area ? ` · ${p.area}` : ""}
-              </p>
-              <p className="text-neutral-500">
-                Tahap: {STAGE_LABEL[p.stage as Stage] ?? p.stage} ·{" "}
-                {RESULT_LABEL[p.result as Result] ?? p.result}
-              </p>
-              <div className="flex gap-3">
-                <Link
-                  href={`/konter/${p.storeId}`}
-                  className="inline-block font-semibold underline"
-                >
-                  Detail toko
-                </Link>
-                <Link
-                  href={`/prospects/${p.id}`}
-                  className="inline-block font-semibold underline"
-                >
-                  Detail prospek
-                </Link>
+            {p.otherSales ? (
+              // Konter garapan sales lain — info saja, tanpa link detail
+              // (halaman detailnya memang bukan wewenang sales ini).
+              <div className="space-y-1">
+                <p className="font-semibold">{p.store}</p>
+                {p.area && <p className="text-neutral-500">{p.area}</p>}
+                <p className="text-neutral-600">
+                  Sudah ditawarkan <b>{p.otherSales}</b> ({p.product})
+                </p>
+                <p className="text-neutral-500">
+                  Tahap: {STAGE_LABEL[p.stage as Stage] ?? p.stage} ·{" "}
+                  {RESULT_LABEL[p.result as Result] ?? p.result}
+                </p>
               </div>
-            </div>
+            ) : (
+              <div className="space-y-1">
+                <p className="font-semibold">{p.product}</p>
+                <p className="text-neutral-600">
+                  <Link
+                    href={`/konter/${p.storeId}`}
+                    className="font-medium underline"
+                  >
+                    {p.store}
+                  </Link>
+                  {p.area ? ` · ${p.area}` : ""}
+                </p>
+                <p className="text-neutral-500">
+                  Tahap: {STAGE_LABEL[p.stage as Stage] ?? p.stage} ·{" "}
+                  {RESULT_LABEL[p.result as Result] ?? p.result}
+                </p>
+                <div className="flex gap-3">
+                  <Link
+                    href={`/konter/${p.storeId}`}
+                    className="inline-block font-semibold underline"
+                  >
+                    Detail toko
+                  </Link>
+                  <Link
+                    href={`/prospects/${p.id}`}
+                    className="inline-block font-semibold underline"
+                  >
+                    Detail prospek
+                  </Link>
+                </div>
+              </div>
+            )}
           </Popup>
         </Marker>
       ))}

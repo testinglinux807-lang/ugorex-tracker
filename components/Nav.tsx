@@ -13,7 +13,7 @@ import {
   Store,
   PlusCircle,
   ShoppingCart,
-  Ticket,
+  MessagesSquare,
   Inbox,
   ListTodo,
   Boxes,
@@ -54,8 +54,9 @@ const NAV: Record<string, Item[]> = {
     { href: "/pos", label: "Penjualan", icon: ShoppingCart },
     { href: "/order", label: "Restock", icon: ShoppingBag },
     { href: "/stok", label: "Penyimpanan", icon: Boxes },
-    { href: "/tiket", label: "Komplain", icon: Ticket },
-    { href: "/request", label: "Request", icon: Inbox },
+    // Komplain + Request dilebur jadi satu pintu Feedback (kategori:
+    // keluhan / saran / request barang)
+    { href: "/feedback", label: "Feedback", icon: MessagesSquare },
   ],
 };
 

@@ -4,7 +4,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { rupiah } from "@/lib/format";
 import { wibMonthStart } from "@/lib/date";
 import { syncOrderIncome } from "@/lib/finance-sync";
-import { financeStatements } from "@/lib/finance-statements";
+import { financeStatements, classifyExpense } from "@/lib/finance-statements";
 import { FinanceManager, type FinanceRow } from "@/components/FinanceManager";
 import { FinanceStatements } from "@/components/FinanceStatements";
 import {
@@ -53,7 +53,7 @@ function SummaryCard({
   );
 }
 
-const PER_PAGE = 20;
+const PER_PAGE = 4;
 
 export default async function KeuanganPage({
   searchParams,
@@ -120,6 +120,81 @@ export default async function KeuanganPage({
     }),
     prisma.product.findMany({ select: { price: true, centralStock: true } }),
   ]);
+
+  // ===== Rincian duit omzet (otomatis): omzet order − HPP − komisi sales =====
+  const paidOrderWhere = {
+    items: { some: {} },
+    paymentStatus: "PAID",
+    status: { not: "CANCELLED" },
+  } as const;
+  const [omzetAllAgg, omzetMonthAgg, commissionSales, allStores, restokAll, restokMonth] =
+    await Promise.all([
+      prisma.request.aggregate({ where: paidOrderWhere, _sum: { total: true } }),
+      prisma.request.aggregate({
+        where: { ...paidOrderWhere, createdAt: { gte: monthStart } },
+        _sum: { total: true },
+      }),
+      // Sales ber-komisi affiliator (persen di-set admin di detail sales)
+      prisma.user.findMany({
+        where: { role: "SALES", commissionPct: { gt: 0 } },
+        select: { id: true, commissionPct: true },
+      }),
+      prisma.store.findMany({ select: { id: true, salesId: true } }),
+      // Omzet RESTOK (order lunas) per konter — dasar komisi (rumus sama
+      // dgn halaman /sales: yang dihitung toko belanja barang kita)
+      prisma.request.groupBy({
+        by: ["storeId"],
+        where: paidOrderWhere,
+        _sum: { total: true },
+      }),
+      prisma.request.groupBy({
+        by: ["storeId"],
+        where: { ...paidOrderWhere, createdAt: { gte: monthStart } },
+        _sum: { total: true },
+      }),
+    ]);
+
+  // Komisi = Σ (persen sales × omzet restok konter yang dia pegang)
+  const commissionTotal = (
+    rows: { storeId: string; _sum: { total: number | null } }[],
+  ) => {
+    const restokByStore = new Map(
+      rows.map((r) => [r.storeId, r._sum.total ?? 0]),
+    );
+    const restokBySales = new Map<string, number>();
+    for (const s of allStores) {
+      if (!s.salesId) continue;
+      restokBySales.set(
+        s.salesId,
+        (restokBySales.get(s.salesId) ?? 0) + (restokByStore.get(s.id) ?? 0),
+      );
+    }
+    return commissionSales.reduce(
+      (sum, u) =>
+        sum +
+        Math.round(((restokBySales.get(u.id) ?? 0) * u.commissionPct) / 100),
+      0,
+    );
+  };
+  // HPP/COGS dari buku kas — pemetaan kategori sama dengan laporan Laba Rugi
+  const hppTotal = (from?: Date) =>
+    allEntries.reduce(
+      (sum, e) =>
+        e.type === "EXPENSE" &&
+        classifyExpense(e.category) === "hpp" &&
+        (!from || e.date >= from)
+          ? sum + e.amount
+          : sum,
+      0,
+    );
+
+  const omzetRincian = (["month", "all"] as const).map((k) => {
+    const omzet =
+      (k === "month" ? omzetMonthAgg : omzetAllAgg)._sum.total ?? 0;
+    const hpp = hppTotal(k === "month" ? monthStart : undefined);
+    const komisi = commissionTotal(k === "month" ? restokMonth : restokAll);
+    return { omzet, hpp, komisi, laba: omzet - hpp - komisi };
+  });
 
   const sumOf = (
     rows: { type: string; _sum: { amount: number | null } }[],
@@ -203,6 +278,66 @@ export default async function KeuanganPage({
           icon={Wallet}
           className="col-span-2 sm:col-span-1"
         />
+      </div>
+
+      {/* Rincian duit omzet — dihitung otomatis, bukan entri buku kas:
+          omzet order lunas − HPP (buku kas) − komisi sales (persen × POS) */}
+      <div className="rounded-2xl border border-neutral-200 bg-white p-4 sm:p-5">
+        <h2 className="text-sm font-semibold">Duit Omzet (otomatis)</h2>
+        <p className="mb-3 mt-0.5 text-xs text-neutral-400">
+          Omzet order lunas dipotong HPP &amp; komisi sales — dihitung
+          langsung, bukan catatan buku kas.
+        </p>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[420px] text-sm">
+            <thead>
+              <tr className="border-b border-neutral-200 text-xs text-neutral-400">
+                <th className="py-1.5 text-left font-medium"> </th>
+                <th className="py-1.5 text-right font-medium">Bulan ini</th>
+                <th className="py-1.5 text-right font-medium">Semua waktu</th>
+              </tr>
+            </thead>
+            <tbody className="tabular-nums">
+              {(
+                [
+                  ["Omzet (order restok lunas)", "omzet", ""],
+                  ["HPP / COGS (beli barang, ongkir)", "hpp", "−"],
+                  ["Komisi sales (affiliator)", "komisi", "−"],
+                ] as const
+              ).map(([label, key, sign]) => (
+                <tr key={key} className="border-b border-neutral-100">
+                  <td className="py-2 text-neutral-600">{label}</td>
+                  {omzetRincian.map((r, i) => (
+                    <td key={i} className="py-2 text-right">
+                      {sign}
+                      {rupiah(r[key])}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+              <tr className="font-bold">
+                <td className="py-2">Laba setelah HPP &amp; komisi</td>
+                {omzetRincian.map((r, i) => (
+                  <td
+                    key={i}
+                    className={`py-2 text-right ${
+                      r.laba < 0 ? "text-red-600" : "text-brand-dark"
+                    }`}
+                  >
+                    {rupiah(r.laba)}
+                  </td>
+                ))}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-2 text-xs text-neutral-400">
+          Komisi = persen affiliator × omzet restok (order lunas) konter tiap
+          sales (rumus sama dengan halaman Performa Sales). Saat komisinya
+          benar-benar
+          dibayarkan, catat sebagai pengeluaran kategori &ldquo;Komisi
+          sales&rdquo; supaya masuk buku kas.
+        </p>
       </div>
 
       {/* Laporan tahunan 12 bulan — Laba Rugi, Neraca, Arus Kas

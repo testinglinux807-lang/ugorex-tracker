@@ -263,6 +263,58 @@ export async function notifyRequestReply(requestId: string) {
   await Promise.allSettled(jobs);
 }
 
+// Kabari sales bahwa fee bagi hasilnya dicairkan admin (lonceng in-app +
+// WA + push, mengikuti channel yang aktif).
+export async function notifyCommissionPayout(
+  salesId: string,
+  amount: number,
+  note?: string | null,
+) {
+  const sales = await prisma.user.findUnique({
+    where: { id: salesId },
+    select: { id: true, name: true, phone: true },
+  });
+  if (!sales) return;
+
+  const push = {
+    title: "Fee bagi hasil dicairkan",
+    body: `${rupiah(amount)} sudah dibayarkan${note ? ` · ${note}` : ""}`,
+    url: "/penghasilan",
+  };
+
+  const appUrl = process.env.APP_URL?.replace(/\/$/, "");
+  const message = [
+    `Halo ${sales.name}, fee bagi hasil kamu sudah dicairkan.`,
+    ``,
+    `Jumlah: ${rupiah(amount)}`,
+    ...(note ? [`Catatan: ${note}`] : []),
+    ...(appUrl ? [``, `Riwayat: ${appUrl}/penghasilan`] : []),
+    ``,
+    `— Ugorex`,
+  ].join("\n");
+
+  const jobs: Promise<unknown>[] = [
+    prisma.notification.create({
+      data: {
+        userId: sales.id,
+        title: push.title,
+        body: push.body,
+        url: push.url,
+      },
+    }),
+  ];
+  if (process.env.FONNTE_TOKEN && sales.phone) {
+    jobs.push(sendWa(sales.phone, message));
+  }
+  if (
+    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY &&
+    process.env.VAPID_PRIVATE_KEY
+  ) {
+    jobs.push(sendPushToUsers([sales.id], push));
+  }
+  await Promise.allSettled(jobs);
+}
+
 // Kabari soal order restok lewat WA (Fonnte, kalau token diisi) dan
 // Web Push (kalau VAPID diisi). Penerima tergantung jenis kabar:
 // kind "paid"      = pembayaran Midtrans lunas → sales pemegang toko + admin;

@@ -24,17 +24,29 @@ export default async function ProspectsPage() {
   if (user.role === "OWNER") redirect("/pos");
   if (user.role === "SALES") redirect("/beranda");
 
-  const prospects = await prisma.prospect.findMany({
-    where: scopeWhere(user),
-    include: {
-      store: true,
-      // Cukup nama barang — description (daftar HP kompatibel) berat
-      product: { select: { name: true } },
-      sales: true,
-      logs: { orderBy: { createdAt: "desc" }, take: 1 },
-    },
-    orderBy: { updatedAt: "desc" },
-  });
+  const [prospects, salesHomeRows] = await Promise.all([
+    prisma.prospect.findMany({
+      where: scopeWhere(user),
+      include: {
+        store: true,
+        // Cukup nama barang — description (daftar HP kompatibel) berat
+        product: { select: { name: true } },
+        sales: true,
+        logs: { orderBy: { createdAt: "desc" }, take: 1 },
+      },
+      orderBy: { updatedAt: "desc" },
+    }),
+    // Rumah semua sales — radius kerja 7 km di peta (toggle di toolbar)
+    prisma.user.findMany({
+      where: { role: "SALES", homeLat: { not: null }, homeLng: { not: null } },
+      select: { name: true, homeLat: true, homeLng: true },
+    }),
+  ]);
+  const salesHomes = salesHomeRows.map((s) => ({
+    lat: s.homeLat as number,
+    lng: s.homeLng as number,
+    name: s.name,
+  }));
 
   const canCreate = user.role !== "OWNER";
 
@@ -125,7 +137,7 @@ export default async function ProspectsPage() {
             ({points.length} titik)
           </span>
         </div>
-        <TrackerMap points={points} />
+        <TrackerMap points={points} homePoints={salesHomes} />
         <p className="mt-2 text-xs text-neutral-400">
           Warna kecamatan = zona minat (5 tingkat,{" "}
           <span className="font-semibold text-green-600">hijau</span> potensial →{" "}

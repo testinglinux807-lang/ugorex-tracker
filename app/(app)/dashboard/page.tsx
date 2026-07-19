@@ -131,12 +131,24 @@ export default async function DashboardPage() {
     .reduce((a, o) => a + o.total, 0);
   const monthRevenue = monthSalesRevenue + monthOrderRevenue;
 
-  // Konter terbaru
-  const recentStores = await prisma.store.findMany({
-    orderBy: { createdAt: "desc" },
-    take: 12,
-    include: { _count: { select: { transactions: true } } },
-  });
+  // Konter terbaru + rumah semua sales (radius kerja 7 km di peta —
+  // admin bisa lihat cakupan wilayah tiap sales & celah yang belum tergarap)
+  const [recentStores, salesHomeRows] = await Promise.all([
+    prisma.store.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 12,
+      include: { _count: { select: { transactions: true } } },
+    }),
+    prisma.user.findMany({
+      where: { role: "SALES", homeLat: { not: null }, homeLng: { not: null } },
+      select: { name: true, homeLat: true, homeLng: true },
+    }),
+  ]);
+  const salesHomes = salesHomeRows.map((s) => ({
+    lat: s.homeLat as number,
+    lng: s.homeLng as number,
+    name: s.name,
+  }));
   const recentStoreItems = recentStores.map((s) => ({
     id: s.id,
     name: s.name,
@@ -360,7 +372,7 @@ export default async function DashboardPage() {
                   <MapPin className="h-4 w-4" />
                   Sebaran Konter — Karawang
                 </div>
-                <TrackerMap points={points} />
+                <TrackerMap points={points} homePoints={salesHomes} />
               </div>
             ),
           },

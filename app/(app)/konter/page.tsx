@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { StageBadge } from "@/components/Badge";
 import { VisitForm } from "@/components/VisitForm";
 import { CreateOwnerForm } from "@/components/AccountForms";
+import { StoreSalesForm } from "@/components/StoreSalesForm";
 import { KonterFilter } from "@/components/KonterFilter";
 import { waLink } from "@/lib/wa";
 import {
@@ -17,6 +18,7 @@ import {
   MessageCircle,
   Search,
   Trophy,
+  Users,
   X,
 } from "lucide-react";
 
@@ -40,11 +42,12 @@ export default async function KonterPage({
 
   const scope = user.role === "SALES" ? { salesId: user.id } : {};
 
-  const [stores, products, sales] = await Promise.all([
+  const [stores, products, sales, salesUsers] = await Promise.all([
     prisma.store.findMany({
       where: scope,
       include: {
         ownerUser: true,
+        sales: { select: { name: true } },
         prospects: {
           include: {
             // Cukup nama barang — description (daftar HP kompatibel) berat
@@ -66,6 +69,14 @@ export default async function KonterPage({
       where: user.role === "SALES" ? { store: { salesId: user.id } } : {},
       _sum: { qty: true, total: true },
     }),
+    // Pilihan sales untuk form "Atur Sales" di kartu (admin saja)
+    user.role === "ADMIN"
+      ? prisma.user.findMany({
+          where: { role: "SALES" },
+          select: { id: true, name: true },
+          orderBy: { name: "asc" },
+        })
+      : Promise.resolve([]),
   ]);
 
   // Terlaris: total penjualan per konter, diberi peringkat 1-3 teratas
@@ -351,6 +362,30 @@ export default async function KonterPage({
                       />
                     </div>
                   </details>
+
+                  {/* Admin: pasang / ganti sales penanggung jawab konter */}
+                  {user.role === "ADMIN" && (
+                    <details className="rounded-lg border border-neutral-200">
+                      <summary className="flex cursor-pointer items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-700">
+                        <Users className="h-4 w-4" />
+                        Sales:{" "}
+                        <span
+                          className={
+                            s.sales ? "font-semibold" : "text-neutral-400"
+                          }
+                        >
+                          {s.sales?.name ?? "belum ada"}
+                        </span>
+                      </summary>
+                      <div className="border-t border-neutral-100 p-3">
+                        <StoreSalesForm
+                          storeId={s.id}
+                          currentSalesId={s.salesId}
+                          salesOptions={salesUsers}
+                        />
+                      </div>
+                    </details>
+                  )}
 
                   {s.ownerUser ? (
                     <p className="flex items-center gap-1.5 px-1 text-xs text-neutral-500">

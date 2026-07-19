@@ -2,7 +2,12 @@
 
 import { useState } from "react";
 import dynamic from "next/dynamic";
-import type { MapPoint, StoreRevenuePoint, InterestFilter } from "./MapInner";
+import type {
+  MapPoint,
+  StoreRevenuePoint,
+  InterestFilter,
+  HomePoint,
+} from "./MapInner";
 
 // Leaflet butuh window → matikan SSR
 const MapInner = dynamic(() => import("./MapInner"), {
@@ -32,16 +37,24 @@ function Dot({ color }: { color: string }) {
 export function TrackerMap({
   points,
   storePoints = [],
+  homePoints = [],
 }: {
   points: MapPoint[];
   storePoints?: StoreRevenuePoint[];
+  // Rumah sales — lingkaran radius kerja 7 km. Beranda sales: 1 titik
+  // miliknya; peta admin: semua sales (bisa dimatikan lewat toggle).
+  homePoints?: HomePoint[];
 }) {
   const [filter, setFilter] = useState<InterestFilter>("ALL");
+  const [showRadius, setShowRadius] = useState(true);
 
+  // Titik abu-abu (garapan sales lain) cuma info — tidak ikut filter/hitungan
+  const own = points.filter((p) => !p.otherSales);
+  const otherCount = points.length - own.length;
   const count = {
-    POSITIVE: points.filter((p) => p.result === "POSITIVE").length,
-    REJECTED: points.filter((p) => p.result === "REJECTED").length,
-    ALL: points.length,
+    POSITIVE: own.filter((p) => p.result === "POSITIVE").length,
+    REJECTED: own.filter((p) => p.result === "REJECTED").length,
+    ALL: own.length,
   };
 
   return (
@@ -74,6 +87,25 @@ export function TrackerMap({
           <span className="flex items-center gap-1">
             <Dot color="#ffffff" /> Netral
           </span>
+          {otherCount > 0 && (
+            <span className="flex items-center gap-1">
+              <Dot color="#9ca3af" /> Sales lain ({otherCount})
+            </span>
+          )}
+          {/* Toggle radius kerja 7 km dari rumah sales */}
+          {homePoints.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowRadius((v) => !v)}
+              className={`rounded-full border px-2.5 py-1 text-xs font-medium transition ${
+                showRadius
+                  ? "border-neutral-900 bg-neutral-900 text-white"
+                  : "border-neutral-300 text-neutral-500 hover:bg-neutral-100"
+              }`}
+            >
+              Radius sales ({homePoints.length})
+            </button>
+          )}
         </div>
       </div>
 
@@ -84,8 +116,20 @@ export function TrackerMap({
         </p>
       )}
 
+      {homePoints.length > 0 && showRadius && (
+        <p className="flex items-center gap-1.5 text-xs text-neutral-500">
+          <span className="inline-block h-3 w-3 shrink-0 rounded-full border border-dashed border-neutral-700 bg-brand/10" />
+          Lingkaran putus-putus = radius kerja 7 km dari rumah sales
+        </p>
+      )}
+
       <div className="relative z-0 h-[420px] w-full overflow-hidden rounded-xl border border-neutral-200 bg-white">
-        <MapInner points={points} filter={filter} storePoints={storePoints} />
+        <MapInner
+          points={points}
+          filter={filter}
+          storePoints={storePoints}
+          homePoints={showRadius ? homePoints : []}
+        />
       </div>
     </div>
   );

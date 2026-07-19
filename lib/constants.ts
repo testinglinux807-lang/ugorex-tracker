@@ -95,6 +95,7 @@ export const FINANCE_CATEGORIES: Record<FinanceType, string[]> = {
     "Perlengkapan",
     "Biaya platform",
     "Gaji",
+    "Komisi sales",
     "Sewa",
     "Operasional",
     "Pajak",

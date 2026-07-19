@@ -21,6 +21,8 @@ export default async function TiketPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (user.role === "SALES") redirect("/prospects");
+  // Owner sekarang lewat satu pintu Feedback (keluhan/saran/request)
+  if (user.role === "OWNER") redirect("/feedback");
   if (user.role === "OWNER" && !user.ownedStore) {
     return (
       <div className="rounded-xl border border-neutral-200 bg-white p-8 text-center text-sm text-neutral-500">

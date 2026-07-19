@@ -224,7 +224,14 @@ export default async function DataPage() {
                 items={salesList.map((s) => (
                   <SalesRow
                     key={s.id}
-                    user={{ id: s.id, name: s.name, phone: s.phone }}
+                    user={{
+                      id: s.id,
+                      name: s.name,
+                      phone: s.phone,
+                      homeLat: s.homeLat,
+                      homeLng: s.homeLng,
+                      nik: s.nik,
+                    }}
                   />
                 ))}
               />

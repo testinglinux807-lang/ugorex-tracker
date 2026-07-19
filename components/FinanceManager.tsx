@@ -20,6 +20,7 @@ import {
   X,
 } from "lucide-react";
 import { SubmitButton } from "@/components/SubmitButton";
+import { DateRangeCalendar } from "@/components/DateRangeCalendar";
 
 const inputCls = "w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm";
 
@@ -185,14 +186,17 @@ export function FinanceManager({
             required
             defaultValue={editing?.amount ?? ""}
             placeholder="Jumlah (Rp)"
-            className={inputCls}
+            className={`${inputCls} col-span-2`}
           />
-          <input
-            name="date"
-            type="date"
-            defaultValue={dateInputWib(editing?.date)}
-            className={inputCls}
-          />
+          {/* Kalender: klik 1 tanggal = entri sehari; klik tanggal kedua =
+              blok rentang (nominal sama dicatat per hari). Mode edit cuma
+              boleh satu tanggal. */}
+          <div className="col-span-2">
+            <DateRangeCalendar
+              range={!isEditing}
+              initial={dateInputWib(editing?.date)}
+            />
+          </div>
           <input
             name="category"
             list="finance-cat"
@@ -225,7 +229,9 @@ export function FinanceManager({
         )}
         {state?.ok && (
           <p className="rounded-lg border border-neutral-900 bg-neutral-900 px-3 py-2 text-sm text-white">
-            Catatan tersimpan.
+            {state.count > 1
+              ? `${state.count} catatan tersimpan (satu per hari).`
+              : "Catatan tersimpan."}
           </p>
         )}
 
@@ -296,7 +302,9 @@ export function FinanceManager({
                   </span>
                 </div>
 
-                <ul className="divide-y divide-neutral-100 px-1">
+                {/* px-3 = sama dengan padding bar tanggal di atasnya, biar
+                    nominal & ikon sejajar lurus dengan header harinya */}
+                <ul className="divide-y divide-neutral-100 px-3">
                   {g.items.map((e) => {
                     const inc = e.type === "INCOME";
                     return (

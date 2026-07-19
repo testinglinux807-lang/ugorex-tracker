@@ -9,7 +9,12 @@ import { salesGrade, salesLevel } from "@/lib/sales-grade";
 import { salesKpi } from "@/lib/sales-kpi";
 import { wibMonthStart } from "@/lib/date";
 import { parsePeriode, periodeStart, PERIODE_LABEL } from "@/lib/periode";
-import { Users } from "lucide-react";
+import { CreateSalesForm } from "@/components/AccountForms";
+import {
+  SalesInviteManager,
+  type SalesInviteItem,
+} from "@/components/SalesInviteManager";
+import { UserPlus, Users } from "lucide-react";
 
 // Konter dianggap "terbengkalai" kalau > 30 hari tak ada aktivitas funnel.
 const NEGLECT_DAYS = 30;
@@ -32,7 +37,7 @@ export default async function SalesPage({
   // Jendela KPI operasional: bulan berjalan (WIB)
   const monthStart = wibMonthStart();
 
-  const [salesUsers, prospects, saleRows, stores, tasks, saleTotals, kpiOrders, kpiSales, ratingAgg] =
+  const [salesUsers, prospects, saleRows, stores, tasks, saleTotals, kpiOrders, kpiSales, ratingAgg, restokRows] =
     await Promise.all([
     prisma.user.findMany({ where: { role: "SALES" }, orderBy: { name: "asc" } }),
     prisma.prospect.findMany({
@@ -83,7 +88,41 @@ export default async function SalesPage({
       _avg: { stars: true },
       _count: { _all: true },
     }),
+    // Omzet RESTOK (order lunas) per konter dalam periode — dasar komisi
+    // affiliator: yang dihitung uang toko belanja barang kita, bukan POS.
+    prisma.request.groupBy({
+      by: ["storeId"],
+      where: {
+        items: { some: {} },
+        paymentStatus: "PAID",
+        status: { not: "CANCELLED" },
+        ...(start ? { createdAt: { gte: start } } : {}),
+      },
+      _sum: { total: true },
+    }),
   ]);
+
+  // Link undangan registrasi sales (10 terbaru) — panel Tambah Sales
+  const inviteRows = await prisma.salesInvite.findMany({
+    orderBy: { createdAt: "desc" },
+    take: 10,
+  });
+  const appUrl = process.env.APP_URL ?? "http://localhost:3000";
+  const now = new Date();
+  const invites: SalesInviteItem[] = inviteRows.map((inv) => ({
+    id: inv.id,
+    url: `${appUrl}/daftar-sales/${inv.token}`,
+    note: inv.note,
+    status: inv.usedAt
+      ? "TERPAKAI"
+      : inv.expiresAt < now
+        ? "KEDALUWARSA"
+        : "AKTIF",
+    expiresAtLabel: inv.expiresAt.toLocaleDateString("id-ID", {
+      day: "numeric",
+      month: "short",
+    }),
+  }));
 
   const kpiOrderRows = kpiOrders.map((o) => ({
     storeId: o.storeId,
@@ -145,14 +184,20 @@ export default async function SalesPage({
     taskStat.set(t.assignedToId, s);
   }
 
+  const restokByStore = new Map(
+    restokRows.map((r) => [r.storeId, r._sum.total ?? 0]),
+  );
+
   const rows = salesUsers
     .map((u) => {
       const myStores = stores.filter((s) => s.salesId === u.id);
       let revenue = 0;
+      let restok = 0;
       let loyal = 0;
       let terbengkalai = 0;
       for (const s of myStores) {
         revenue += revenueByStore.get(s.id) ?? 0;
+        restok += restokByStore.get(s.id) ?? 0;
         const agg = storeAgg.get(s.id);
         if (agg && agg.furthestIdx >= loyalIdx) loyal++;
         // aktivitas terakhir; konter tanpa prospek pakai tanggal dibuatnya
@@ -203,9 +248,9 @@ export default async function SalesPage({
         kpi,
         rating: ratingBySales.get(u.id) ?? null,
         // Komisi affiliator: persen (diatur admin di detail sales) × omzet
-        // periode terpilih.
+        // RESTOK (order lunas) konternya di periode terpilih — bukan POS.
         pct: u.commissionPct,
-        commission: Math.round((revenue * u.commissionPct) / 100),
+        commission: Math.round((restok * u.commissionPct) / 100),
       };
     })
     .sort(
@@ -228,9 +273,28 @@ export default async function SalesPage({
 
       <PeriodeFilter current={periode} basePath="/sales" />
 
+      {/* Tambah akun sales — form yang sama juga ada di Data → Akun Sales */}
+      <details className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+        <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold [&::-webkit-details-marker]:hidden">
+          <UserPlus className="h-4 w-4 text-neutral-500" />
+          Tambah Sales
+        </summary>
+        <div className="mt-3 max-w-xl">
+          <CreateSalesForm />
+        </div>
+        {/* Atau: kasih link registrasi — calon sales isi datanya sendiri
+            dari HP (nama, no HP, password, NIK, GPS titik rumah) */}
+        <div className="mt-4 max-w-xl border-t border-neutral-100 pt-4">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-400">
+            Atau kirim link registrasi (sekali pakai, 7 hari)
+          </p>
+          <SalesInviteManager invites={invites} />
+        </div>
+      </details>
+
       {salesUsers.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-neutral-300 p-10 text-center text-sm text-neutral-500">
-          Belum ada akun sales. Tambah di menu Data → Akun Sales.
+          Belum ada akun sales. Tambah lewat form di atas.
         </div>
       ) : (
         <SalesGrid rows={rows} />
@@ -242,8 +306,8 @@ export default async function SalesPage({
         admin · Bintang = grade KPI tugas (tepat waktu penuh, telat setengah,
         lewat tenggat 0) · Grade huruf (S+ terbaik … E) = gabungan omzet semua
         waktu dibanding sales terbaik, porsi konter loyal, keaktifan, dan KPI
-        tugas · Komisi = persen affiliator × omzet periode terpilih (atur
-        persennya di detail sales).
+        tugas · Komisi = persen affiliator × omzet restok (order lunas)
+        konternya di periode terpilih (atur persennya di detail sales).
       </p>
     </div>
   );

@@ -46,7 +46,7 @@ type ExpenseGroup =
   | "pajak"
   | "operasional";
 
-function classifyExpense(category: string | null): ExpenseGroup {
+export function classifyExpense(category: string | null): ExpenseGroup {
   const c = (category ?? "").toLowerCase();
   if (/beli barang|hpp|cogs|ongkir|impor|freight/.test(c)) return "hpp";
   if (/iklan|ads|advertis|promosi/.test(c)) return "iklan";

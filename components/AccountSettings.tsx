@@ -11,7 +11,7 @@ import {
 import { PendingLabel } from "@/components/SubmitButton";
 
 // Modal Ganti Password / Ganti No HP (dibuka dari dropdown nama di header,
-// khusus admin). Ganti no HP dua langkah: kirim OTP via WA ke nomor baru,
+// semua role). Ganti no HP dua langkah: kirim OTP via WA ke nomor baru,
 // lalu masukkan kode 6 digit.
 
 const inputCls =

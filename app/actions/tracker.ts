@@ -266,6 +266,30 @@ export async function updateStore(storeId: string, formData: FormData) {
   return { ok: true };
 }
 
+// Admin mengatur sales penanggung jawab sebuah konter — form ringkas di
+// kartu /konter, tanpa harus buka edit lengkap di menu Data. Kirim kosong
+// = melepas sales dari konter itu.
+export async function setStoreSales(storeId: string, formData: FormData) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (user.role !== "ADMIN") return { error: "Hanya admin." };
+
+  const salesId = String(formData.get("salesId") ?? "") || null;
+  if (salesId) {
+    const target = await prisma.user.findUnique({ where: { id: salesId } });
+    if (!target || target.role !== "SALES") {
+      return { error: "Akun sales tidak ditemukan." };
+    }
+  }
+
+  await prisma.store.update({ where: { id: storeId }, data: { salesId } });
+  revalidatePath("/konter");
+  revalidatePath(`/konter/${storeId}`);
+  revalidatePath("/data");
+  revalidatePath("/sales");
+  return { ok: true };
+}
+
 // Admin menghapus konter (ikut menghapus prospek, transaksi, tiket,
 // request, dan akun owner toko itu)
 export async function deleteStore(storeId: string) {

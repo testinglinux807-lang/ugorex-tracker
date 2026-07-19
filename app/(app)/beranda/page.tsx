@@ -70,6 +70,9 @@ export default async function BerandaPage() {
     allStores,
     kpiOrders,
     myRatingAgg,
+    otherProspects,
+    paidOrderRows,
+    payoutAgg,
   ] = await Promise.all([
     prisma.store.findMany({
       where: { salesId: user.id },
@@ -156,6 +159,57 @@ export default async function BerandaPage() {
       where: { salesId: user.id },
       _avg: { stars: true },
     }),
+    // Prospek konter pegangan sales LAIN — dipakai titik abu-abu di peta
+    // (penanda "sudah ada yang menawarkan & tertarik", biar tidak dobel
+    // digarap). Konter tanpa sales tidak termasuk (masih bebas digarap).
+    prisma.prospect.findMany({
+      where: {
+        store: {
+          salesId: { not: user.id },
+          lat: { not: null },
+          lng: { not: null },
+        },
+      },
+      select: {
+        id: true,
+        storeId: true,
+        stage: true,
+        store: {
+          select: {
+            name: true,
+            area: true,
+            lat: true,
+            lng: true,
+            sales: { select: { name: true } },
+          },
+        },
+        product: { select: { name: true } },
+        logs: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: { result: true },
+        },
+      },
+    }),
+    // Omzet order restok yang sudah LUNAS dari konter-mu (semua waktu) —
+    // digabung ke kartu "Penjualan Toko" bareng POS, sama seperti Total
+    // Penjualan di dashboard admin. Order batal tidak dihitung.
+    // Order restok lunas konter-mu (semua waktu) — kartu Omzet + fee per
+    // order (fee dihitung per order, konsisten dengan /penghasilan)
+    prisma.request.findMany({
+      where: {
+        items: { some: {} },
+        paymentStatus: "PAID",
+        status: { not: "CANCELLED" },
+        store: { salesId: user.id },
+      },
+      select: { total: true },
+    }),
+    // Total fee yang sudah dicairkan admin — pengurang saldo penghasilan
+    prisma.commissionPayout.aggregate({
+      where: { salesId: user.id },
+      _sum: { amount: true },
+    }),
   ]);
 
   // Ringkasan
@@ -168,7 +222,17 @@ export default async function BerandaPage() {
   const totalProspek = prospects.length;
   const won = counts.CONVERSION + counts.LOYALTY + counts.STAR_SELLER;
   const conversion = totalProspek ? Math.round((won / totalProspek) * 100) : 0;
-  const totalRevenue = sales.reduce((a, s) => a + s.total, 0);
+  // Omzet = HANYA order restok lunas (owner beli stok dari pusat).
+  // POS sengaja TIDAK dihitung di sini: penjualan kasir itu data pribadi
+  // owner — grafiknya cukup diketahui admin, bukan sales.
+  const totalRevenue = paidOrderRows.reduce((a, o) => a + o.total, 0);
+  // Penghasilan = fee bagi hasil BELUM DICAIRKAN: total fee (per order,
+  // persen × total) − total pencairan admin. Reset ke 0 setelah dibayar.
+  const feeAll = paidOrderRows.reduce(
+    (a, o) => a + Math.round((o.total * user.commissionPct) / 100),
+    0,
+  );
+  const feeOutstanding = feeAll - (payoutAgg._sum.amount ?? 0);
 
   // ===== Grade huruf leveling (S+ … E) — rumus & bahan sama persis dengan
   // halaman Performa Sales (admin), lihat lib/sales-grade.ts =====
@@ -417,6 +481,34 @@ export default async function BerandaPage() {
       lng: p.store.lng as number,
     }));
 
+  // Konter garapan sales lain yang sudah tertarik / sudah beli — jadi titik
+  // ABU-ABU di peta (info saja, tidak ikut filter Tertarik/Tidak).
+  const takenStages = ["CONVERSION", "LOYALTY", "STAR_SELLER"];
+  const otherPoints: MapPoint[] = otherProspects
+    .filter(
+      (p) => p.logs[0]?.result === "POSITIVE" || takenStages.includes(p.stage),
+    )
+    .map((p) => ({
+      id: p.id,
+      storeId: p.storeId,
+      product: p.product.name,
+      store: p.store.name,
+      area: p.store.area,
+      stage: p.stage,
+      result: p.logs[0]?.result ?? "NEUTRAL",
+      lat: p.store.lat as number,
+      lng: p.store.lng as number,
+      otherSales: p.store.sales?.name ?? "sales lain",
+    }));
+  const mapPoints = [...points, ...otherPoints];
+
+  // Titik rumah sales (diisi admin saat registrasi/edit akun) — pusat
+  // lingkaran radius kerja 7 km di peta.
+  const homePoint =
+    user.homeLat != null && user.homeLng != null
+      ? { lat: user.homeLat, lng: user.homeLng }
+      : null;
+
   // Konter yang benar-benar berkontribusi ke penjualan (punya transaksi
   // Sale) — ditampilkan sebagai bubble di peta, ukuran = besar revenue-nya.
   const revenueByStore = new Map<string, number>();
@@ -517,109 +609,122 @@ export default async function BerandaPage() {
           )}
         </div>
 
-        <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-5">
-          {/* Penjualan toko (kiri) */}
-          <div className="flex flex-col justify-center rounded-xl bg-neutral-800 p-4 lg:col-span-1">
-            <p className="text-xs text-neutral-400">Penjualan Toko</p>
-            <p className="mt-1 truncate text-2xl font-bold text-brand">
-              {rupiahShort(totalRevenue)}
-            </p>
-            <p className="text-xs text-neutral-500">dari konter-mu</p>
-          </div>
-
-          {/* 4 kartu metrik (putih) */}
-          <div className="grid grid-cols-2 gap-3 lg:col-span-4 lg:grid-cols-4">
+        {/* 4 KPI operasional bulan berjalan (lib/sales-kpi.ts) */}
+        <div className="mt-4">
+          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-400">
+            KPI bulan ini · pembanding bulan lalu
+          </p>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <div className="rounded-2xl bg-white p-4 text-neutral-900">
-              <p className="text-xs text-neutral-500">Konter Saya</p>
-              <p className="mt-1 text-2xl font-bold">{konterCount}</p>
-              <p className="text-xs text-neutral-400">{visited} dikunjungi</p>
+              <p className="text-xs text-neutral-500">Seeding Konter Baru</p>
+              <p className="mt-1 text-2xl font-bold">{kpiNow.seeding}</p>
+              <p className="text-xs text-neutral-400">
+                Bulan lalu {kpiPrev.seeding}
+              </p>
             </div>
             <div className="rounded-2xl bg-white p-4 text-neutral-900">
-              <p className="text-xs text-neutral-500">Prospek</p>
-              <p className="mt-1 text-2xl font-bold">{totalProspek}</p>
-              <p className="text-xs text-neutral-400">{won} closing</p>
-            </div>
-            <div className="rounded-2xl bg-white p-4 text-neutral-900">
-              <p className="text-xs text-neutral-500">Konversi</p>
-              <p className="mt-1 text-2xl font-bold">{conversion}%</p>
-              <p className="text-xs text-neutral-400">Conversion ke atas</p>
-            </div>
-            <Link
-              href="/konter"
-              className="rounded-2xl bg-white p-4 text-neutral-900 transition hover:ring-2 hover:ring-brand"
-            >
-              <p className="text-xs text-neutral-500">Stok Menipis</p>
-              <p
-                className={`mt-1 text-2xl font-bold ${
-                  lowStock > 0 ? "text-amber-600" : ""
-                }`}
-              >
-                {lowStock}
-                <span className="ml-1 text-sm font-medium text-neutral-400">
-                  unit
-                </span>
+              <p className="text-xs text-neutral-500">Konversi Konter Aktif</p>
+              <p className="mt-1 text-2xl font-bold">
+                {kpiNow.konversi !== null ? `${kpiNow.konversi}%` : "—"}
               </p>
               <p className="text-xs text-neutral-400">
-                {lowStock > 0 ? `di ${lowStockStores} konter` : "Semua aman"}
+                {kpiNow.aktif} konter reorder · lalu{" "}
+                {kpiPrev.konversi !== null ? `${kpiPrev.konversi}%` : "—"}
               </p>
-            </Link>
+            </div>
+            <div className="rounded-2xl bg-white p-4 text-neutral-900">
+              <p className="text-xs text-neutral-500">Reorder / Konter Aktif</p>
+              <p className="mt-1 text-2xl font-bold">
+                {kpiNow.reorder !== null ? (
+                  <>
+                    {kpiNow.reorder}
+                    <span className="ml-1 text-sm font-medium text-neutral-400">
+                      pcs
+                    </span>
+                  </>
+                ) : (
+                  "—"
+                )}
+              </p>
+              <p className="text-xs text-neutral-400">
+                Bulan lalu{" "}
+                {kpiPrev.reorder !== null ? `${kpiPrev.reorder} pcs` : "—"}
+              </p>
+            </div>
+            <div className="rounded-2xl bg-white p-4 text-neutral-900">
+              <p className="text-xs text-neutral-500">Harga Jual Rata-rata</p>
+              <p className="mt-1 truncate text-2xl font-bold">
+                {kpiNow.harga !== null ? rupiahShort(kpiNow.harga) : "—"}
+              </p>
+              <p className="text-xs text-neutral-400">
+                per pcs · bulan lalu{" "}
+                {kpiPrev.harga !== null ? rupiahShort(kpiPrev.harga) : "—"}
+              </p>
+            </div>
           </div>
         </div>
       </section>
 
-      {/* ===== 4 KPI operasional bulan berjalan (lib/sales-kpi.ts) ===== */}
-      <section>
-        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-400">
-          KPI bulan ini · pembanding bulan lalu
-        </p>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <div className="rounded-2xl border border-neutral-200 bg-white p-4">
-            <p className="text-xs text-neutral-500">Seeding Konter Baru</p>
-            <p className="mt-1 text-2xl font-bold">{kpiNow.seeding}</p>
-            <p className="text-xs text-neutral-400">
-              Bulan lalu {kpiPrev.seeding}
-            </p>
-          </div>
-          <div className="rounded-2xl border border-neutral-200 bg-white p-4">
-            <p className="text-xs text-neutral-500">Konversi Konter Aktif</p>
-            <p className="mt-1 text-2xl font-bold">
-              {kpiNow.konversi !== null ? `${kpiNow.konversi}%` : "—"}
-            </p>
-            <p className="text-xs text-neutral-400">
-              {kpiNow.aktif} konter reorder · lalu{" "}
-              {kpiPrev.konversi !== null ? `${kpiPrev.konversi}%` : "—"}
-            </p>
-          </div>
-          <div className="rounded-2xl border border-neutral-200 bg-white p-4">
-            <p className="text-xs text-neutral-500">Reorder / Konter Aktif</p>
-            <p className="mt-1 text-2xl font-bold">
-              {kpiNow.reorder !== null ? (
-                <>
-                  {kpiNow.reorder}
-                  <span className="ml-1 text-sm font-medium text-neutral-400">
-                    pcs
-                  </span>
-                </>
-              ) : (
-                "—"
-              )}
-            </p>
-            <p className="text-xs text-neutral-400">
-              Bulan lalu{" "}
-              {kpiPrev.reorder !== null ? `${kpiPrev.reorder} pcs` : "—"}
-            </p>
-          </div>
-          <div className="rounded-2xl border border-neutral-200 bg-white p-4">
-            <p className="text-xs text-neutral-500">Harga Jual Rata-rata</p>
-            <p className="mt-1 truncate text-2xl font-bold">
-              {kpiNow.harga !== null ? rupiahShort(kpiNow.harga) : "—"}
-            </p>
-            <p className="text-xs text-neutral-400">
-              per pcs · bulan lalu{" "}
-              {kpiPrev.harga !== null ? rupiahShort(kpiPrev.harga) : "—"}
-            </p>
-          </div>
+      {/* ===== Ringkasan: 6 kartu seragam (omzet, penghasilan, konter,
+          prospek, konversi, stok) — 3 kolom di desktop, 2 di HP ===== */}
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+        <div className="rounded-2xl border border-neutral-200 bg-white p-4 text-neutral-900">
+          <p className="text-xs text-neutral-500">Omzet</p>
+          <p className="mt-1 truncate text-2xl font-bold">
+            {rupiahShort(totalRevenue)}
+          </p>
+          <p className="text-xs text-neutral-400">
+            order restok lunas konter-mu
+          </p>
         </div>
+        <Link
+          href="/penghasilan"
+          className="rounded-2xl border border-neutral-200 bg-white p-4 text-neutral-900 transition hover:ring-2 hover:ring-brand"
+        >
+          <p className="text-xs text-neutral-500">Penghasilan Saya</p>
+          <p className="mt-1 truncate text-2xl font-bold text-brand-dark">
+            {rupiahShort(feeOutstanding)}
+          </p>
+          <p className="text-xs text-neutral-400">
+            {user.commissionPct > 0
+              ? `belum dicairkan · fee ${user.commissionPct}% · riwayat →`
+              : "fee belum diatur admin · riwayat →"}
+          </p>
+        </Link>
+        <div className="rounded-2xl border border-neutral-200 bg-white p-4 text-neutral-900">
+          <p className="text-xs text-neutral-500">Konter Saya</p>
+          <p className="mt-1 text-2xl font-bold">{konterCount}</p>
+          <p className="text-xs text-neutral-400">{visited} dikunjungi</p>
+        </div>
+        <div className="rounded-2xl border border-neutral-200 bg-white p-4 text-neutral-900">
+          <p className="text-xs text-neutral-500">Prospek</p>
+          <p className="mt-1 text-2xl font-bold">{totalProspek}</p>
+          <p className="text-xs text-neutral-400">{won} closing</p>
+        </div>
+        <div className="rounded-2xl border border-neutral-200 bg-white p-4 text-neutral-900">
+          <p className="text-xs text-neutral-500">Konversi</p>
+          <p className="mt-1 text-2xl font-bold">{conversion}%</p>
+          <p className="text-xs text-neutral-400">Conversion ke atas</p>
+        </div>
+        <Link
+          href="/konter"
+          className="rounded-2xl border border-neutral-200 bg-white p-4 text-neutral-900 transition hover:ring-2 hover:ring-brand"
+        >
+          <p className="text-xs text-neutral-500">Stok Menipis</p>
+          <p
+            className={`mt-1 text-2xl font-bold ${
+              lowStock > 0 ? "text-amber-600" : ""
+            }`}
+          >
+            {lowStock}
+            <span className="ml-1 text-sm font-medium text-neutral-400">
+              unit
+            </span>
+          </p>
+          <p className="text-xs text-neutral-400">
+            {lowStock > 0 ? `di ${lowStockStores} konter` : "Semua aman"}
+          </p>
+        </Link>
       </section>
 
       {/* ===== Cara naik level: tangga level + progres komponen grade ===== */}
@@ -857,7 +962,11 @@ export default async function BerandaPage() {
                   <MapPin className="h-4 w-4" />
                   Sebaran Konter — Karawang
                 </div>
-                <TrackerMap points={points} storePoints={storePoints} />
+                <TrackerMap
+                  points={mapPoints}
+                  storePoints={storePoints}
+                  homePoints={homePoint ? [homePoint] : []}
+                />
               </div>
             ),
           },

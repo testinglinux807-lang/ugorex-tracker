@@ -27,6 +27,8 @@ const STATUS_CLS: Record<string, string> = {
 export default async function RequestPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  // Owner sekarang lewat satu pintu Feedback (keluhan/saran/request)
+  if (user.role === "OWNER") redirect("/feedback");
 
   const isOwner = user.role === "OWNER";
 

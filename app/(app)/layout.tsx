@@ -53,7 +53,7 @@ export default async function AppLayout({
             name={user.name}
             role={ROLE_LABEL[user.role as Role] ?? user.role}
             phone={user.phone}
-            canManageAccount={user.role === "ADMIN"}
+            canManageAccount
           />
           {/* Lonceng riwayat notifikasi — paling kanan */}
           <NotifBell

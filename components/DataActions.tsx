@@ -21,15 +21,20 @@ const rupiah = (n: number) =>
     maximumFractionDigits: 0,
   }).format(n);
 
-// Tombol hapus dengan konfirmasi browser
+// Tombol hapus dengan konfirmasi browser — default ikon tong sampah kecil;
+// kasih className+children sendiri kalau butuh tombol berlabel.
 export function DeleteWithConfirm({
   action,
   confirmText,
   title,
+  className,
+  children,
 }: {
   action: (formData: FormData) => void | Promise<unknown>;
   confirmText: string;
   title: string;
+  className?: string;
+  children?: React.ReactNode;
 }) {
   return (
     <form
@@ -42,9 +47,12 @@ export function DeleteWithConfirm({
     >
       <SubmitButton
         title={title}
-        className="flex h-7 w-7 items-center justify-center rounded-lg border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-60"
+        className={
+          className ??
+          "flex h-7 w-7 items-center justify-center rounded-lg border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-60"
+        }
       >
-        <Trash2 className="h-3.5 w-3.5" />
+        {children ?? <Trash2 className="h-3.5 w-3.5" />}
       </SubmitButton>
     </form>
   );
@@ -221,7 +229,14 @@ export function ProductRow({
 export function SalesRow({
   user,
 }: {
-  user: { id: string; name: string; phone: string };
+  user: {
+    id: string;
+    name: string;
+    phone: string;
+    homeLat: number | null;
+    homeLng: number | null;
+    nik: string | null;
+  };
 }) {
   const [editing, setEditing] = useState(false);
   const action = updateSalesAccount.bind(null, user.id);
@@ -282,6 +297,31 @@ export function SalesRow({
             placeholder="Password baru (kosongkan kalau tetap)"
             className={inputCls}
           />
+          <input
+            name="nik"
+            defaultValue={user.nik ?? ""}
+            placeholder="NIK KTP (16 digit, opsional)"
+            inputMode="numeric"
+            maxLength={16}
+            className={inputCls}
+          />
+          {/* Titik rumah sales — pusat radius kerja 7 km di peta berandanya */}
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              name="homeLat"
+              defaultValue={user.homeLat ?? ""}
+              placeholder="Latitude rumah"
+              inputMode="decimal"
+              className={inputCls}
+            />
+            <input
+              name="homeLng"
+              defaultValue={user.homeLng ?? ""}
+              placeholder="Longitude rumah"
+              inputMode="decimal"
+              className={inputCls}
+            />
+          </div>
           {state?.error && (
             <p className="text-xs font-medium text-red-600">{state.error}</p>
           )}
