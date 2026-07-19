@@ -2,7 +2,11 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
-import { updateRequestStatus } from "@/app/actions/requests";
+import {
+  markOrderReady,
+  pickupOrder,
+  updateRequestStatus,
+} from "@/app/actions/requests";
 import { setTaskDone, deleteTask } from "@/app/actions/tasks";
 import { Paginated } from "@/components/Paginated";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -18,6 +22,7 @@ import {
   ArrowRight,
   Award,
   Truck,
+  Package,
   PackageCheck,
   CreditCard,
   MessageCircle,
@@ -149,16 +154,20 @@ export default async function TugasPage() {
     ]);
   const pendingTasks = tasks.filter((t) => t.status !== "DONE");
 
-  const kirim = orders.filter(
+  // Alur baru: PENDING lunas = packing gudang (aksi ADMIN "Siap Dipickup"),
+  // READY = menunggu kurir (aksi SALES "Pickup Barang"), SHIPPED = di jalan.
+  const packing = orders.filter(
     (o) => o.status === "PENDING" && o.paymentStatus === "PAID",
   );
+  const pickup = orders.filter((o) => o.status === "READY");
   const diJalan = orders.filter((o) => o.status === "SHIPPED");
   const belumBayar = orders.filter(
     (o) => o.status === "PENDING" && o.paymentStatus !== "PAID",
   );
   const unvisited = stores.filter((s) => s._count.prospects === 0);
 
-  const orderCount = kirim.length + diJalan.length + belumBayar.length;
+  const orderCount =
+    packing.length + pickup.length + diJalan.length + belumBayar.length;
   const taskCount = pendingTasks.length;
   const totalTugas =
     orderCount +
@@ -487,28 +496,83 @@ export default async function TugasPage() {
                 <EmptyCard text="Tidak ada orderan yang perlu diproses." />
               ) : (
                 <div className="rounded-2xl border border-neutral-200 bg-white p-5">
-                  {/* Alur: bayar → kirim → sampai. Aksi langsung di baris;
-                      begitu ditandai, item pindah state berikutnya. */}
-                  {kirim.length > 0 && (
+                  {/* Alur: bayar → packing gudang → pickup kurir → sampai.
+                      Aksi langsung di baris; begitu ditandai, item pindah
+                      state berikutnya. */}
+                  {packing.length > 0 && (
                     <>
-                      <StateHeader icon={Truck} title="Perlu Dikirim" n={kirim.length} />
+                      <StateHeader
+                        icon={Package}
+                        title={
+                          isAdmin ? "Perlu Dipacking Gudang" : "Disiapkan Gudang"
+                        }
+                        n={packing.length}
+                      />
                       <Paginated
                         perPage={5}
                         className="divide-y divide-neutral-100"
-                        items={kirim.map((o) => (
+                        items={packing.map((o) => (
                           <div
                             key={o.id}
                             className="flex flex-wrap items-center justify-between gap-2 py-2.5"
                           >
                             {orderInfo(o)}
-                            <form action={updateRequestStatus.bind(null, o.id, "SHIPPED")}>
+                            {isAdmin ? (
+                              <form
+                                action={async () => {
+                                  "use server";
+                                  await markOrderReady(o.id);
+                                }}
+                              >
+                                <SubmitButton
+                                  pendingText="Memproses…"
+                                  overlayText="Menandai siap dipickup…"
+                                  className="inline-flex items-center gap-1 rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-neutral-800 disabled:opacity-60"
+                                >
+                                  <PackageCheck className="h-3.5 w-3.5" />
+                                  Siap Dipickup
+                                </SubmitButton>
+                              </form>
+                            ) : (
+                              <span className="text-xs text-neutral-400">
+                                Menunggu gudang selesai packing
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      />
+                    </>
+                  )}
+
+                  {pickup.length > 0 && (
+                    <>
+                      <StateHeader
+                        icon={Truck}
+                        title="Siap Dipickup Kurir"
+                        n={pickup.length}
+                      />
+                      <Paginated
+                        perPage={5}
+                        className="divide-y divide-neutral-100"
+                        items={pickup.map((o) => (
+                          <div
+                            key={o.id}
+                            className="flex flex-wrap items-center justify-between gap-2 py-2.5"
+                          >
+                            {orderInfo(o)}
+                            <form
+                              action={async () => {
+                                "use server";
+                                await pickupOrder(o.id);
+                              }}
+                            >
                               <SubmitButton
                                 pendingText="Memproses…"
-                                overlayText="Menandai order dikirim…"
+                                overlayText="Menandai barang dipickup…"
                                 className="inline-flex items-center gap-1 rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-neutral-800 disabled:opacity-60"
                               >
                                 <Truck className="h-3.5 w-3.5" />
-                                Tandai Dikirim
+                                Pickup Barang
                               </SubmitButton>
                             </form>
                           </div>

@@ -120,7 +120,7 @@ export default async function BerandaPage() {
     prisma.request.findMany({
       where: {
         items: { some: {} },
-        status: { notIn: ["COMPLETED", "CANCELLED"] },
+        status: { notIn: ["COMPLETED", "CANCELLED", "RETURNED"] },
         store: { salesId: user.id },
       },
       include: { store: true },
@@ -408,15 +408,10 @@ export default async function BerandaPage() {
     lat: number | null;
     lng: number | null;
   };
-  const antarCount = openOrders.filter(
-    (o) => o.status === "PENDING" && o.paymentStatus === "PAID",
-  ).length;
+  // READY = barang sudah dipacking gudang, tinggal dipickup & diantar sales
+  const antarCount = openOrders.filter((o) => o.status === "READY").length;
   const ruteRestok: RuteStop[] = openOrders
-    .filter(
-      (o) =>
-        (o.status === "PENDING" && o.paymentStatus === "PAID") ||
-        o.status === "SHIPPED",
-    )
+    .filter((o) => o.status === "READY" || o.status === "SHIPPED")
     .map((o) => ({
       key: `order-${o.id}`,
       type: "RESTOK",
@@ -424,7 +419,7 @@ export default async function BerandaPage() {
       sub:
         o.status === "SHIPPED"
           ? `#${o.id.slice(-8).toUpperCase()} · di jalan — report saat sampai`
-          : `#${o.id.slice(-8).toUpperCase()} · ${rupiah(o.total)} · siap diantar`,
+          : `#${o.id.slice(-8).toUpperCase()} · ${rupiah(o.total)} · siap dipickup di gudang`,
       href: `/order?focus=${o.id}`,
       lat: o.store.lat,
       lng: o.store.lng,

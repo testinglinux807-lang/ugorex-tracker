@@ -17,34 +17,75 @@ const rupiah = (n: number) =>
     maximumFractionDigits: 0,
   }).format(n);
 
-// Barcode dekoratif (bukan simbologi standar yang bisa discan) — pola bar
-// deterministik dari teks resi, identitas sebenarnya nomor resi tercetak.
+// Barcode Code 128 BENERAN (bisa discan) — pengganti pola dekoratif lama.
+// Tabel lebar modul standar Code 128 (nilai 0-105, start A/B/C, stop);
+// tiap simbol 6 angka = lebar bar/spasi bergantian (mulai bar), stop 7.
+const CODE128_WIDTHS = (
+  "212222 222122 222221 121223 121322 131222 122213 122312 132212 221213 " +
+  "221312 231212 112232 122132 122231 113222 123122 123221 223211 221132 " +
+  "221231 213212 223112 312131 311222 321122 321221 312212 322112 322211 " +
+  "212123 212321 232121 111323 131123 131321 112313 132113 132311 211313 " +
+  "231113 231311 112133 112331 132131 113123 113321 133121 313121 211331 " +
+  "231131 213113 213311 213131 311123 311321 331121 312113 312311 332111 " +
+  "314111 221411 431111 111224 111422 121124 121421 141122 141221 112214 " +
+  "112412 122114 122411 142112 142211 241211 221114 413111 241112 134111 " +
+  "111242 121142 121241 114212 124112 124211 411212 421112 421211 212141 " +
+  "214121 412121 111143 111341 131141 114113 114311 411113 411311 113141 " +
+  "114131 311141 411131 211412 211214 211232 2331112"
+).split(" ");
+
+// Susun nilai simbol: Start B untuk huruf, pindah Code C untuk deretan
+// angka di ekor (resi UGX + 12 digit → digit dipadatkan 2 digit/simbol),
+// lalu checksum modulo 103 + stop — sesuai spesifikasi Code 128.
+function code128Values(value: string): number[] {
+  let head = value;
+  let digits = "";
+  const m = value.match(/^([\x20-\x7E]*?)(\d+)$/);
+  if (m && m[2].length >= 4) {
+    head = m[1];
+    digits = m[2];
+    if (digits.length % 2 === 1) {
+      head += digits[0];
+      digits = digits.slice(1);
+    }
+  }
+  const vals = [104]; // Start B
+  for (const ch of head) vals.push(ch.charCodeAt(0) - 32);
+  if (digits) {
+    vals.push(99); // pindah Code C
+    for (let i = 0; i < digits.length; i += 2) {
+      vals.push(parseInt(digits.slice(i, i + 2), 10));
+    }
+  }
+  let sum = vals[0];
+  for (let i = 1; i < vals.length; i++) sum += vals[i] * i;
+  vals.push(sum % 103, 106); // checksum + stop
+  return vals;
+}
+
 function Barcode({ value, className }: { value: string; className?: string }) {
-  let seed = 0;
-  for (const ch of value) seed = (seed * 31 + ch.charCodeAt(0)) >>> 0;
-  const next = () => {
-    seed = (seed * 1103515245 + 12345) >>> 0;
-    return seed / 2 ** 32;
-  };
-  const widths: number[] = [];
-  for (let i = 0; i < 56; i++) widths.push(1 + Math.floor(next() * 3));
-  const total = widths.reduce((a, b) => a + b, 0);
-  let x = 0;
+  const QUIET = 10; // quiet zone kiri-kanan (modul putih) — wajib utk scanner
+  const bars: { x: number; w: number }[] = [];
+  let x = QUIET;
+  for (const v of code128Values(value)) {
+    const widths = CODE128_WIDTHS[v];
+    for (let i = 0; i < widths.length; i++) {
+      const w = Number(widths[i]);
+      if (i % 2 === 0) bars.push({ x, w });
+      x += w;
+    }
+  }
+  const total = x + QUIET;
   return (
     <svg
       viewBox={`0 0 ${total} 40`}
       preserveAspectRatio="none"
       className={className}
-      aria-hidden
+      aria-label={`Barcode ${value}`}
     >
-      {widths.map((w, i) => {
-        const rect =
-          i % 2 === 0 ? (
-            <rect key={i} x={x} y={0} width={w} height={40} fill="#000" />
-          ) : null;
-        x += w;
-        return rect;
-      })}
+      {bars.map((b, i) => (
+        <rect key={i} x={b.x} y={0} width={b.w} height={40} fill="#000" />
+      ))}
     </svg>
   );
 }
@@ -87,7 +128,6 @@ export default async function ResiPage({
   const subtotal = req.items.reduce((a, i) => a + i.qty * i.price, 0);
   const totalDiskon = req.discount + req.grosirDiscount;
   const grandTotal = req.total + req.paymentFee;
-  const shortId = req.id.slice(-8).toUpperCase();
 
   return (
     <div className="min-h-screen bg-neutral-100 py-6 print:bg-white print:py-0">
@@ -100,22 +140,37 @@ export default async function ResiPage({
       {/* Kertas label termal 100×150 mm (lebar × panjang) — ukuran halaman
           dikunci @page, jadi tombol Cetak → "Save as PDF" langsung
           menghasilkan PDF seukuran label untuk printer bluetooth, tanpa
-          atur kertas manual. Lebar label 90mm = jeda 5mm kiri-kanan.
+          atur kertas manual (pastikan Scale di dialog print tetap 100%).
+          Lebar label 94mm = jeda 3mm kiri-kanan.
           position static meng-override aturan absolute #struk-print di
           globals.css (punya struk POS); print-color-adjust supaya badge
           hitam (LUNAS) tetap tercetak tanpa opsi Background graphics. */}
       <style>{`
+        /* Font label = font sistem (Segoe UI di Windows / Roboto di
+           Android — sama seperti WhatsApp): angka 0 Geist ber-garis miring
+           (slashed zero) dirasa aneh di label cetak. Berlaku juga untuk
+           bagian ber-font-mono (resi, kode barang). */
+        #struk-print, #struk-print * {
+          font-family: "Segoe UI", Roboto, "Helvetica Neue", Arial,
+            sans-serif !important;
+        }
         @media print {
           @page { size: 100mm 150mm; margin: 0; }
           #struk-print {
             position: static !important;
-            /* --resi-w & --resi-zoom di-set ResiFitScale: label yang
-               kepanjangan dikecilkan (zoom < 1) + layout dilebarkan 90mm/z
-               supaya lebar tercetak tetap 90mm — hasilnya selalu 1 halaman */
-            width: var(--resi-w, 90mm) !important;
+            /* Label dipaksa setinggi kertas; sisa ruang diserap area
+               daftar barang (print:flex-1) supaya tercetak pas penuh */
+            display: flex;
+            flex-direction: column;
+            min-height: var(--resi-minh, auto);
+            /* --resi-w & --resi-zoom di-set ResiFitScale dua arah: isi
+               kepanjangan dikecilkan (zoom < 1), isi pendek dibesarkan
+               (zoom > 1) sampai mengisi tinggi label; layout di-set 94mm/z
+               supaya lebar tercetak selalu 94mm — hasilnya pas 1 halaman */
+            width: var(--resi-w, 94mm) !important;
             max-width: none !important;
             zoom: var(--resi-zoom, 1);
-            margin: 4mm auto 0 !important;
+            margin: 3mm auto 0 !important;
             padding: 0 !important;
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
@@ -126,7 +181,7 @@ export default async function ResiPage({
       <div className="mx-auto mb-4 flex w-full max-w-md items-center justify-between px-4 print:hidden">
         <Link
           href="/order"
-          className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-bold text-neutral-700 hover:bg-neutral-50"
         >
           <ArrowLeft className="h-4 w-4" />
           Kembali
@@ -138,9 +193,11 @@ export default async function ResiPage({
       {/* id struk-print: globals.css menyembunyikan semua elemen lain saat
           print (aturan yang sama dengan struk POS) — tanpa id ini hasil
           cetak blank putih */}
+      {/* font-semibold menyeluruh: printer termal sering "menghilangkan"
+          teks tipis/abu — semua teks label dibuat tebal & hitam pekat */}
       <div
         id="struk-print"
-        className="mx-auto w-full max-w-md border-2 border-neutral-900 bg-white text-neutral-900"
+        className="mx-auto w-full max-w-md border-2 border-neutral-900 bg-white font-semibold text-neutral-900"
       >
         {/* Header: brand | jenis bayar | layanan */}
         <div className="flex items-stretch divide-x-2 divide-neutral-900 border-b-2 border-neutral-900">
@@ -172,7 +229,7 @@ export default async function ResiPage({
             <span className="text-3xl font-black tracking-wide">
               {req.pickupCode ?? "—"}
             </span>
-            <span className="mt-0.5 text-[10px] font-medium uppercase tracking-wide text-neutral-500">
+            <span className="mt-0.5 text-[10px] font-bold uppercase tracking-wide text-neutral-900">
               Kode Penjemputan
             </span>
           </div>
@@ -187,33 +244,33 @@ export default async function ResiPage({
         {/* Penerima / Pengirim */}
         <div className="grid grid-cols-2 divide-x-2 divide-neutral-900 border-b-2 border-neutral-900 text-sm">
           <div className="space-y-0.5 p-3">
-            <p className="text-[10px] font-medium uppercase tracking-wide text-neutral-500">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-neutral-900">
               Penerima
             </p>
             <p className="font-bold">
               {req.store.ownerName || "Pemilik konter"}
             </p>
-            <p className="font-medium">{req.store.name}</p>
+            <p className="font-bold">{req.store.name}</p>
             <p className="text-xs leading-snug">
               {req.store.address || req.store.area || "Alamat belum diisi"}
             </p>
             {req.store.ownerPhone && (
-              <p className="text-xs font-medium">
+              <p className="text-xs font-bold">
                 WA: {req.store.ownerPhone}
               </p>
             )}
           </div>
           <div className="space-y-0.5 p-3">
-            <p className="text-[10px] font-medium uppercase tracking-wide text-neutral-500">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-neutral-900">
               Pengirim
             </p>
             <p className="font-bold">
               {req.store.sales?.name ?? "blm ada"}
             </p>
             {req.store.sales?.phone && (
-              <p className="text-xs font-medium">{req.store.sales.phone}</p>
+              <p className="text-xs font-bold">{req.store.sales.phone}</p>
             )}
-            <p className="text-xs text-neutral-500">Gudang pusat Ugorex</p>
+            <p className="text-xs text-neutral-900">Gudang pusat Ugorex</p>
           </div>
         </div>
 
@@ -237,13 +294,11 @@ export default async function ResiPage({
           </span>
         </div>
 
-        {/* Info pesanan */}
+        {/* Info pesanan — identitas cukup nomor resi (sudah di atas),
+            id order internal tidak perlu tampil */}
         <div className="flex items-baseline justify-between border-b-2 border-neutral-900 px-3 py-2 text-xs">
           <span>
-            <span className="font-bold">No.Pesanan:</span>{" "}
-            <span className="font-mono">#{shortId}</span>
-          </span>
-          <span>
+            <span className="font-bold">Tanggal:</span>{" "}
             {fmtDate(req.createdAt, {
               day: "numeric",
               month: "short",
@@ -253,38 +308,79 @@ export default async function ResiPage({
           <span className="font-bold">{totalQty} pcs</span>
         </div>
 
-        {/* Invoice barang */}
-        <table className="w-full border-b-2 border-neutral-900 text-xs">
-          <thead>
-            <tr className="border-b border-neutral-900 text-left">
-              <th className="px-2 py-1.5 font-bold">#</th>
-              <th className="px-1 py-1.5 font-bold">Kode</th>
-              <th className="px-1 py-1.5 font-bold">Nama Produk</th>
-              <th className="px-1 py-1.5 text-center font-bold">Qty</th>
-              <th className="px-2 py-1.5 text-right font-bold">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {req.items.map((it, i) => (
-              <tr key={it.id} className="border-b border-dashed border-neutral-300 align-top">
-                <td className="px-2 py-1.5">{i + 1}</td>
-                <td className="px-1 py-1.5 font-mono font-bold">
-                  {it.product.code ?? "—"}
-                </td>
-                <td className="px-1 py-1.5 leading-snug">
-                  {it.product.name}
-                  <span className="block text-[10px] text-neutral-500">
-                    {it.qty} × {rupiah(it.price)}
-                  </span>
-                </td>
-                <td className="px-1 py-1.5 text-center font-bold">{it.qty}</td>
-                <td className="px-2 py-1.5 text-right font-medium">
-                  {rupiah(it.qty * it.price)}
-                </td>
+        {/* Invoice barang. Item sedikit (≤6): tabel penuh berkolom. Item
+            banyak: daftar dipecah DUA KOLOM berdampingan — tinggi label
+            terpangkas setengah sehingga auto-fit tidak perlu mengecilkan
+            font sampai tak terbaca (ruang samping tiap baris memang
+            banyak nganggur). */}
+        {req.items.length <= 6 ? (
+          <table className="w-full border-b-2 border-neutral-900 text-xs print:flex-1">
+            <thead>
+              <tr className="border-b border-neutral-900 text-left">
+                <th className="px-2 py-1.5 font-bold">#</th>
+                <th className="px-1 py-1.5 font-bold">Kode</th>
+                <th className="px-1 py-1.5 font-bold">Nama Produk</th>
+                <th className="px-1 py-1.5 text-center font-bold">Qty</th>
+                <th className="px-2 py-1.5 text-right font-bold">Total</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {req.items.map((it, i) => (
+                <tr key={it.id} className="border-b border-dashed border-neutral-500 align-top">
+                  <td className="px-2 py-1.5">{i + 1}</td>
+                  <td className="px-1 py-1.5 font-mono font-bold">
+                    {it.product.code ?? "—"}
+                  </td>
+                  <td className="px-1 py-1.5 leading-snug">
+                    {it.product.name}
+                    {it.price > 0 && (
+                      <span className="block text-[10px] text-neutral-900">
+                        {it.qty} × {rupiah(it.price)}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-1 py-1.5 text-center font-bold">{it.qty}</td>
+                  <td className="px-2 py-1.5 text-right font-bold">
+                    {rupiah(it.qty * it.price)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          (() => {
+            const mid = Math.ceil(req.items.length / 2);
+            const halves = [req.items.slice(0, mid), req.items.slice(mid)];
+            return (
+              <div className="grid grid-cols-2 divide-x-2 divide-neutral-900 border-b-2 border-neutral-900 text-[11px] leading-snug print:flex-1">
+                {halves.map((half, hi) => (
+                  <div key={hi} className="divide-y divide-dashed divide-neutral-500">
+                    {half.map((it, i) => (
+                      <div
+                        key={it.id}
+                        className="flex items-start justify-between gap-1.5 px-2 py-1"
+                      >
+                        <span className="min-w-0">
+                          <span className="font-mono font-bold">
+                            {hi * mid + i + 1}. {it.product.code ?? "—"}
+                          </span>{" "}
+                          {it.product.name}
+                          {it.price > 0 && (
+                            <span className="block text-[9px]">
+                              {it.qty} × {rupiah(it.price)} ={" "}
+                              {rupiah(it.qty * it.price)}
+                            </span>
+                          )}
+                        </span>
+                        <span className="shrink-0 font-black">×{it.qty}</span>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            );
+          })()
+        )}
 
         {/* Total */}
         <div className="space-y-1 border-b-2 border-neutral-900 px-3 py-2 text-xs">
@@ -315,8 +411,8 @@ export default async function ResiPage({
         </div>
 
         {/* Footer */}
-        <p className="px-3 py-2 text-center font-mono text-[10px] text-neutral-500">
-          Pesan: (#{shortId}) ({req.resiNo})
+        <p className="px-3 py-2 text-center font-mono text-[10px] text-neutral-900">
+          {req.resiNo}
         </p>
       </div>
     </div>

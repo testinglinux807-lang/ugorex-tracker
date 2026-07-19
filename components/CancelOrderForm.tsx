@@ -23,9 +23,9 @@ export function CancelOrderForm({
   );
 
   return (
-    // open:col-span-2 — di footer grid 2 kolom OrderCard: tombol tertutup
-    // ngisi 1 sel, form terbuka melebar 2 kolom
-    <details className="w-full open:col-span-2">
+    // open:col-span-full — di footer grid OrderCard: tombol tertutup ngisi
+    // 1 sel, form terbuka melebar selebar kartu (2 kolom HP / 4 desktop)
+    <details className="w-full open:col-span-full">
       <summary className="flex w-full cursor-pointer items-center justify-center gap-1 rounded-lg border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 [&::-webkit-details-marker]:hidden">
         <XCircle className="h-3.5 w-3.5" />
         Batalkan Order

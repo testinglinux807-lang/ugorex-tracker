@@ -3,22 +3,30 @@
 import { useState, type ReactNode } from "react";
 
 // Bagian halaman dipisah tab di HP supaya tidak jadi satu scroll panjang
-// yang membingungkan; di desktop (lg+) tab disembunyikan dan semua bagian
-// tampil dalam grid seperti biasa. Dipakai di /data & /dashboard.
+// yang membingungkan; di desktop (lg+) default-nya tab disembunyikan dan
+// semua bagian tampil dalam grid. `alwaysTabs` = tab dipakai di desktop
+// juga (per tab isinya grid sendiri) — dipakai /data yang seksi-seksinya
+// beda tinggi jauh sehingga grid campur jadi berantakan.
 export function DataTabs({
   tabs,
   sections,
   gridClassName = "items-start lg:grid-cols-2",
+  alwaysTabs = false,
 }: {
   tabs: { key: string; label: string; count?: number }[];
   sections: { tab: string; className?: string; node: ReactNode }[];
   gridClassName?: string; // kelas grid desktop, mis. "lg:grid-cols-3"
+  alwaysTabs?: boolean;
 }) {
   const [active, setActive] = useState(tabs[0]?.key ?? "");
 
   return (
     <div>
-      <div className="mb-4 flex gap-1.5 overflow-x-auto pb-1 lg:hidden">
+      <div
+        className={`mb-4 flex gap-1.5 overflow-x-auto pb-1 ${
+          alwaysTabs ? "" : "lg:hidden"
+        }`}
+      >
         {tabs.map((t) => {
           const on = active === t.key;
           return (
@@ -53,9 +61,9 @@ export function DataTabs({
         {sections.map((s, i) => (
           <div
             key={i}
-            className={`min-w-0 ${active === s.tab ? "" : "hidden"} lg:block ${
-              s.className ?? ""
-            }`}
+            className={`min-w-0 ${active === s.tab ? "" : "hidden"} ${
+              alwaysTabs ? "" : "lg:block"
+            } ${s.className ?? ""}`}
           >
             {s.node}
           </div>

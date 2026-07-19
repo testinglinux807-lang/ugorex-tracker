@@ -89,11 +89,32 @@ export default async function OrderPage({
       _sum: { total: true },
     }),
     prisma.request.count({
-      where: { ...orderWhere, status: { notIn: ["COMPLETED", "CANCELLED"] } },
+      where: {
+        ...orderWhere,
+        status: { notIn: ["COMPLETED", "CANCELLED", "RETURNED"] },
+      },
     }),
   ]);
   const orderCount = orderAgg._count;
   const totalValue = orderAgg._sum.total ?? 0;
+
+  // "Order ke-N dari toko ini" di footer kartu: nomor urut order per toko
+  // (urut waktu dibuat, termasuk yang batal biar nomornya stabil). Query
+  // ringan id+storeId saja untuk semua order restok.
+  const seqRows = await prisma.request.findMany({
+    where: { items: { some: {} } },
+    select: { id: true, storeId: true },
+    orderBy: { createdAt: "asc" },
+  });
+  const orderSeq = new Map<string, number>();
+  {
+    const perStore = new Map<string, number>();
+    for (const s of seqRows) {
+      const n = (perStore.get(s.storeId) ?? 0) + 1;
+      perStore.set(s.storeId, n);
+      orderSeq.set(s.id, n);
+    }
+  }
 
   // Kolom foto (base64) di-omit global — susun URL route API dari metadata
   // ringan (lihat lib/product-image.ts) lalu tempelkan ke hasil query.
@@ -170,7 +191,8 @@ export default async function OrderPage({
           r.paymentMethod &&
           r.paymentMethod !== "CASH" &&
           r.status !== "COMPLETED" &&
-          r.status !== "CANCELLED",
+          r.status !== "CANCELLED" &&
+          r.status !== "RETURNED",
       )
       .slice(0, 5)
       .map((r) => r.id);
@@ -235,6 +257,7 @@ export default async function OrderPage({
                       canRespond={false}
                       remaining={new Map()}
                       highlighted={isFocused(r.id)}
+                      orderSeq={orderSeq.get(r.id)}
                     />
                   ),
                 }))}
@@ -258,7 +281,8 @@ export default async function OrderPage({
         r.paymentMethod &&
         r.paymentMethod !== "CASH" &&
         r.status !== "COMPLETED" &&
-        r.status !== "CANCELLED",
+        r.status !== "CANCELLED" &&
+        r.status !== "RETURNED",
     )
     .slice(0, 5);
   const paidNow = (
@@ -340,9 +364,10 @@ export default async function OrderPage({
               key={r.id}
               order={r}
               canRespond
-              canRefund={user.role === "ADMIN"}
+              isAdmin={user.role === "ADMIN"}
               remaining={remaining}
               highlighted={isFocused(r.id)}
+              orderSeq={orderSeq.get(r.id)}
             />
           ),
         }))}

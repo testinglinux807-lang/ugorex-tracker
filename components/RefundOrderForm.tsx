@@ -29,7 +29,7 @@ export function RefundOrderForm({
   );
 
   return (
-    <details className="w-full open:col-span-2">
+    <details className="w-full open:col-span-full">
       <summary className="flex w-full cursor-pointer items-center justify-center gap-1 rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-neutral-900 hover:opacity-90 [&::-webkit-details-marker]:hidden">
         <Banknote className="h-3.5 w-3.5" />
         Tandai Dana Dikembalikan

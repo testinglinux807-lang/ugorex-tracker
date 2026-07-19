@@ -358,7 +358,11 @@ model Request {
   store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
   subject     String
   message     String
-  status      String   @default("PENDING") // PENDING | SHIPPED | COMPLETED | CANCELLED
+  // Alur status order restok (lihat aksi di app/actions/requests.ts):
+  // PENDING (disiapkan gudang) → READY (siap dipickup, klik admin) →
+  // SHIPPED (kurir/sales bawa barang) → COMPLETED (diterima) atau
+  // RETURNED (toko tolak semua saat serah terima). CANCELLED = batal.
+  status      String   @default("PENDING") // PENDING | READY | SHIPPED | COMPLETED | CANCELLED | RETURNED
   createdById String?
   createdBy   User?    @relation("RequestCreator", fields: [createdById], references: [id])
   createdAt   DateTime @default(now())
@@ -388,11 +392,28 @@ model Request {
   respondedBy String?   // snapshot "Nama (Role)" pembalas
   respondedAt DateTime?
 
+  // Jejak alur gudang → kurir (snapshot "Nama (Role)", bukan relasi)
+  readyAt    DateTime? // admin/gudang menandai barang siap dipickup
+  readyBy    String?
+  pickedUpAt DateTime? // sales (kurir) mengambil barang dari gudang
+  pickedUpBy String?
+
   // Bukti pengiriman (report sales saat barang sampai ke owner)
   deliveryPhoto String?   // data URL foto barang — disajikan via /api/delivery-photo
   deliveryNote  String?   // keterangan dari sales
   deliveredAt   DateTime? // kapan barang diserahkan
   deliveredBy   String?   // nama pengantar (snapshot, bukan relasi)
+
+  // Pengembalian pesanan oleh toko saat serah terima (semua / sebagian).
+  // Semua → status RETURNED, total jadi 0; sebagian → status COMPLETED,
+  // total dikurangi nilai barang yang ditolak. Nilai retur disimpan di
+  // returnedTotal, rincian qty per barang di RequestItem.returnedQty.
+  // Barang retur balik ke stok pusat; kalau order sudah dibayar,
+  // pengembalian dananya lewat alur refund admin (refundedAt di bawah).
+  returnedAt    DateTime?
+  returnedBy    String? // snapshot "Nama (Owner)"
+  returnReason  String?
+  returnedTotal Int       @default(0) // nilai Rupiah barang yang diretur
 
   // Resi pengiriman (label cetak ala marketplace) — dibuat sekali saat
   // admin/sales pertama klik Cetak Resi di /order
@@ -453,6 +474,7 @@ model RequestItem {
   request   Request @relation(fields: [requestId], references: [id], onDelete: Cascade)
   productId String
   product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-  qty       Int
-  price     Int     @default(0) // snapshot harga satuan saat checkout
+  qty         Int
+  price       Int @default(0) // snapshot harga satuan saat checkout
+  returnedQty Int @default(0) // qty yang ditolak toko saat serah terima
 }

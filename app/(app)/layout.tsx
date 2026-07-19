@@ -16,11 +16,12 @@ export default async function AppLayout({
   if (!user) redirect("/login");
 
   // Notifikasi web: jumlah order restok yang menunggu diproses
+  // (PENDING = perlu dipacking gudang, READY = menunggu dipickup kurir)
   let orderBadge = 0;
   if (user.role !== "OWNER") {
     orderBadge = await prisma.request.count({
       where: {
-        status: "PENDING",
+        status: { in: ["PENDING", "READY"] },
         items: { some: {} },
         ...(user.role === "SALES" ? { store: { salesId: user.id } } : {}),
       },

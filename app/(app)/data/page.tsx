@@ -62,8 +62,13 @@ export default async function DataPage() {
         </p>
       </div>
 
-      {/* Di HP tiap bagian jadi tab (DataTabs); di desktop grid seperti biasa */}
+      {/* Tab dipakai di HP DAN desktop (alwaysTabs) — seksi-seksi halaman
+          ini tingginya beda jauh, kalau ditampilkan sekaligus di grid
+          desktop pasangannya jadi acak & berantakan. Per tab: daftar lebar
+          (2/3) di kiri, form/panel pendamping (1/3) di kanan. */}
       <DataTabs
+        alwaysTabs
+        gridClassName="items-start lg:grid-cols-3"
         tabs={[
           { key: "barang", label: "Barang", count: products.length },
           ...(isAdmin
@@ -79,7 +84,7 @@ export default async function DataPage() {
             tab: "barang",
             className: "lg:col-span-2",
             node: (
-      /* Barang — full width: cari + pagination (katalog ratusan item) */
+      /* Barang — 2/3 kiri: cari + pagination (katalog ratusan item) */
       <section className="rounded-xl border border-neutral-200 bg-white p-5">
         <div className="mb-3 flex items-center gap-2">
           <Package className="h-4 w-4 text-neutral-500" />
@@ -158,6 +163,7 @@ export default async function DataPage() {
             ? [
                 {
                   tab: "voucher",
+                  className: "lg:col-span-2",
                   node: (
           <section className="rounded-xl border border-neutral-200 bg-white p-5">
             <div className="mb-3 flex items-center gap-2">
@@ -207,6 +213,7 @@ export default async function DataPage() {
                 },
                 {
                   tab: "sales",
+                  className: "lg:col-span-2",
                   node: (
           <section className="flex flex-col rounded-xl border border-neutral-200 bg-white p-5">
             <div className="mb-3 flex items-center gap-2">
@@ -249,7 +256,7 @@ export default async function DataPage() {
             : []),
           {
             tab: "konter",
-            className: "lg:col-span-2",
+            className: "lg:col-span-3",
             node: (
       <section className="rounded-xl border border-neutral-200 bg-white p-5">
         <div className="mb-3 flex items-center gap-2">

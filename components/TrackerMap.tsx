@@ -5,9 +5,10 @@ import dynamic from "next/dynamic";
 import type {
   MapPoint,
   StoreRevenuePoint,
-  InterestFilter,
+  StageFilter,
   HomePoint,
 } from "./MapInner";
+import { STAGES, STAGE_LABEL } from "@/lib/constants";
 
 // Leaflet butuh window → matikan SSR
 const MapInner = dynamic(() => import("./MapInner"), {
@@ -19,10 +20,10 @@ const MapInner = dynamic(() => import("./MapInner"), {
   ),
 });
 
-const FILTERS: { key: InterestFilter; label: string }[] = [
+// Filter titik by tahap funnel (Awareness → Star Seller)
+const FILTERS: { key: StageFilter; label: string }[] = [
   { key: "ALL", label: "Semua" },
-  { key: "POSITIVE", label: "Tertarik" },
-  { key: "REJECTED", label: "Tidak Tertarik" },
+  ...STAGES.map((s) => ({ key: s as StageFilter, label: STAGE_LABEL[s] })),
 ];
 
 function Dot({ color }: { color: string }) {
@@ -45,21 +46,18 @@ export function TrackerMap({
   // miliknya; peta admin: semua sales (bisa dimatikan lewat toggle).
   homePoints?: HomePoint[];
 }) {
-  const [filter, setFilter] = useState<InterestFilter>("ALL");
+  const [filter, setFilter] = useState<StageFilter>("ALL");
   const [showRadius, setShowRadius] = useState(true);
 
   // Titik abu-abu (garapan sales lain) cuma info — tidak ikut filter/hitungan
   const own = points.filter((p) => !p.otherSales);
   const otherCount = points.length - own.length;
-  const count = {
-    POSITIVE: own.filter((p) => p.result === "POSITIVE").length,
-    REJECTED: own.filter((p) => p.result === "REJECTED").length,
-    ALL: own.length,
-  };
+  const count = (key: StageFilter) =>
+    key === "ALL" ? own.length : own.filter((p) => p.stage === key).length;
 
   return (
     <div className="space-y-2">
-      {/* Toolbar: filter + legend */}
+      {/* Toolbar: filter by tahap funnel + toggle radius sales */}
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs font-medium text-neutral-500">Filter:</span>
         {FILTERS.map((f) => (
@@ -73,9 +71,23 @@ export function TrackerMap({
                 : "border-neutral-300 text-neutral-600 hover:bg-neutral-100"
             }`}
           >
-            {f.label} ({count[f.key]})
+            {f.label} ({count(f.key)})
           </button>
         ))}
+        {/* Toggle radius kerja 7 km dari rumah sales */}
+        {homePoints.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowRadius((v) => !v)}
+            className={`rounded-full border border-dashed px-3 py-1 text-xs font-medium transition ${
+              showRadius
+                ? "border-neutral-900 bg-neutral-900 text-white"
+                : "border-neutral-400 text-neutral-500 hover:bg-neutral-100"
+            }`}
+          >
+            Radius sales ({homePoints.length})
+          </button>
+        )}
 
         <div className="ml-auto flex items-center gap-3 text-xs text-neutral-500">
           <span className="flex items-center gap-1">
@@ -91,20 +103,6 @@ export function TrackerMap({
             <span className="flex items-center gap-1">
               <Dot color="#9ca3af" /> Sales lain ({otherCount})
             </span>
-          )}
-          {/* Toggle radius kerja 7 km dari rumah sales */}
-          {homePoints.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setShowRadius((v) => !v)}
-              className={`rounded-full border px-2.5 py-1 text-xs font-medium transition ${
-                showRadius
-                  ? "border-neutral-900 bg-neutral-900 text-white"
-                  : "border-neutral-300 text-neutral-500 hover:bg-neutral-100"
-              }`}
-            >
-              Radius sales ({homePoints.length})
-            </button>
           )}
         </div>
       </div>

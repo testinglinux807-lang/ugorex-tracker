@@ -9,9 +9,11 @@ import { Paginated } from "@/components/Paginated";
 // pagination. Label mengikuti badge di kartu order.
 const TABS = [
   { key: "ALL", label: "Semua" },
+  { key: "PENDING", label: "Disiapkan" },
+  { key: "READY", label: "Siap Pickup" },
   { key: "SHIPPED", label: "Dikirim" },
-  { key: "PENDING", label: "Menunggu" },
   { key: "COMPLETED", label: "Sampai" },
+  { key: "RETURNED", label: "Retur" },
   { key: "CANCELLED", label: "Batal" },
 ] as const;
 

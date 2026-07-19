@@ -18,7 +18,8 @@ import "leaflet/dist/leaflet.css";
 import { STAGE_LABEL, RESULT_LABEL, type Stage, type Result } from "@/lib/constants";
 import { inGeom, interestTier } from "@/lib/geo";
 
-export type InterestFilter = "ALL" | "POSITIVE" | "REJECTED";
+// Filter titik peta by tahap funnel (Awareness → Star Seller)
+export type StageFilter = "ALL" | Stage;
 
 export type MapPoint = {
   id: string; // prospectId
@@ -256,7 +257,7 @@ export default function MapInner({
   homePoints = [],
 }: {
   points: MapPoint[];
-  filter: InterestFilter;
+  filter: StageFilter;
   storePoints?: StoreRevenuePoint[];
   // Rumah sales — tiap titik digambar lingkaran radius kerja 7 km + ikon
   // rumah. Beranda sales: 1 titik (miliknya); peta admin: semua sales.
@@ -334,7 +335,7 @@ export default function MapInner({
   };
 
   const shown = points.filter((p) =>
-    filter === "ALL" ? true : !p.otherSales && p.result === filter,
+    filter === "ALL" ? true : !p.otherSales && p.stage === filter,
   );
 
   // Radius bubble sebanding akar(revenue) — supaya konter dengan omzet 4x

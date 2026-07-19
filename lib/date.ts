@@ -13,6 +13,21 @@ export function fmtDate(
   return new Date(date).toLocaleDateString("id-ID", { ...opts, timeZone: TZ });
 }
 
+// Tanggal + hari + jam sekaligus (mis. "Minggu, 19 Jul 2026 14.30") — WIB.
+export function fmtDateTime(
+  date: Date | string | number,
+  opts: Intl.DateTimeFormatOptions = {
+    weekday: "long",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  },
+): string {
+  return new Date(date).toLocaleString("id-ID", { ...opts, timeZone: TZ });
+}
+
 // Awal hari ini (00:00 WIB) sebagai instant UTC — untuk bucketing "hari ini".
 export function wibDayStart(now: Date = new Date()): Date {
   const ymd = new Intl.DateTimeFormat("en-CA", {

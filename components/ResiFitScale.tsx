@@ -3,14 +3,18 @@
 import { useLayoutEffect } from "react";
 
 const MM = 96 / 25.4; // px per mm (CSS 96dpi)
-const PAPER_W = 90 * MM; // lebar isi label: 100mm - jeda 5mm kiri kanan
-const PAPER_H = 141 * MM; // tinggi muat: 150mm - margin atas 4mm - sisa bawah
+const PAPER_W = 94 * MM; // lebar isi label: 100mm - jeda 3mm kiri kanan
+const PAPER_H = 144 * MM; // tinggi muat: 150mm - margin atas 3mm - sisa 3mm
+// Batas pembesaran label pendek (order 1-2 barang) — tanpa batas, font
+// bisa jadi komikal gede di label yang isinya cuma seuprit.
+const MAX_ZOOM = 1.6;
 
-// Label resi wajib muat SATU halaman label 100×150mm (printer termal cetak
-// per lembar — kelebihan = kepotong). Kalau isi label (item banyak) lebih
-// tinggi dari kertas, seluruh label dikecilkan lewat `zoom` KHUSUS print
-// (CSS var dibaca blok @media print di halaman resi); lebar layout ikut
-// dilebarkan 90mm/z supaya lebar TERCETAK tetap 90mm, tidak ikut menciut.
+// Label resi wajib PAS SATU halaman label 100×150mm (printer termal cetak
+// per lembar). Dua arah: isi kepanjangan (item banyak) DIKECILKAN, isi
+// pendek DIBESARKAN sampai mengisi tinggi label (dulu cuma bisa mengecil →
+// order 1 barang tercetak kecil di pojok atas stiker). Skala lewat `zoom`
+// KHUSUS print (CSS var dibaca blok @media print di halaman resi); lebar
+// layout di-set 94mm/z supaya lebar TERCETAK selalu tetap 94mm.
 export function ResiFitScale() {
   useLayoutEffect(() => {
     const el = document.getElementById("struk-print");
@@ -18,27 +22,56 @@ export function ResiFitScale() {
 
     const fit = () => {
       const prevWidth = el.style.width;
-      // Titik-tetap: tinggi label berubah saat lebar layout berubah, jadi
-      // ukur-hitung beberapa putaran sampai z stabil.
-      let z = 1;
-      for (let i = 0; i < 4; i++) {
-        el.style.width = `${PAPER_W / z}px`;
-        const h = el.getBoundingClientRect().height;
-        const zNext = Math.min(1, PAPER_H / h);
-        if (Math.abs(zNext - z) < 0.01) {
-          z = zNext;
-          break;
+      const prevMaxWidth = el.style.maxWidth;
+      // PENTING (1): lepas max-width (class max-w-md) selama pengukuran —
+      // lebar ukur bisa melebihi 448px; kalau ke-clamp, tinggi ketaksir
+      // lebih besar dari kondisi cetak → zoom kekecilan → sisa ruang kosong.
+      el.style.maxWidth = "none";
+      // PENTING (2): fit() juga jalan saat beforeprint, saat CSS print
+      // SUDAH aktif. Di situ `width: var(--resi-w) !important` mengalahkan
+      // inline width, dan zoom yang sedang terpasang ikut men-skala hasil
+      // getBoundingClientRect → pengukuran makan hasil skalanya sendiri
+      // (zoom bisa meledak/menyusut liar). Netralkan: zoom 1 dan lebar
+      // di-set lewat CSS var yang sama — menang di kedua media.
+      el.style.setProperty("--resi-zoom", "1");
+      // min-height juga dinetralkan — kalau ikut kepasang saat mengukur,
+      // tinggi hasil ukur ketarik ke nilai lama (feedback).
+      el.style.setProperty("--resi-minh", "0px");
+      const setW = (px: number) => {
+        el.style.width = `${px}px`;
+        el.style.setProperty("--resi-w", `${px}px`);
+      };
+      // Cari zoom TERBESAR yang masih muat via binary search. Iterasi
+      // titik-tetap (z = tinggi/kertas berulang) tidak dipakai lagi: tinggi
+      // label melompat-lompat saat lebar berubah (nama produk pindah 1↔2
+      // baris) sehingga iterasinya berosilasi dan bisa berhenti di zoom
+      // kekecilan → label tercetak pendek menyisakan ruang kosong.
+      const fits = (zz: number) => {
+        setW(PAPER_W / zz);
+        return zz * el.getBoundingClientRect().height <= PAPER_H + 0.5;
+      };
+      let z: number;
+      if (fits(MAX_ZOOM)) {
+        z = MAX_ZOOM;
+      } else {
+        let lo = 0.2; // batas bawah aman — label 5x kertas pun masih ketemu
+        let hi = MAX_ZOOM;
+        for (let i = 0; i < 14; i++) {
+          const mid = (lo + hi) / 2;
+          if (fits(mid)) lo = mid;
+          else hi = mid;
         }
-        z = zNext;
+        z = lo;
       }
-      // Cek akhir pada lebar final — kalau masih lebih, rapatkan sekali lagi
-      el.style.width = `${PAPER_W / z}px`;
-      const h = el.getBoundingClientRect().height;
-      if (z * h > PAPER_H) z = PAPER_H / h;
 
       el.style.width = prevWidth;
+      el.style.maxWidth = prevMaxWidth;
       el.style.setProperty("--resi-zoom", z.toFixed(4));
       el.style.setProperty("--resi-w", `${Math.round(PAPER_W / z)}px`);
+      // Sisa ruang diskrit (zoom naik dikit = ada teks turun baris =
+      // kelebihan) diserap min-height: label dipaksa setinggi kertas,
+      // area daftar barang (print:flex-1) yang melar mengisi sisanya.
+      el.style.setProperty("--resi-minh", `${Math.floor(PAPER_H / z)}px`);
     };
 
     fit();

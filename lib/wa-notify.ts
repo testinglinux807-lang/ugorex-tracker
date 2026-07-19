@@ -321,9 +321,21 @@ export async function notifyCommissionPayout(
 // kind "new"       = order dibuat tanpa pembayaran online (Midtrans off) → idem;
 // kind "shipped"   = barang mulai dikirim sales → OWNER toko;
 // kind "delivered" = barang sampai (report sales) → OWNER toko.
+// kind "ready"     = gudang tandai siap dipickup → sales pemegang toko + admin;
+// kind "accepted"  = owner konfirmasi terima pesanan → sales + admin;
+// kind "returned"  = owner tolak semua/sebagian barang → sales + admin.
 export async function notifyOrder(
   requestId: string,
-  kind: "new" | "paid" | "shipped" | "delivered" | "cancelled" | "refunded",
+  kind:
+    | "new"
+    | "paid"
+    | "shipped"
+    | "delivered"
+    | "cancelled"
+    | "refunded"
+    | "ready"
+    | "accepted"
+    | "returned",
 ) {
   const waEnabled = !!process.env.FONNTE_TOKEN;
   const pushEnabled =
@@ -373,25 +385,86 @@ export async function notifyOrder(
     lines.push(`- +${order.items.length - 5} barang lainnya`);
 
   const appUrl = process.env.APP_URL?.replace(/\/$/, "");
-  const no = order.id.slice(-8).toUpperCase();
+  // Identitas order: nomor resi kalau sudah terbit, id internal kalau belum
+  const no = order.resiNo ?? `#${order.id.slice(-8).toUpperCase()}`;
   const methodLabel = order.paymentMethod
     ? (PAYMENT_METHOD_LABEL[order.paymentMethod] ?? order.paymentMethod)
     : null;
 
+  // Nominal refund: order retur memakai nilai barang yang diretur (total
+  // order sudah dipotong), order batal memakai total + fee seperti biasa.
+  const refundAmount =
+    order.returnedTotal > 0
+      ? order.returnedTotal +
+        (order.status === "RETURNED" ? order.paymentFee : 0)
+      : order.total + order.paymentFee;
+  // Rincian barang yang diretur owner (kind "returned")
+  const retLines = order.items
+    .filter((it) => it.returnedQty > 0)
+    .slice(0, 5)
+    .map((it) => `- ${it.product.name} x${it.returnedQty}`);
+  const fullReturn = order.status === "RETURNED";
+
   const message =
-    kind === "refunded"
+    kind === "ready"
       ? [
-          `Order #${no} DANA DIKEMBALIKAN`,
+          `Order ${no} SIAP DIPICKUP`,
           ``,
-          `Dana order yang dibatalkan sudah dikembalikan.`,
-          `Jumlah: ${rupiah(order.total + order.paymentFee)}`,
+          `Barang sudah dipacking gudang — silakan pickup lalu antar ke toko.`,
+          `Toko: ${order.store.name}${order.store.area ? ` (${order.store.area})` : ""}`,
+          ...(order.pickupCode ? [`Kode jemput: ${order.pickupCode}`] : []),
+          ``,
+          ...lines,
+          ``,
+          `Total: ${rupiah(order.total)}`,
+          ...(appUrl ? [``, `Proses: ${appUrl}/order`] : []),
+        ].join("\n")
+      : kind === "accepted"
+      ? [
+          `Order ${no} DITERIMA TOKO`,
+          ``,
+          `${order.store.name} sudah mengonfirmasi terima pesanan.`,
+          ...(order.deliveredBy ? [`Oleh: ${order.deliveredBy}`] : []),
+          ``,
+          ...lines,
+          ``,
+          `Total: ${rupiah(order.total)}`,
+          ...(order.paymentStatus !== "PAID"
+            ? [``, `Order ini BELUM DIBAYAR — tagih/tandai lunas.`]
+            : []),
+          ...(appUrl ? [``, `Detail: ${appUrl}/order`] : []),
+        ].join("\n")
+      : kind === "returned"
+      ? [
+          `Order ${no} ${fullReturn ? "DIKEMBALIKAN TOKO (SEMUA)" : "RETUR SEBAGIAN"}`,
+          ``,
+          `${order.store.name} menolak ${fullReturn ? "semua" : "sebagian"} barang saat serah terima.`,
+          ...(order.returnReason ? [`Alasan: ${order.returnReason}`] : []),
+          ``,
+          `Barang yang dikembalikan:`,
+          ...retLines,
+          ``,
+          `Nilai retur: ${rupiah(order.returnedTotal)}`,
+          ...(fullReturn ? [] : [`Sisa tagihan order: ${rupiah(order.total)}`]),
+          `Barang retur otomatis balik ke stok pusat.`,
+          ...(order.paymentStatus === "PAID"
+            ? [``, `Order ini sudah dibayar — pengembalian dananya diurus admin.`]
+            : []),
+          ...(appUrl ? [``, `Detail: ${appUrl}/order`] : []),
+        ].join("\n")
+      : kind === "refunded"
+      ? [
+          `Order ${no} DANA DIKEMBALIKAN`,
+          ``,
+          `Dana order yang dibatalkan/diretur sudah dikembalikan.`,
+          `Jumlah: ${rupiah(refundAmount)}`,
           ...(order.refundNote ? [`Keterangan: ${order.refundNote}`] : []),
           `Oleh: ${order.refundedBy ?? "-"}`,
           ...(appUrl ? [``, `Detail: ${appUrl}/order`] : []),
         ].join("\n")
       : kind === "cancelled"
       ? [
-          `Order #${no} DIBATALKAN`,
+          `Order ${no} DIBATALKAN`,
           ``,
           `Dibatalkan oleh: ${order.cancelledBy ?? "-"}`,
           ...(order.cancelReason ? [`Alasan: ${order.cancelReason}`] : []),
@@ -409,7 +482,7 @@ export async function notifyOrder(
         ].join("\n")
       : kind === "shipped"
       ? [
-          `Order #${no} SEDANG DIKIRIM`,
+          `Order ${no} SEDANG DIKIRIM`,
           ``,
           `Barang restok Anda sedang dalam pengiriman, mohon ditunggu.`,
           ``,
@@ -420,7 +493,7 @@ export async function notifyOrder(
         ].join("\n")
       : kind === "delivered"
       ? [
-          `Order #${no} SAMPAI - barang sudah diterima`,
+          `Order ${no} SAMPAI - barang sudah diterima`,
           ``,
           ...(order.deliveredBy ? [`Diserahkan oleh: ${order.deliveredBy}`] : []),
           ...(order.deliveryNote ? [`Catatan: ${order.deliveryNote}`] : []),
@@ -432,8 +505,8 @@ export async function notifyOrder(
         ].join("\n")
       : [
           kind === "paid"
-            ? `Order #${no} SUDAH DIBAYAR - siap diproses`
-            : `Order Restok Baru #${no}`,
+            ? `Order ${no} SUDAH DIBAYAR - siap diproses`
+            : `Order Restok Baru ${no}`,
           ``,
           `Toko: ${order.store.name}${order.store.area ? ` (${order.store.area})` : ""}`,
           `Oleh: ${order.createdBy?.name ?? "-"}`,
@@ -449,35 +522,55 @@ export async function notifyOrder(
   // (dipindah ke urutan teratas + di-highlight)
   const orderUrl = `/order?focus=${order.id}`;
   const push =
-    kind === "refunded"
+    kind === "ready"
       ? {
-          title: `Dana order #${no} dikembalikan`,
-          body: `${rupiah(order.total + order.paymentFee)}${order.refundNote ? ` — ${order.refundNote}` : ""}`,
+          title: `Order ${no} siap dipickup`,
+          body: `${order.store.name} — barang sudah dipacking gudang${order.pickupCode ? ` · kode jemput ${order.pickupCode}` : ""}`,
+          url: orderUrl,
+        }
+      : kind === "accepted"
+      ? {
+          title: `Order ${no} diterima toko`,
+          body: `${order.store.name} konfirmasi terima ${order.items.length} barang${order.paymentStatus !== "PAID" ? " · belum dibayar" : ""}`,
+          url: orderUrl,
+        }
+      : kind === "returned"
+      ? {
+          title: fullReturn
+            ? `Order ${no} dikembalikan toko`
+            : `Order ${no} retur sebagian`,
+          body: `${order.store.name} — nilai retur ${rupiah(order.returnedTotal)}${order.returnReason ? ` · ${order.returnReason}` : ""}`,
+          url: orderUrl,
+        }
+      : kind === "refunded"
+      ? {
+          title: `Dana order ${no} dikembalikan`,
+          body: `${rupiah(refundAmount)}${order.refundNote ? ` — ${order.refundNote}` : ""}`,
           url: orderUrl,
         }
       : kind === "cancelled"
       ? {
-          title: `Order #${no} dibatalkan`,
+          title: `Order ${no} dibatalkan`,
           body: `${order.store.name} — ${order.cancelReason || `oleh ${order.cancelledBy ?? "-"}`}${order.paymentStatus === "PAID" ? " · sudah dibayar, refund diurus admin" : ""}`,
           url: orderUrl,
         }
       : kind === "shipped"
       ? {
-          title: `Order #${no} sedang dikirim`,
+          title: `Order ${no} sedang dikirim`,
           body: `Barang restok Anda sedang dikirim, mohon ditunggu — ${order.items.length} barang`,
           url: orderUrl,
         }
       : kind === "delivered"
       ? {
-          title: `Order #${no} sudah sampai`,
+          title: `Order ${no} sudah sampai`,
           body: `${order.deliveredBy ? `Diserahkan ${order.deliveredBy} — ` : ""}${order.items.length} barang diterima, lihat bukti fotonya`,
           url: orderUrl,
         }
       : {
           title:
             kind === "paid"
-              ? `Order #${no} sudah dibayar`
-              : `Order restok baru #${no}`,
+              ? `Order ${no} sudah dibayar`
+              : `Order restok baru ${no}`,
           body: `${order.store.name} — ${rupiah(order.total)}${methodLabel ? ` · ${methodLabel}` : ""} (${order.items.length} barang)`,
           url: orderUrl,
         };
