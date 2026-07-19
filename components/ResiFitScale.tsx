@@ -9,25 +9,28 @@ const PAPER_H = 144 * MM; // tinggi muat: 150mm - margin atas 3mm - sisa 3mm
 // bisa jadi komikal gede di label yang isinya cuma seuprit.
 const MAX_ZOOM = 1.6;
 
-// Label resi wajib PAS SATU halaman label 100×150mm (printer termal cetak
-// per lembar). Dua arah: isi kepanjangan (item banyak) DIKECILKAN, isi
-// pendek DIBESARKAN sampai mengisi tinggi label (dulu cuma bisa mengecil →
-// order 1 barang tercetak kecil di pojok atas stiker). Skala lewat `zoom`
-// KHUSUS print (CSS var dibaca blok @media print di halaman resi); lebar
-// layout di-set 94mm/z supaya lebar TERCETAK selalu tetap 94mm.
+// Tiap label resi wajib PAS SATU halaman label 100×150mm (printer termal
+// cetak per lembar). Dua arah: isi kepanjangan (item banyak) DIKECILKAN,
+// isi pendek DIBESARKAN sampai mengisi tinggi label. Skala lewat `zoom`
+// KHUSUS print (CSS var per elemen, dibaca ResiPrintStyle); lebar layout
+// di-set 94mm/z supaya lebar TERCETAK selalu tetap 94mm. Men-skala SEMUA
+// elemen [data-resi-fit] di halaman — halaman cetak massal berisi banyak
+// label, masing-masing dapat skala sendiri.
 export function ResiFitScale() {
   useLayoutEffect(() => {
-    const el = document.getElementById("struk-print");
-    if (!el) return;
+    const els = Array.from(
+      document.querySelectorAll<HTMLElement>("[data-resi-fit]"),
+    );
+    if (els.length === 0) return;
 
-    const fit = () => {
+    const fitOne = (el: HTMLElement) => {
       const prevWidth = el.style.width;
       const prevMaxWidth = el.style.maxWidth;
       // PENTING (1): lepas max-width (class max-w-md) selama pengukuran —
       // lebar ukur bisa melebihi 448px; kalau ke-clamp, tinggi ketaksir
       // lebih besar dari kondisi cetak → zoom kekecilan → sisa ruang kosong.
       el.style.maxWidth = "none";
-      // PENTING (2): fit() juga jalan saat beforeprint, saat CSS print
+      // PENTING (2): fit juga jalan saat beforeprint, saat CSS print
       // SUDAH aktif. Di situ `width: var(--resi-w) !important` mengalahkan
       // inline width, dan zoom yang sedang terpasang ikut men-skala hasil
       // getBoundingClientRect → pengukuran makan hasil skalanya sendiri
@@ -42,7 +45,7 @@ export function ResiFitScale() {
         el.style.setProperty("--resi-w", `${px}px`);
       };
       // Cari zoom TERBESAR yang masih muat via binary search. Iterasi
-      // titik-tetap (z = tinggi/kertas berulang) tidak dipakai lagi: tinggi
+      // titik-tetap (z = tinggi/kertas berulang) tidak dipakai: tinggi
       // label melompat-lompat saat lebar berubah (nama produk pindah 1↔2
       // baris) sehingga iterasinya berosilasi dan bisa berhenti di zoom
       // kekecilan → label tercetak pendek menyisakan ruang kosong.
@@ -74,6 +77,7 @@ export function ResiFitScale() {
       el.style.setProperty("--resi-minh", `${Math.floor(PAPER_H / z)}px`);
     };
 
+    const fit = () => els.forEach(fitOne);
     fit();
     // Ukur ulang setelah font web selesai dimuat (tinggi bisa bergeser)
     document.fonts?.ready.then(fit);

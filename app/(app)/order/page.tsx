@@ -4,14 +4,15 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { isTransactionPaid } from "@/lib/midtrans";
 import { notifyOrder } from "@/lib/wa-notify";
-import { sweepExpiredOrders } from "@/app/actions/requests";
+import { printAllOrderResi, sweepExpiredOrders } from "@/app/actions/requests";
 import { OrderCard } from "@/components/OrderCard";
 import { OrderList } from "@/components/OrderList";
+import { SubmitButton } from "@/components/SubmitButton";
 import { OrderPaymentWatcher } from "@/components/OrderPaymentWatcher";
 import { OrderTabs } from "@/components/OrderTabs";
 import { RestockCheckout } from "@/components/RequestForm";
 import { deliveryPhotoSrcMap } from "@/lib/product-image";
-import { ShoppingBag } from "lucide-react";
+import { Printer, ShoppingBag } from "lucide-react";
 
 const rupiah = (n: number) =>
   new Intl.NumberFormat("id-ID", {
@@ -326,15 +327,43 @@ export default async function OrderPage({
     );
   }
 
+  // Orderan membeludak: admin cetak semua resi order yang belum dikirim
+  // (Disiapkan Gudang + Siap Dipickup) sekali jalan → /order/resi-massal
+  const printableCount =
+    user.role === "ADMIN"
+      ? await prisma.request.count({
+          where: { items: { some: {} }, status: { in: ["PENDING", "READY"] } },
+        })
+      : 0;
+
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold">Order</h1>
-        <p className="text-sm text-neutral-500">
-          {user.role === "SALES"
-            ? "Orderan restok dari toko yang kamu pegang"
-            : "Orderan restok dari semua toko"}
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">Order</h1>
+          <p className="text-sm text-neutral-500">
+            {user.role === "SALES"
+              ? "Orderan restok dari toko yang kamu pegang"
+              : "Orderan restok dari semua toko"}
+          </p>
+        </div>
+        {printableCount > 0 && (
+          <form
+            action={async () => {
+              "use server";
+              await printAllOrderResi();
+            }}
+          >
+            <SubmitButton
+              pendingText="Menyiapkan…"
+              overlayText="Menyiapkan semua resi…"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-neutral-900 px-4 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-60"
+            >
+              <Printer className="h-4 w-4" />
+              Cetak Semua Resi ({printableCount})
+            </SubmitButton>
+          </form>
+        )}
       </div>
 
       {/* Ringkasan — di HP kartu nilai (angka panjang) span penuh di bawah */}

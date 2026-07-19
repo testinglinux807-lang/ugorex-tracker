@@ -1274,35 +1274,70 @@ export async function printOrderResi(id: string) {
   }
 
   if (!req.resiNo) {
-    const rand = (chars: string, n: number) =>
-      Array.from(
-        { length: n },
-        () => chars[Math.floor(Math.random() * chars.length)],
-      ).join("");
-    const d = new Date();
-    const ymd =
-      String(d.getFullYear()).slice(2) +
-      String(d.getMonth() + 1).padStart(2, "0") +
-      String(d.getDate()).padStart(2, "0");
-    // Retry kecil: resiNo unique — kalau kebetulan tabrakan, buat ulang
-    for (let i = 0; i < 5; i++) {
-      try {
-        await prisma.request.update({
-          where: { id },
-          data: {
-            resiNo: `UGX${ymd}${rand("0123456789", 6)}`,
-            pickupCode: `${rand("ABCDEFGHJKLMNPQRSTUVWXYZ", 2)}-${rand("0123456789", 2)}`,
-          },
-        });
-        break;
-      } catch {
-        if (i === 4) return { error: "Gagal membuat nomor resi, coba lagi." };
-      }
+    if (!(await generateResiNo(id))) {
+      return { error: "Gagal membuat nomor resi, coba lagi." };
     }
     revalidatePath("/order");
   }
   // ?auto=1 → halaman label langsung membuka dialog print/Save-as-PDF
   redirect(`/order/${id}/resi?auto=1`);
+}
+
+// Buat nomor resi + kode penjemputan untuk satu order (sekali saja, retry
+// kecil karena resiNo unique). Dipakai cetak satuan & cetak massal.
+async function generateResiNo(id: string): Promise<boolean> {
+  const rand = (chars: string, n: number) =>
+    Array.from(
+      { length: n },
+      () => chars[Math.floor(Math.random() * chars.length)],
+    ).join("");
+  const d = new Date();
+  const ymd =
+    String(d.getFullYear()).slice(2) +
+    String(d.getMonth() + 1).padStart(2, "0") +
+    String(d.getDate()).padStart(2, "0");
+  for (let i = 0; i < 5; i++) {
+    try {
+      await prisma.request.update({
+        where: { id },
+        data: {
+          resiNo: `UGX${ymd}${rand("0123456789", 6)}`,
+          pickupCode: `${rand("ABCDEFGHJKLMNPQRSTUVWXYZ", 2)}-${rand("0123456789", 2)}`,
+        },
+      });
+      return true;
+    } catch {
+      // tabrakan resiNo unique — coba lagi
+    }
+  }
+  return false;
+}
+
+// Orderan membeludak: admin cetak resi SEMUA order yang belum dikirim
+// (Disiapkan Gudang + Siap Dipickup) sekali jalan — resi dibuatkan untuk
+// yang belum punya, lalu diarahkan ke halaman cetak massal (satu label
+// per lembar 100×150).
+export async function printAllOrderResi() {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (user.role !== "ADMIN") {
+    return { error: "Hanya admin/gudang yang bisa mencetak resi." };
+  }
+
+  const orders = await prisma.request.findMany({
+    where: { items: { some: {} }, status: { in: ["PENDING", "READY"] } },
+    select: { id: true, resiNo: true },
+  });
+  if (orders.length === 0) {
+    return { error: "Tidak ada order yang perlu dicetak resinya." };
+  }
+  for (const o of orders) {
+    if (!o.resiNo && !(await generateResiNo(o.id))) {
+      return { error: "Gagal membuat nomor resi, coba lagi." };
+    }
+  }
+  revalidatePath("/order");
+  redirect("/order/resi-massal?auto=1");
 }
 
 // Op pemindahan stok saat order restok diselesaikan: stok pusat berkurang,
