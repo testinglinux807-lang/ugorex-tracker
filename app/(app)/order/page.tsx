@@ -155,32 +155,23 @@ export default async function OrderPage({
   // ===== Tampilan OWNER: checkout + riwayat order toko =====
   if (isOwner) {
     const storeId = user.ownedStore!.id;
-    const [products, prospects, sold, grosirTiers] =
-      await Promise.all([
-        prisma.product.findMany({
-          select: {
-            id: true,
-            name: true,
-            code: true,
-            price: true,
-            centralStock: true,
-            // Tier kompatibilitas + kode mold (teks pendek) — dipakai badge
-            // & pencarian di picker restok
-            description: true,
-          },
-          orderBy: { name: "asc" },
-        }),
-        prisma.prospect.findMany({ where: { storeId } }),
-        prisma.sale.groupBy({
-          by: ["productId"],
-          where: { storeId },
-          _sum: { qty: true },
-        }),
-        prisma.grosirTier.findMany({
-          where: { active: true },
-          select: { minQty: true, percent: true },
-        }),
-      ]);
+    const [products, prospects, grosirTiers] = await Promise.all([
+      prisma.product.findMany({
+        select: {
+          id: true,
+          name: true,
+          code: true,
+          price: true,
+          centralStock: true,
+        },
+        orderBy: { name: "asc" },
+      }),
+      prisma.prospect.findMany({ where: { storeId } }),
+      prisma.grosirTier.findMany({
+        where: { active: true },
+        select: { minQty: true, percent: true },
+      }),
+    ]);
     // Order yang masih perlu dibayar online — dipantau watcher supaya status
     // ikut update begitu owner balik dari app pembayaran (mis. GoPay). Batasi
     // ke 5 terbaru (orders sudah createdAt desc) biar tak menembak Midtrans
@@ -199,24 +190,68 @@ export default async function OrderPage({
       .map((r) => r.id);
 
     const stockBy = new Map(prospects.map((p) => [p.productId, p.stock]));
-    const soldBy = new Map(sold.map((s) => [s.productId, s._sum.qty ?? 0]));
-    // Semua barang yang stok pusatnya tersedia bisa di-order owner —
-    // termasuk model yang belum pernah ada di toko ini (dulu dibatasi
-    // "pernah dikasih sales dulu", dilonggarkan 16 Jul 2026: owner bebas
-    // restok model apa pun selama gudang pusat punya).
-    const ownerProducts = products
-      .filter((p) => p.centralStock > 0 || (stockBy.get(p.id) ?? 0) > 0)
-      .map((p) => ({
-        id: p.id,
-        name: p.name,
-        code: p.code,
-        price: p.price,
-        remaining: Math.max(
-          0,
-          (stockBy.get(p.id) ?? 0) - (soldBy.get(p.id) ?? 0),
-        ),
-        central: p.centralStock,
-        search: p.description,
+    // Owner belanja per KODE mold, bukan per model HP: barang sekode = satu
+    // barang fisik (berbagi stok pusat & harga). Tiap kode dikelompokkan
+    // sekali, model HP-nya jadi catatan "cocok". Nama = "Antigores Clear
+    // IPHONE 16 PRO" → type "Antigores Clear" + model "IPHONE 16 PRO".
+    const splitName = (name: string) => {
+      const m = name.match(/^\s*(Antigores\s+\S+)\s+(.+)$/i);
+      return m
+        ? { type: m[1].trim(), model: m[2].trim() }
+        : { type: "", model: name.trim() };
+    };
+    type CodeGroup = {
+      code: string;
+      repId: string;
+      type: string;
+      models: string[];
+      price: number;
+      central: number;
+      storeStock: number;
+      bestStock: number; // stok toko terbanyak → jadi produk perwakilan
+    };
+    const codeMap = new Map<string, CodeGroup>();
+    for (const p of products) {
+      // Barang tanpa kode: tetap bisa di-order sebagai grup sendiri
+      const key = p.code ?? `__${p.id}`;
+      const { type, model } = splitName(p.name);
+      const raw = stockBy.get(p.id) ?? 0;
+      const g =
+        codeMap.get(key) ??
+        ({
+          code: p.code ?? "—",
+          repId: p.id,
+          type: type || p.name,
+          models: [],
+          price: p.price,
+          central: p.centralStock,
+          storeStock: 0,
+          bestStock: -1,
+        } satisfies CodeGroup);
+      g.models.push(model);
+      g.price = Math.max(g.price, p.price);
+      g.central = Math.max(g.central, p.centralStock); // dibagi sekode (mirror)
+      g.storeStock += raw;
+      // Perwakilan = produk yang stok tokonya paling banyak, supaya restok
+      // masuk ke bucket stok toko yang sudah dipakai owner (bukan bikin baru).
+      if (raw > g.bestStock) {
+        g.bestStock = raw;
+        g.repId = p.id;
+      }
+      codeMap.set(key, g);
+    }
+    // Owner bebas restok kode apa pun selama stok pusatnya ada (atau sudah
+    // punya stok di toko). Urut per kode biar stabil.
+    const restockCodes = [...codeMap.values()]
+      .filter((g) => g.central > 0 || g.storeStock > 0)
+      .sort((a, b) => a.code.localeCompare(b.code))
+      .map((g) => ({
+        code: g.code,
+        repId: g.repId,
+        type: g.type,
+        models: g.models,
+        price: g.price,
+        central: g.central,
       }));
 
     return (
@@ -233,14 +268,13 @@ export default async function OrderPage({
           defaultTab={focusIdx !== -1 ? "history" : "checkout"}
           historyCount={orderCount}
           checkout={
-            <RestockCheckout
-              products={ownerProducts}
-              grosirTiers={grosirTiers}
-            />
+            <RestockCheckout codes={restockCodes} grosirTiers={grosirTiers} />
           }
           history={
-            <div className="rounded-2xl border border-neutral-200 bg-white p-5">
-              <div className="mb-3 flex items-center gap-2">
+            // Tanpa panel pembungkus — kartu order langsung di halaman
+            // (hindari kotak-dalam-kotak yang bikin kartu makin sempit)
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
                 <ShoppingBag className="h-4 w-4 text-neutral-500" />
                 <h2 className="font-semibold">
                   Riwayat Order ({orderCount})

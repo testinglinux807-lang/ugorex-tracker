@@ -89,10 +89,10 @@ function OrderBadge({ n }: { n: number }) {
 
 export function BottomNav({
   role,
-  orderBadge = 0,
+  badges = {},
 }: {
   role: string;
-  orderBadge?: number;
+  badges?: Record<string, number>;
 }) {
   const pathname = usePathname();
   const items = useItems(role);
@@ -114,9 +114,9 @@ export function BottomNav({
           >
             <span className="relative">
               <Icon className="h-5 w-5" strokeWidth={2} />
-              {it.href === "/order" && (
+              {(badges[it.href] ?? 0) > 0 && (
                 <span className="absolute -right-2 -top-1">
-                  <OrderBadge n={orderBadge} />
+                  <OrderBadge n={badges[it.href]} />
                 </span>
               )}
             </span>
@@ -130,10 +130,10 @@ export function BottomNav({
 
 export function SideNav({
   role,
-  orderBadge = 0,
+  badges = {},
 }: {
   role: string;
-  orderBadge?: number;
+  badges?: Record<string, number>;
 }) {
   const pathname = usePathname();
   const items = useItems(role);
@@ -154,7 +154,7 @@ export function SideNav({
           >
             <Icon className="h-4 w-4" strokeWidth={2} />
             <span className="flex-1">{it.label}</span>
-            {it.href === "/order" && <OrderBadge n={orderBadge} />}
+            {(badges[it.href] ?? 0) > 0 && <OrderBadge n={badges[it.href]} />}
           </Link>
         );
       })}
@@ -196,22 +196,35 @@ function PushRow() {
 // Menggantikan bottom nav yang kepenuhan.
 export function MobileNav({
   role,
-  orderBadge = 0,
+  badges = {},
 }: {
   role: string;
-  orderBadge?: number;
+  badges?: Record<string, number>;
 }) {
   const pathname = usePathname();
   const items = useItems(role);
   const active = activeHref(pathname, items);
+  // `open` = drawer masih di DOM; `visible` = kelas animasi aktif. Buka:
+  // mount lalu next-frame nyalakan visible (slide masuk). Tutup: matikan
+  // visible (slide keluar) lalu unmount setelah animasi (200ms).
   const [open, setOpen] = useState(false);
+  const [visible, setVisible] = useState(false);
   const { status } = usePush();
+
+  const openDrawer = () => {
+    setOpen(true);
+    requestAnimationFrame(() => setVisible(true));
+  };
+  const closeDrawer = () => {
+    setVisible(false);
+    setTimeout(() => setOpen(false), 200);
+  };
 
   // Tutup dengan Escape + kunci scroll body saat drawer terbuka
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") closeDrawer();
     };
     document.addEventListener("keydown", onKey);
     document.body.style.overflow = "hidden";
@@ -226,7 +239,7 @@ export function MobileNav({
       {/* Trigger (mobile) */}
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={openDrawer}
         aria-label="Buka menu"
         className="flex min-w-0 items-center gap-2 sm:hidden"
       >
@@ -246,19 +259,25 @@ export function MobileNav({
         <span className="truncate font-semibold">Ugorex Tracker</span>
       </button>
 
-      {/* Drawer */}
+      {/* Drawer — backdrop fade + panel slide dari kiri (smooth buka/tutup) */}
       {open && (
         <div className="fixed inset-0 z-40 sm:hidden">
           <div
-            className="absolute inset-0 bg-black/40"
-            onClick={() => setOpen(false)}
+            className={`absolute inset-0 bg-black/40 transition-opacity duration-200 ${
+              visible ? "opacity-100" : "opacity-0"
+            }`}
+            onClick={closeDrawer}
           />
-          <nav className="absolute inset-y-0 left-0 flex w-64 max-w-[82%] flex-col bg-white shadow-xl">
+          <nav
+            className={`absolute inset-y-0 left-0 flex w-64 max-w-[82%] flex-col bg-white shadow-xl transition-transform duration-200 ease-out ${
+              visible ? "translate-x-0" : "-translate-x-full"
+            }`}
+          >
             <div className="flex items-center justify-between border-b border-neutral-200 p-4">
               <span className="font-semibold">Menu</span>
               <button
                 type="button"
-                onClick={() => setOpen(false)}
+                onClick={closeDrawer}
                 aria-label="Tutup menu"
                 className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100"
               >
@@ -273,7 +292,7 @@ export function MobileNav({
                   <Link
                     key={it.href}
                     href={it.href}
-                    onClick={() => setOpen(false)}
+                    onClick={closeDrawer}
                     className={`flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm ${on
                       ? "bg-neutral-900 text-white"
                       : "text-neutral-600 hover:bg-neutral-100"
@@ -281,7 +300,9 @@ export function MobileNav({
                   >
                     <Icon className="h-4 w-4 shrink-0" strokeWidth={2} />
                     <span className="flex-1">{it.label}</span>
-                    {it.href === "/order" && <OrderBadge n={orderBadge} />}
+                    {(badges[it.href] ?? 0) > 0 && (
+                      <OrderBadge n={badges[it.href]} />
+                    )}
                   </Link>
                 );
               })}

@@ -118,16 +118,16 @@ export function FinanceStatements({
   return (
     <section className="rounded-2xl border border-neutral-200 bg-white p-5">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-1.5">
+        <div className="-mx-1 flex gap-1 overflow-x-auto border-b border-neutral-200 px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {TABS.map((t) => (
             <button
               key={t.key}
               type="button"
               onClick={() => setTab(t.key)}
-              className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold sm:px-3 sm:text-sm ${
+              className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2 text-xs font-medium transition-colors sm:text-sm ${
                 tab === t.key
-                  ? "bg-neutral-900 text-white"
-                  : "border border-neutral-300 text-neutral-500 hover:bg-neutral-100"
+                  ? "border-neutral-900 text-neutral-900"
+                  : "border-transparent text-neutral-500 hover:text-neutral-800"
               }`}
             >
               {t.label}

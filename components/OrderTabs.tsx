@@ -19,13 +19,17 @@ export function OrderTabs({
   const [tab, setTab] = useState<"checkout" | "history">(defaultTab);
 
   const tabCls = (active: boolean) =>
-    `flex items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-semibold transition-colors ${
-      active ? "bg-neutral-900 text-white" : "text-neutral-500 hover:bg-neutral-100"
+    `-mb-px inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
+      active
+        ? "border-neutral-900 text-neutral-900"
+        : "border-transparent text-neutral-500 hover:text-neutral-800"
     }`;
 
   return (
     <div>
-      <div className="mb-4 grid grid-cols-2 gap-1 rounded-xl border border-neutral-200 bg-white p-1 lg:hidden">
+      {/* Dua tab (Buat Order / Riwayat) — gaya garis-bawah, sama seperti tab
+          lain. Satu panel aktif tampil penuh, tak lagi dua kolom di desktop. */}
+      <div className="-mx-1 mb-4 flex gap-1 overflow-x-auto border-b border-neutral-200 px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <button
           type="button"
           onClick={() => setTab("checkout")}
@@ -43,10 +47,8 @@ export function OrderTabs({
           Riwayat
           {historyCount > 0 && (
             <span
-              className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
-                tab === "history"
-                  ? "bg-brand text-neutral-900"
-                  : "bg-neutral-200 text-neutral-600"
+              className={`font-semibold ${
+                tab === "history" ? "text-neutral-900" : "text-neutral-400"
               }`}
             >
               {historyCount}
@@ -55,14 +57,7 @@ export function OrderTabs({
         </button>
       </div>
 
-      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
-        <div className={`${tab === "checkout" ? "" : "hidden"} lg:block`}>
-          {checkout}
-        </div>
-        <div className={`${tab === "history" ? "" : "hidden"} lg:block`}>
-          {history}
-        </div>
-      </div>
+      {tab === "checkout" ? checkout : history}
     </div>
   );
 }

@@ -51,7 +51,10 @@ export function OrderList({
           className="w-full rounded-xl border border-neutral-300 bg-white py-2 pl-9 pr-3 text-sm focus:border-neutral-900 focus:outline-none"
         />
       </div>
-      <div className="flex flex-wrap gap-1.5">
+      {/* Tab garis-bawah ala marketplace: satu baris, bisa digeser
+          horizontal di mobile (overflow-x-auto, scrollbar disembunyikan).
+          Tab aktif ditandai garis bawah hitam, bukan tombol pill. */}
+      <div className="-mx-1 flex gap-1 overflow-x-auto border-b border-neutral-200 px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {TABS.map((t) => {
           const active = tab === t.key;
           const n = countOf(t.key);
@@ -60,18 +63,16 @@ export function OrderList({
               key={t.key}
               type="button"
               onClick={() => setTab(t.key)}
-              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+              className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2 text-xs font-medium transition-colors ${
                 active
-                  ? "border-neutral-900 bg-neutral-900 text-white"
-                  : "border-neutral-300 bg-white text-neutral-600 hover:bg-neutral-100"
+                  ? "border-neutral-900 text-neutral-900"
+                  : "border-transparent text-neutral-500 hover:text-neutral-800"
               }`}
             >
               {t.label}
               <span
-                className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
-                  active
-                    ? "bg-brand text-neutral-900"
-                    : "bg-neutral-100 text-neutral-500"
+                className={`ml-1 font-semibold ${
+                  active ? "text-neutral-900" : "text-neutral-400"
                 }`}
               >
                 {n}
@@ -85,7 +86,7 @@ export function OrderList({
       <Paginated
         key={`${tab}-${term}`}
         perPage={5}
-        className="space-y-3"
+        className="space-y-4"
         empty={
           <div className="rounded-2xl border border-neutral-200 bg-white p-8 text-center text-sm text-neutral-500">
             {term

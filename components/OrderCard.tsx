@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import Link from "next/link";
 import { waLink } from "@/lib/wa";
 import {
   acceptOrder,
@@ -178,8 +179,11 @@ export function OrderCard({
       )}`;
 
   return (
+    // Satu latar putih untuk seluruh kartu (tidak belang-belang abu/putih);
+    // tiap bagian dipisah garis border-neutral-200 yang jelas. shadow-sm +
+    // gap antar kartu (OrderList space-y) = pembatas antar paket kelihatan.
     <div
-      className={`overflow-hidden rounded-xl border bg-white ${
+      className={`overflow-hidden rounded-xl border bg-white shadow-sm ${
         highlighted
           ? "border-brand-dark ring-2 ring-brand"
           : "border-neutral-200"
@@ -189,7 +193,7 @@ export function OrderCard({
           hari & jam dibuatnya order. Badge bayar & status SEBARIS: di HP
           turun jadi baris sendiri di bawah judul (nama toko sempit),
           di desktop nempel kanan sejajar judul. */}
-      <div className="border-b border-neutral-100 bg-neutral-50 px-4 py-2.5">
+      <div className="border-b border-neutral-200 px-4 py-2.5">
         <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between sm:gap-2">
           <div className="min-w-0">
             <p className="flex items-center gap-1.5 truncate text-sm font-semibold">
@@ -243,16 +247,17 @@ export function OrderCard({
       {/* Body — urutan dibuat gampang dibaca: (1) kondisi order sekarang,
           (2) info pengiriman, (3) daftar barang, (4) catatan owner */}
       <div className="space-y-2.5 px-4 py-3">
-        {/* Status alur berjalan: disiapkan gudang → siap dipickup → dikirim */}
+        {/* Status alur berjalan — baris polos (bukan kotak abu) biar latar
+            kartu tetap satu warna. Ikon lime kecil sbg penanda. */}
         {r.status === "PENDING" && (
-          <div className="flex items-center gap-2 rounded-lg bg-neutral-50 px-2.5 py-2 text-xs font-medium text-neutral-600">
-            <Package className="h-4 w-4 shrink-0" />
+          <div className="flex items-center gap-2 text-xs font-medium text-neutral-600">
+            <Package className="h-4 w-4 shrink-0 text-brand-dark" />
             Pesanan sedang disiapkan gudang
           </div>
         )}
         {r.status === "READY" && (
-          <div className="flex items-center gap-2 rounded-lg bg-neutral-50 px-2.5 py-2 text-xs font-medium text-neutral-600">
-            <PackageCheck className="h-4 w-4 shrink-0" />
+          <div className="flex items-center gap-2 text-xs font-medium text-neutral-600">
+            <PackageCheck className="h-4 w-4 shrink-0 text-brand-dark" />
             <span>
               Barang siap — menunggu kurir pickup di gudang
               {r.readyBy && (
@@ -267,8 +272,8 @@ export function OrderCard({
           </div>
         )}
         {r.status === "SHIPPED" && (
-          <div className="flex items-center gap-2 rounded-lg bg-neutral-50 px-2.5 py-2 text-xs font-medium text-neutral-600">
-            <Truck className="h-4 w-4 shrink-0" />
+          <div className="flex items-center gap-2 text-xs font-medium text-neutral-600">
+            <Truck className="h-4 w-4 shrink-0 text-brand-dark" />
             <span>
               Kurir sedang mengirim ke lokasi tujuan
               {r.pickedUpBy && (
@@ -285,7 +290,7 @@ export function OrderCard({
 
         {/* Pengembalian pesanan oleh toko (semua / sebagian) */}
         {hasReturn && (
-          <div className="space-y-0.5 rounded-lg border border-red-200 bg-red-50 px-2.5 py-2 text-xs">
+          <div className="space-y-0.5 text-xs">
             <p className="flex items-center gap-1 font-semibold text-red-700">
               <PackageX className="h-3.5 w-3.5" />
               {returned
@@ -348,7 +353,7 @@ export function OrderCard({
 
         {/* Order dibatalkan: siapa, kapan, kenapa + peringatan refund */}
         {cancelled && (
-          <div className="space-y-0.5 rounded-lg border border-red-200 bg-red-50 px-2.5 py-2 text-xs">
+          <div className="space-y-0.5 text-xs">
             <p className="flex items-center gap-1 font-semibold text-red-700">
               <XCircle className="h-3.5 w-3.5" />
               Order dibatalkan
@@ -396,7 +401,7 @@ export function OrderCard({
 
         {/* Bukti pengiriman (report sales saat barang sampai) */}
         {r.status === "COMPLETED" && (r.deliveryPhoto || r.deliveredAt) && (
-          <div className="flex items-start gap-2.5 rounded-lg border border-neutral-200 bg-neutral-50 p-2.5">
+          <div className="flex items-start gap-2.5">
             {r.deliveryPhoto ? (
               <a href={r.deliveryPhoto} target="_blank" rel="noopener noreferrer">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -434,11 +439,11 @@ export function OrderCard({
           </div>
         )}
 
-        {/* Info pengiriman (admin/sales): alamat tujuan + resi & kode
-            jemput digabung satu kotak biar tidak berserakan */}
+        {/* Info pengiriman (admin/sales) — baris polos, bukan kotak, biar
+            kartu tidak jadi kotak-dalam-kotak */}
         {canRespond && (
-          <div className="rounded-lg border border-dashed border-neutral-300 px-2.5 py-2 text-xs">
-            <div className="flex items-center justify-between gap-2">
+          <>
+            <div className="flex items-center justify-between gap-2 text-xs">
               <p className="flex min-w-0 items-center gap-1.5 text-neutral-600">
                 <MapPin className="h-3.5 w-3.5 shrink-0 text-neutral-400" />
                 <span className="truncate">
@@ -458,14 +463,14 @@ export function OrderCard({
             {/* Kode penjemputan ditunjukkan sales saat ambil barang di
                 gudang (nomor resinya sendiri sudah tampil di header) */}
             {r.resiNo && (
-              <div className="mt-1.5 flex items-center justify-between gap-2 border-t border-dashed border-neutral-200 pt-1.5">
+              <div className="flex items-center justify-between gap-2 text-xs">
                 <span className="text-neutral-500">Kode jemput gudang</span>
                 <span className="shrink-0 font-semibold">
                   {r.pickupCode ?? "—"}
                 </span>
               </div>
             )}
-          </div>
+          </>
         )}
 
         {/* Daftar barang: 2 pertama tampil, sisanya dilipat */}
@@ -496,22 +501,32 @@ export function OrderCard({
           </details>
         )}
         {note !== "" && (
-          <p className="rounded-lg bg-neutral-50 px-2.5 py-1.5 text-xs text-neutral-500">
-            Catatan: {note}
+          <p className="text-xs text-neutral-500">
+            <span className="font-medium text-neutral-600">Catatan:</span> {note}
           </p>
         )}
       </div>
 
       {/* Footer: orderan ke-berapa dari toko ini + jumlah SKU/pcs + total.
           (Tanggal sudah pindah ke header.) */}
-      <div className="border-t border-neutral-100 px-4 py-2.5">
+      <div className="border-t border-neutral-200 px-4 py-2.5">
         {/* Boleh wrap di HP — jangan truncate, info "oleh siapa" kepotong */}
-        <p className="text-xs text-neutral-400">
-          {orderSeq ? `Order ke-${orderSeq} dari toko ini · ` : ""}
-          {r.items.length} SKU ·{" "}
-          {r.items.reduce((a, it) => a + it.qty, 0)} pcs
-          {r.createdBy?.name ? ` · oleh ${r.createdBy.name}` : ""}
-        </p>
+        <div className="flex items-start justify-between gap-2">
+          <p className="text-xs text-neutral-400">
+            {orderSeq ? `Order ke-${orderSeq} dari toko ini · ` : ""}
+            {r.items.length} SKU ·{" "}
+            {r.items.reduce((a, it) => a + it.qty, 0)} pcs
+            {r.createdBy?.name ? ` · oleh ${r.createdBy.name}` : ""}
+          </p>
+          {/* Lacak paket — semua role bisa buka timeline statusnya */}
+          <Link
+            href={`/order/${r.id}/lacak`}
+            className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-neutral-700 hover:underline"
+          >
+            <Truck className="h-3.5 w-3.5" />
+            Lacak paket
+          </Link>
+        </div>
         <div className="mt-1 flex items-baseline justify-between gap-2">
           <span className="text-xs text-neutral-500">Total Pesanan</span>
           <span className="flex items-baseline gap-2">
@@ -545,7 +560,7 @@ export function OrderCard({
           order belum lunas, chat sales, batalkan order belum diproses */}
       {!canRespond &&
         (waSales || ownerCanPay || ownerCanCancel || ownerCanReceive) && (
-        <div className="grid grid-cols-2 gap-2 border-t border-neutral-100 bg-neutral-50 px-4 py-2.5 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 border-t border-neutral-200 px-4 py-2.5 sm:grid-cols-4">
           {/* Serah terima: konfirmasi terima (stok masuk toko) ATAU tolak
               semua/sebagian barang (alur retur) */}
           {ownerCanReceive && (
@@ -601,7 +616,7 @@ export function OrderCard({
       {/* Aksi — grid 2 kolom di HP, 4 kolom di desktop biar tombol tidak
           melar selebar kartu */}
       {canRespond && (
-        <div className="grid grid-cols-2 gap-2 border-t border-neutral-100 bg-neutral-50 px-4 py-2.5 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 border-t border-neutral-200 px-4 py-2.5 sm:grid-cols-4">
           {wa && (
             <a
               href={wa}

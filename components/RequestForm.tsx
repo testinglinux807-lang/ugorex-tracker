@@ -5,7 +5,7 @@ import Script from "next/script";
 import { createRequest, createRestockRequest } from "@/app/actions/requests";
 import { X } from "lucide-react";
 import { PendingLabel } from "@/components/SubmitButton";
-import { ProductPicker } from "@/components/ProductPicker";
+import { CodePicker, type RestockCode } from "@/components/CodePicker";
 import { VoucherInput, type AppliedVoucher } from "@/components/VoucherInput";
 import {
   voucherDiscount,
@@ -59,26 +59,17 @@ const rupiah = (n: number) =>
     maximumFractionDigits: 0,
   }).format(n);
 
-type RestockProduct = {
-  id: string;
-  name: string;
-  code: string | null;
-  price: number; // harga satuan
-  remaining: number; // sisa di toko owner
-  central: number; // stok pusat yang bisa di-order
-  search?: string | null; // daftar model HP kompatibel (utk pencarian)
-};
-
 // Tier diskon grosir aktif (aturan admin) — dipakai untuk preview di
 // keranjang; perhitungan final tetap di server.
 export type GrosirTierInfo = { minQty: number; percent: number };
 
-// Checkout restok: pilih barang + jumlah langsung dari stok pusat
+// Checkout restok: owner belanja per KODE mold (bukan per model HP). Tiap
+// kode = satu barang fisik; catatan "Cocok" menampilkan tipe HP yang pas.
 function RestockForm({
-  products,
+  codes,
   grosirTiers,
 }: {
-  products: RestockProduct[];
+  codes: RestockCode[];
   grosirTiers: GrosirTierInfo[];
 }) {
   const [state, formAction, pending] = useActionState(
@@ -88,8 +79,9 @@ function RestockForm({
   );
   const [, startTransition] = useTransition();
 
+  // qty di-key per KODE mold; lookup detail lewat byCode
+  const byCode = new Map(codes.map((c) => [c.code, c]));
   const [qtys, setQtys] = useState<Record<string, number>>({});
-  const [pickerId, setPickerId] = useState("");
   const [showReceipt, setShowReceipt] = useState(false);
   const [voucher, setVoucher] = useState<AppliedVoucher | null>(null);
   const [method, setMethod] = useState<PaymentMethod>("CASH");
@@ -147,9 +139,9 @@ function RestockForm({
   }
 
   const chosen = Object.entries(qtys).filter(([, n]) => n > 0);
-  const cartSubtotal = chosen.reduce((a, [id, n]) => {
-    const p = products.find((x) => x.id === id);
-    return a + (p ? p.price * n : 0);
+  const cartSubtotal = chosen.reduce((a, [code, n]) => {
+    const c = byCode.get(code);
+    return a + (c ? c.price * n : 0);
   }, 0);
   // Diskon grosir otomatis dari total qty; voucher dihitung dari sisanya —
   // urutan yang sama dengan perhitungan final di server.
@@ -163,69 +155,55 @@ function RestockForm({
   const fee = method === "CASH" ? 0 : paymentFee(method, cartTotal);
   const grandTotal = cartTotal + fee;
 
-  // Jumlah order dibatasi stok pusat
-  function setQty(id: string, n: number) {
-    const max = products.find((p) => p.id === id)?.central ?? 0;
-    setQtys((s) => ({ ...s, [id]: Math.min(max, Math.max(0, n)) }));
+  // Jumlah order dibatasi stok pusat (dibagi sekode)
+  function setQty(code: string, n: number) {
+    const max = byCode.get(code)?.central ?? 0;
+    setQtys((s) => ({ ...s, [code]: Math.min(max, Math.max(0, n)) }));
   }
 
-  // Pilih barang dari picker → masuk keranjang (atau qty +1 kalau sudah
-  // ada), picker direset supaya siap pilih barang berikutnya — pola yang
-  // sama dengan form Catat Penjualan (POS).
-  function addProduct(id: string) {
-    if (!id) return;
-    setPickerId("");
-    const p = products.find((x) => x.id === id);
-    if (!p || p.central <= 0) return; // stok pusat habis
-    setQty(id, (qtys[id] ?? 0) + 1);
+  // Pilih kode dari picker → masuk keranjang (atau qty +1 kalau sudah ada)
+  function addCode(code: string) {
+    const c = byCode.get(code);
+    if (!c || c.central <= 0) return; // stok pusat habis
+    setQty(code, (qtys[code] ?? 0) + 1);
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
-      {/* Pilih barang ala POS: dropdown dengan pencarian nama/kode — pola
-          yang sama dengan form Catat Penjualan */}
+      {/* Pilih KODE mold (bukan per model HP) — tiap kode kasih catatan
+          tipe HP yang kompatibel */}
       <div>
         <label className="mb-1 block text-sm font-medium text-neutral-700">
-          Tambah Barang
+          Tambah Barang (per kode)
         </label>
-        <ProductPicker
-          products={products.map((p) => ({
-            id: p.id,
-            name: p.name,
-            code: p.code,
-            price: p.price,
-            remaining: p.central, // di konteks restok: sisa = stok pusat
-            search: p.search,
-          }))}
-          value={pickerId}
-          onChange={addProduct}
-        />
+        <CodePicker codes={codes} onPick={addCode} />
         <p className="mt-1 text-xs text-neutral-400">
-          Cari pakai nama barang, kode, atau tipe HP (mis. &quot;Redmi Note
-          7&quot;) — pilih lagi untuk menambah jumlah.
+          Belanja per kode barang — cari pakai kode atau tipe HP mana pun yang
+          cocok (mis. &quot;iPhone 17&quot;). Pilih lagi untuk menambah jumlah.
         </p>
       </div>
 
       {/* Keranjang gaya nota: baris teks tipis, hemat tempat */}
       {chosen.length > 0 && (
         <div className="border-y border-dashed border-neutral-300">
-          {chosen.map(([id, n]) => {
-            const p = products.find((x) => x.id === id);
-            if (!p) return null;
-            const low = p.central <= 10;
+          {chosen.map(([code, n]) => {
+            const c = byCode.get(code);
+            if (!c) return null;
+            const low = c.central <= 10;
             return (
               <div
-                key={id}
+                key={code}
                 className="flex items-center gap-1.5 border-b border-dashed border-neutral-200 py-1.5 text-sm last:border-b-0"
               >
                 <div className="min-w-0 flex-1">
                   <p className="break-words leading-snug">
-                    {p.code && (
-                      <span className="mr-1.5 rounded bg-neutral-900 px-1 py-0.5 text-[10px] font-bold text-white">
-                        {p.code}
-                      </span>
-                    )}
-                    {p.name}
+                    <span className="mr-1.5 rounded bg-neutral-900 px-1 py-0.5 text-[10px] font-bold text-white">
+                      {c.code}
+                    </span>
+                    {c.type}
+                  </p>
+                  <p className="break-words text-[10px] leading-snug text-neutral-500">
+                    Cocok {c.models.length} tipe: {c.models.join(", ")}
                   </p>
                   <p
                     className={`text-[10px] ${
@@ -234,32 +212,32 @@ function RestockForm({
                         : "text-neutral-400"
                     }`}
                   >
-                    @{rupiah(p.price)} · stok pusat {p.central}
+                    @{rupiah(c.price)} · stok pusat {c.central}
                   </p>
                 </div>
                 <input
                   type="number"
                   min={1}
-                  max={p.central}
+                  max={c.central}
                   value={n}
                   onChange={(e) =>
-                    setQty(id, parseInt(e.target.value, 10) || 1)
+                    setQty(code, parseInt(e.target.value, 10) || 1)
                   }
-                  aria-label={`Jumlah ${p.name}`}
+                  aria-label={`Jumlah ${c.code}`}
                   className="w-10 shrink-0 border-0 border-b border-neutral-300 bg-transparent p-0 text-center text-sm focus:border-neutral-900 focus:outline-none focus:ring-0"
                 />
                 <span className="w-16 shrink-0 text-right text-sm font-semibold">
-                  {(n * p.price).toLocaleString("id-ID")}
+                  {(n * c.price).toLocaleString("id-ID")}
                 </span>
                 <button
                   type="button"
-                  onClick={() => setQty(id, 0)}
+                  onClick={() => setQty(code, 0)}
                   className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
-                  aria-label={`Hapus ${p.name}`}
+                  aria-label={`Hapus ${c.code}`}
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>
-                <input type="hidden" name={`qty__${id}`} value={n} />
+                <input type="hidden" name={`qty__${c.repId}`} value={n} />
               </div>
             );
           })}
@@ -360,26 +338,27 @@ function RestockForm({
             <div className="my-3 border-t border-dashed border-neutral-300" />
 
             <div className="max-h-48 space-y-1.5 overflow-y-auto text-sm">
-              {chosen.map(([id, n]) => {
-                const p = products.find((x) => x.id === id);
-                if (!p) return null;
+              {chosen.map(([code, n]) => {
+                const c = byCode.get(code);
+                if (!c) return null;
                 return (
-                  <div key={id} className="flex items-center gap-2">
+                  <div key={code} className="flex items-center gap-2">
                     <div className="min-w-0 flex-1">
                       <p className="break-words font-medium leading-snug">
-                        {p.code && (
-                          <span className="mr-1.5 rounded bg-neutral-900 px-1 py-0.5 text-[10px] font-bold text-white">
-                            {p.code}
-                          </span>
-                        )}
-                        {p.name}
+                        <span className="mr-1.5 rounded bg-neutral-900 px-1 py-0.5 text-[10px] font-bold text-white">
+                          {c.code}
+                        </span>
+                        {c.type}
+                      </p>
+                      <p className="break-words text-[11px] leading-snug text-neutral-400">
+                        Cocok {c.models.length} tipe: {c.models.join(", ")}
                       </p>
                       <div className="flex justify-between text-neutral-500">
                         <span>
-                          {n} × {rupiah(p.price)}
+                          {n} × {rupiah(c.price)}
                         </span>
                         <span className="text-neutral-800">
-                          {rupiah(p.price * n)}
+                          {rupiah(c.price * n)}
                         </span>
                       </div>
                     </div>
@@ -569,10 +548,10 @@ function FreeForm({ stores }: { stores?: RequestStoreOption[] }) {
 
 // Kartu checkout restok — dipakai di halaman Order owner
 export function RestockCheckout({
-  products,
+  codes,
   grosirTiers = [],
 }: {
-  products: RestockProduct[];
+  codes: RestockCode[];
   grosirTiers?: GrosirTierInfo[];
 }) {
   return (
@@ -591,10 +570,10 @@ export function RestockCheckout({
       )}
       <h2 className="font-semibold">Order Restok</h2>
       <p className="text-xs text-neutral-400">
-        Pilih barang & jumlah dari stok pusat yang tersedia — langsung checkout
-        tanpa tunggu sales cek stok.
+        Belanja per kode barang dari stok pusat — tiap kode ada catatan tipe HP
+        yang cocok. Langsung checkout tanpa tunggu sales cek stok.
       </p>
-      <RestockForm products={products} grosirTiers={grosirTiers} />
+      <RestockForm codes={codes} grosirTiers={grosirTiers} />
     </div>
   );
 }

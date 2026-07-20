@@ -17,7 +17,12 @@ import {
   deleteCommissionPayout,
 } from "@/app/actions/users";
 import { taskGrade, gradeSummary } from "@/lib/task-grade";
-import { salesGrade, salesLevel, gradePartsSummary } from "@/lib/sales-grade";
+import { computeLevel } from "@/lib/sales-kpi-grade";
+import {
+  computeSalesKpiValues,
+  activeDaysBySalesFrom,
+} from "@/lib/sales-kpi-values";
+import { getLevelTargets } from "@/lib/kpi-config";
 import { salesKpi } from "@/lib/sales-kpi";
 import { wibMonthStart } from "@/lib/date";
 import { parsePeriode, periodeStart, PERIODE_LABEL } from "@/lib/periode";
@@ -134,6 +139,7 @@ export default async function SalesDetailPage({
       select: {
         storeId: true,
         createdAt: true,
+        total: true,
         items: { select: { qty: true } },
       },
     }),
@@ -252,29 +258,31 @@ export default async function SalesDetailPage({
   const paidOutTotal = payouts.reduce((s, p) => s + p.amount, 0);
   const feeOutstanding = feeAllTime - paidOutTotal;
 
-  // Grade huruf leveling S+ … E (lib/sales-grade.ts) — dari data semua
-  // waktu, tidak ikut filter periode
-  const allTimeByStore = new Map<string, number>();
-  for (const t of saleTotals) allTimeByStore.set(t.storeId, t._sum.total ?? 0);
-  const allTimeBySales = new Map<string, number>();
-  for (const s of allStores) {
-    if (!s.salesId) continue;
-    allTimeBySales.set(
-      s.salesId,
-      (allTimeBySales.get(s.salesId) ?? 0) + (allTimeByStore.get(s.id) ?? 0),
-    );
-  }
-  const letter = salesGrade({
-    revenue: allTimeBySales.get(id) ?? 0,
-    maxRevenue: Math.max(0, ...allTimeBySales.values()),
-    konter: konter.length,
-    loyal,
-    terbengkalai,
-    stars: grade.stars,
-    rating: ratingAvg,
+  // ===== Level MILESTONE — rumus KPI dari SATU sumber, sama dgn beranda,
+  // leaderboard, & /tugas (lib/sales-kpi-values.ts) =====
+  const levelTargets = await getLevelTargets();
+  const kpiLogRows = await prisma.stageLog.findMany({
+    where: { salesId: id, createdAt: { gte: monthStart } },
+    select: { salesId: true, createdAt: true },
   });
-  // Level 1-5 — dari grade huruf; level 5 kalau diangkat jadi Sales Captain
-  const lvl = salesLevel(letter.grade, sales.captainArea);
+  const activeDays = activeDaysBySalesFrom(kpiLogRows).get(id) ?? 0;
+  const kpiValues = computeSalesKpiValues({
+    stores,
+    ordersMonth: kpiOrders.filter((o) => o.createdAt >= monthStart),
+    prospects: stores.flatMap((st) =>
+      st.prospects.map((p) => ({ storeId: st.id, stage: p.stage })),
+    ),
+    activeDays,
+    monthStart,
+  });
+  const result = computeLevel(kpiValues, levelTargets, sales.captainArea);
+  // Alias supaya JSX (letter/lvl) tetap jalan dengan model baru
+  const letter = {
+    grade: result.grade as "S+" | "S" | "A" | "B" | "C" | "D" | "E",
+    score: result.progress,
+    parts: result.milestones,
+  };
+  const lvl = { level: result.level, name: result.levelName };
 
   return (
     <div className="space-y-6">
@@ -317,7 +325,9 @@ export default async function SalesDetailPage({
             {letter.grade && (
               <p className="mb-1.5 flex items-center gap-2 sm:justify-end">
                 <span className="text-xs text-neutral-400">
-                  Skor {letter.score}/100
+                  {result.nextLevel
+                    ? `${letter.score}% menuju naik`
+                    : "Level puncak"}
                 </span>
                 <GradeBadge grade={letter.grade} size="lg" />
               </p>
@@ -347,7 +357,8 @@ export default async function SalesDetailPage({
             </p>
             {letter.parts.length > 0 && (
               <p className="mt-0.5 text-xs text-neutral-400">
-                {gradePartsSummary(letter.parts)}
+                {letter.parts.filter((p) => p.done).length}/
+                {letter.parts.length} syarat naik level beres
               </p>
             )}
           </div>

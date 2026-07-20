@@ -5,7 +5,11 @@ import { STAGES, type Stage } from "@/lib/constants";
 import { SalesGrid } from "@/components/SalesGrid";
 import { PeriodeFilter } from "@/components/PeriodeFilter";
 import { taskGrade } from "@/lib/task-grade";
-import { salesGrade, salesLevel } from "@/lib/sales-grade";
+import { computeLevel } from "@/lib/sales-kpi-grade";
+import {
+  computeSalesKpiValues,
+  activeDaysBySalesFrom,
+} from "@/lib/sales-kpi-values";
 import { salesKpi } from "@/lib/sales-kpi";
 import { wibMonthStart } from "@/lib/date";
 import { parsePeriode, periodeStart, PERIODE_LABEL } from "@/lib/periode";
@@ -14,6 +18,8 @@ import {
   SalesInviteManager,
   type SalesInviteItem,
 } from "@/components/SalesInviteManager";
+import { KpiTargetForm } from "@/components/KpiTargetForm";
+import { getLevelTargets } from "@/lib/kpi-config";
 import { UserPlus, Users } from "lucide-react";
 
 // Konter dianggap "terbengkalai" kalau > 30 hari tak ada aktivitas funnel.
@@ -75,6 +81,7 @@ export default async function SalesPage({
       select: {
         storeId: true,
         createdAt: true,
+        total: true,
         items: { select: { qty: true } },
       },
     }),
@@ -107,6 +114,7 @@ export default async function SalesPage({
     orderBy: { createdAt: "desc" },
     take: 10,
   });
+  const kpiTargets = await getLevelTargets();
   const appUrl = process.env.APP_URL ?? "http://localhost:3000";
   const now = new Date();
   const invites: SalesInviteItem[] = inviteRows.map((inv) => ({
@@ -188,6 +196,14 @@ export default async function SalesPage({
     restokRows.map((r) => [r.storeId, r._sum.total ?? 0]),
   );
 
+  // ===== Bahan level MILESTONE per sales — rumus KPI dari SATU sumber
+  // (lib/sales-kpi-values.ts), sama persis dgn beranda & detail sales. =====
+  const kpiLogRows = await prisma.stageLog.findMany({
+    where: { createdAt: { gte: monthStart } },
+    select: { salesId: true, createdAt: true },
+  });
+  const activeDaysMap = activeDaysBySalesFrom(kpiLogRows);
+
   const rows = salesUsers
     .map((u) => {
       const myStores = stores.filter((s) => s.salesId === u.id);
@@ -210,25 +226,20 @@ export default async function SalesPage({
       const stars = taskGrade(
         tasks.filter((t) => t.assignedToId === u.id),
       ).stars;
-      // Grade huruf leveling S+ … E (lib/sales-grade.ts) — selalu dari
-      // data semua waktu, tidak ikut filter periode.
-      const g = salesGrade({
-        revenue: allTimeBySales.get(u.id) ?? 0,
-        maxRevenue,
-        konter: myStores.length,
-        loyal,
-        terbengkalai,
-        stars,
-        rating: ratingBySales.get(u.id)?.avg ?? null,
-      });
-      // Level 1-5 (lib/sales-grade.ts) — dari grade huruf; level 5 kalau
-      // diangkat admin jadi Sales Captain sebuah wilayah
-      const lvl = salesLevel(g.grade, u.captainArea);
-      // 4 KPI operasional bulan ini
+      // 4 KPI operasional bulan ini (display Seeding/Konversi/Reorder/Harga)
       const kpi = salesKpi(
         { stores: myStores, orders: kpiOrderRows, sales: kpiSales },
         { from: monthStart, to: null },
       );
+      // Nilai KPI level dari SATU sumber (lib/sales-kpi-values.ts)
+      const kpiValues = computeSalesKpiValues({
+        stores: myStores,
+        ordersMonth: kpiOrders,
+        prospects,
+        activeDays: activeDaysMap.get(u.id) ?? 0,
+        monthStart,
+      });
+      const result = computeLevel(kpiValues, kpiTargets, u.captainArea);
       return {
         id: u.id,
         name: u.name,
@@ -240,10 +251,10 @@ export default async function SalesPage({
         taskDone: ts.done,
         taskTotal: ts.total,
         stars,
-        grade: g.grade,
-        score: g.score,
-        level: lvl.level,
-        levelName: lvl.name,
+        grade: result.grade as "S+" | "S" | "A" | "B" | "C" | "D" | "E",
+        score: result.progress,
+        level: result.level,
+        levelName: result.levelName,
         captainArea: u.captainArea,
         kpi,
         rating: ratingBySales.get(u.id) ?? null,
@@ -270,6 +281,10 @@ export default async function SalesPage({
           · klik kartu untuk detail
         </p>
       </div>
+
+      {/* Target KPI bulanan — jadi patokan grade & level tiap sales di
+          beranda mereka (fokus utama halaman sales) */}
+      <KpiTargetForm targets={kpiTargets} />
 
       <PeriodeFilter current={periode} basePath="/sales" />
 

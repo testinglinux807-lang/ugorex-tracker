@@ -20,10 +20,10 @@ export default async function StokPage() {
 
   const storeId = user.ownedStore.id;
   // Terjual per barang dihitung di database (groupBy), bukan menarik semua
-  // baris transaksi; description product juga tak dipakai di halaman ini.
+  // baris transaksi.
   const [products, sold, prospects] = await Promise.all([
     prisma.product.findMany({
-      select: { id: true, name: true, price: true },
+      select: { id: true, name: true, code: true, price: true },
       orderBy: { name: "asc" },
     }),
     prisma.sale.groupBy({
@@ -34,7 +34,6 @@ export default async function StokPage() {
     prisma.prospect.findMany({ where: { storeId } }),
   ]);
 
-  // Sisa stok per barang = stok dikasih sales - total terjual
   const stockByProduct = new Map<string, number>();
   const priceByProduct = new Map<string, number>();
   for (const p of prospects) {
@@ -45,29 +44,67 @@ export default async function StokPage() {
   for (const s of sold) {
     if (s.productId) soldByProduct.set(s.productId, s._sum.qty ?? 0);
   }
-  const productsWithStock = products.map((p) => ({
-    id: p.id,
-    name: p.name,
-    // Harga jual: pakai harga owner kalau sudah disetel, kalau belum harga
-    // katalog. isCustomPrice menandai apakah owner sudah menetapkannya sendiri.
-    price: priceByProduct.get(p.id) ?? p.price,
-    isCustomPrice: priceByProduct.has(p.id),
-    remaining: Math.max(
+
+  // Stok ditampilkan per KODE mold (barang sekode = barang fisik yang sama).
+  // Nama "Antigores Clear IPHONE 16 PRO" → type "Antigores Clear" + model
+  // "IPHONE 16 PRO"; model jadi daftar tipe HP yang cocok untuk kode itu.
+  const splitName = (name: string) => {
+    const m = name.match(/^\s*(Antigores\s+\S+)\s+(.+)$/i);
+    return m
+      ? { type: m[1].trim(), model: m[2].trim() }
+      : { type: "", model: name.trim() };
+  };
+  type StockCodeAgg = {
+    code: string;
+    type: string;
+    models: string[];
+    remaining: number;
+    price: number;
+    isCustomPrice: boolean;
+  };
+  const codeMap = new Map<string, StockCodeAgg>();
+  for (const p of products) {
+    const key = p.code ?? `__${p.id}`;
+    const { type, model } = splitName(p.name);
+    const remaining = Math.max(
       0,
       (stockByProduct.get(p.id) ?? 0) - (soldByProduct.get(p.id) ?? 0),
-    ),
-  }));
+    );
+    const g =
+      codeMap.get(key) ??
+      ({
+        code: p.code ?? "—",
+        type: type || p.name,
+        models: [],
+        remaining: 0,
+        price: p.price,
+        isCustomPrice: false,
+      } satisfies StockCodeAgg);
+    g.models.push(model);
+    g.remaining += remaining;
+    // Harga jual: pakai harga custom owner (dari POS) kalau ada di salah
+    // satu produk sekode, kalau belum harga katalog.
+    const custom = priceByProduct.get(p.id);
+    if (custom != null && !g.isCustomPrice) {
+      g.price = custom;
+      g.isCustomPrice = true;
+    }
+    codeMap.set(key, g);
+  }
+  const stockCodes = [...codeMap.values()].sort((a, b) =>
+    a.code.localeCompare(b.code),
+  );
 
-  const stocked = productsWithStock.filter((p) => p.remaining > 0);
-  const totalUnits = stocked.reduce((a, p) => a + p.remaining, 0);
-  const low = stocked.filter((p) => p.remaining <= 5).length;
+  const stocked = stockCodes.filter((c) => c.remaining > 0);
+  const totalUnits = stocked.reduce((a, c) => a + c.remaining, 0);
+  const low = stocked.filter((c) => c.remaining <= 5).length;
 
   return (
     <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-bold">Stok Barang</h1>
         <p className="text-sm text-neutral-500">
-          Sisa stok barang di tokomu
+          Sisa stok per kode barang di tokomu
         </p>
       </div>
 
@@ -91,7 +128,7 @@ export default async function StokPage() {
       {/* Ringkasan cepat */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <div className="rounded-2xl border border-neutral-200 bg-white p-4">
-          <p className="text-xs text-neutral-500">Jenis Barang</p>
+          <p className="text-xs text-neutral-500">Kode Barang</p>
           <p className="text-2xl font-bold">{stocked.length}</p>
         </div>
         <div className="rounded-2xl border border-neutral-200 bg-white p-4">
@@ -116,7 +153,7 @@ export default async function StokPage() {
       </div>
 
       <div className="rounded-2xl border border-neutral-200 bg-white p-5">
-        <StockEditor products={productsWithStock} />
+        <StockEditor codes={stockCodes} />
       </div>
 
     </div>

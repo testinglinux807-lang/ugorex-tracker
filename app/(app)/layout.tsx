@@ -15,18 +15,29 @@ export default async function AppLayout({
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  // Notifikasi web: jumlah order restok yang menunggu diproses
-  // (PENDING = perlu dipacking gudang, READY = menunggu dipickup kurir)
+  // Badge nav: order menunggu diproses (PENDING=packing gudang, READY=
+  // menunggu kurir) + tugas yang belum selesai (sales: tugas dari admin
+  // untuk dirinya; admin: semua tugas belum kelar).
   let orderBadge = 0;
+  let tugasBadge = 0;
   if (user.role !== "OWNER") {
-    orderBadge = await prisma.request.count({
-      where: {
-        status: { in: ["PENDING", "READY"] },
-        items: { some: {} },
-        ...(user.role === "SALES" ? { store: { salesId: user.id } } : {}),
-      },
-    });
+    [orderBadge, tugasBadge] = await Promise.all([
+      prisma.request.count({
+        where: {
+          status: { in: ["PENDING", "READY"] },
+          items: { some: {} },
+          ...(user.role === "SALES" ? { store: { salesId: user.id } } : {}),
+        },
+      }),
+      prisma.task.count({
+        where: {
+          status: { not: "DONE" },
+          ...(user.role === "SALES" ? { assignedToId: user.id } : {}),
+        },
+      }),
+    ]);
   }
+  const navBadges = { "/order": orderBadge, "/tugas": tugasBadge };
 
   // Riwayat notifikasi in-app untuk lonceng di header
   const notifs = await prisma.notification.findMany({
@@ -38,10 +49,12 @@ export default async function AppLayout({
   return (
     <div className="flex flex-1 flex-col overflow-x-hidden">
       {/* Header */}
-      <header className="sticky top-0 z-10 flex items-center justify-between border-b border-neutral-200 bg-white px-4 py-3">
+      {/* z-30: header + drawer (di dalamnya) harus di ATAS konten yang
+          kadang pakai z-10 (mis. ring grade) — biar tak tembus ke drawer */}
+      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-neutral-200 bg-white px-4 py-3">
         <div className="flex min-w-0 items-center gap-2">
           {/* Mobile: logo + judul = buka drawer menu */}
-          <MobileNav role={user.role} orderBadge={orderBadge} />
+          <MobileNav role={user.role} badges={navBadges} />
           {/* Desktop: klik logo = aktifkan izin push di perangkat ini */}
           <div className="hidden min-w-0 items-center gap-2 sm:flex">
             <LogoPush />
@@ -71,7 +84,7 @@ export default async function AppLayout({
       </header>
 
       <div className="flex flex-1">
-        <SideNav role={user.role} orderBadge={orderBadge} />
+        <SideNav role={user.role} badges={navBadges} />
         <main className="w-full min-w-0 flex-1 p-4 sm:p-6">{children}</main>
       </div>
     </div>

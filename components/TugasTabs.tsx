@@ -17,7 +17,7 @@ export function TugasTabs({
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-1.5 overflow-x-auto pb-1">
+      <div className="-mx-1 flex gap-1 overflow-x-auto border-b border-neutral-200 px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {tabs.map((t) => {
           const on = active === t.key;
           return (
@@ -25,22 +25,20 @@ export function TugasTabs({
               key={t.key}
               type="button"
               onClick={() => setActive(t.key)}
-              className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+              className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2 text-xs font-medium transition-colors ${
                 on
-                  ? "border-neutral-900 bg-neutral-900 text-white"
-                  : "border-neutral-300 bg-white text-neutral-600 hover:bg-neutral-100"
+                  ? "border-neutral-900 text-neutral-900"
+                  : "border-transparent text-neutral-500 hover:text-neutral-800"
               }`}
             >
               {t.label}
               <span
-                className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
-                  t.count > 0
-                    ? on
-                      ? "bg-brand text-neutral-900"
-                      : "bg-neutral-900 text-white"
-                    : on
-                      ? "bg-neutral-700 text-neutral-300"
-                      : "bg-neutral-100 text-neutral-400"
+                className={`ml-1 font-semibold ${
+                  on
+                    ? "text-neutral-900"
+                    : t.count > 0
+                      ? "text-neutral-500"
+                      : "text-neutral-400"
                 }`}
               >
                 {t.count}

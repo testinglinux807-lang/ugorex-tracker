@@ -57,29 +57,57 @@ export function TrackerMap({
 
   return (
     <div className="space-y-2">
-      {/* Toolbar: filter by tahap funnel + toggle radius sales */}
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs font-medium text-neutral-500">Filter:</span>
-        {FILTERS.map((f) => (
-          <button
-            key={f.key}
-            type="button"
-            onClick={() => setFilter(f.key)}
-            className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
-              filter === f.key
-                ? "border-neutral-900 bg-neutral-900 text-white"
-                : "border-neutral-300 text-neutral-600 hover:bg-neutral-100"
-            }`}
-          >
-            {f.label} ({count(f.key)})
-          </button>
-        ))}
-        {/* Toggle radius kerja 7 km dari rumah sales */}
+      {/* Filter tahap funnel: tab garis-bawah (bisa digeser horizontal di
+          mobile), bukan tombol pill. */}
+      <div className="-mx-1 flex gap-1 overflow-x-auto border-b border-neutral-200 px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {FILTERS.map((f) => {
+          const active = filter === f.key;
+          return (
+            <button
+              key={f.key}
+              type="button"
+              onClick={() => setFilter(f.key)}
+              className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2 text-xs font-medium transition-colors ${
+                active
+                  ? "border-neutral-900 text-neutral-900"
+                  : "border-transparent text-neutral-500 hover:text-neutral-800"
+              }`}
+            >
+              {f.label}
+              <span
+                className={`ml-1 font-semibold ${
+                  active ? "text-neutral-900" : "text-neutral-400"
+                }`}
+              >
+                {count(f.key)}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Baris legend + toggle radius (selalu kelihatan, tak ikut tergeser) */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-neutral-500">
+        <span className="flex items-center gap-1">
+          <Dot color="#16a34a" /> Tertarik
+        </span>
+        <span className="flex items-center gap-1">
+          <Dot color="#ef4444" /> Tidak
+        </span>
+        <span className="flex items-center gap-1">
+          <Dot color="#ffffff" /> Netral
+        </span>
+        {otherCount > 0 && (
+          <span className="flex items-center gap-1">
+            <Dot color="#9ca3af" /> Sales lain ({otherCount})
+          </span>
+        )}
+        {/* Toggle radius kerja 7 km dari rumah sales (on/off) */}
         {homePoints.length > 0 && (
           <button
             type="button"
             onClick={() => setShowRadius((v) => !v)}
-            className={`rounded-full border border-dashed px-3 py-1 text-xs font-medium transition ${
+            className={`ml-auto shrink-0 rounded-full border border-dashed px-2.5 py-1 font-medium transition ${
               showRadius
                 ? "border-neutral-900 bg-neutral-900 text-white"
                 : "border-neutral-400 text-neutral-500 hover:bg-neutral-100"
@@ -88,23 +116,6 @@ export function TrackerMap({
             Radius sales ({homePoints.length})
           </button>
         )}
-
-        <div className="ml-auto flex items-center gap-3 text-xs text-neutral-500">
-          <span className="flex items-center gap-1">
-            <Dot color="#16a34a" /> Tertarik
-          </span>
-          <span className="flex items-center gap-1">
-            <Dot color="#ef4444" /> Tidak
-          </span>
-          <span className="flex items-center gap-1">
-            <Dot color="#ffffff" /> Netral
-          </span>
-          {otherCount > 0 && (
-            <span className="flex items-center gap-1">
-              <Dot color="#9ca3af" /> Sales lain ({otherCount})
-            </span>
-          )}
-        </div>
       </div>
 
       {storePoints.length > 0 && (

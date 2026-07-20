@@ -80,24 +80,23 @@ export function SalesTrendChart({ sales }: { sales: SalePoint[] }) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xl font-bold">{rupiah(total)}</p>
-        <div className="flex gap-1">
-          {RANGES.map((r) => (
-            <button
-              key={r.key}
-              type="button"
-              onClick={() => setRange(r.key)}
-              className={`rounded-full border px-2.5 py-1 text-xs font-medium transition ${
-                range === r.key
-                  ? "border-neutral-900 bg-neutral-900 text-white"
-                  : "border-neutral-300 text-neutral-600 hover:bg-neutral-100"
-              }`}
-            >
-              {r.label}
-            </button>
-          ))}
-        </div>
+      <p className="mb-1 text-xl font-bold">{rupiah(total)}</p>
+      {/* Rentang waktu — tab garis-bawah */}
+      <div className="mb-2 -mx-1 flex gap-1 overflow-x-auto border-b border-neutral-200 px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {RANGES.map((r) => (
+          <button
+            key={r.key}
+            type="button"
+            onClick={() => setRange(r.key)}
+            className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-1.5 text-xs font-medium transition-colors ${
+              range === r.key
+                ? "border-neutral-900 text-neutral-900"
+                : "border-transparent text-neutral-500 hover:text-neutral-800"
+            }`}
+          >
+            {r.label}
+          </button>
+        ))}
       </div>
       <div className="flex-1">
         <RevenueBarChart data={data} />

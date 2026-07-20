@@ -47,7 +47,7 @@ export function KonterLog({ items }: { items: LogItem[] }) {
 
   return (
     <div className="flex h-full flex-1 flex-col">
-      <div className="mb-3 flex flex-wrap gap-1.5 border-b border-neutral-100 pb-3">
+      <div className="-mx-1 mb-3 flex gap-1 overflow-x-auto border-b border-neutral-200 px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {FILTERS.map((f) => (
           <button
             key={f.key}
@@ -56,10 +56,10 @@ export function KonterLog({ items }: { items: LogItem[] }) {
               setFilter(f.key);
               setPage(0);
             }}
-            className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+            className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2 text-xs font-medium transition-colors ${
               filter === f.key
-                ? "border-neutral-900 bg-neutral-900 text-white"
-                : "border-neutral-200 text-neutral-500 hover:bg-neutral-50"
+                ? "border-neutral-900 text-neutral-900"
+                : "border-transparent text-neutral-500 hover:text-neutral-800"
             }`}
           >
             {f.label}

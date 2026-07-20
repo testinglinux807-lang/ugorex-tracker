@@ -67,6 +67,7 @@ export default async function DashboardPage() {
         total: true,
         qty: true,
         productName: true,
+        product: { select: { code: true } },
         store: { select: { area: true } },
       },
     }),
@@ -192,10 +193,13 @@ export default async function DashboardPage() {
   // --- Konter aktif (punya transaksi) ---
   const activeStoresCount = activeStoreRows.length;
 
-  // Titik penjualan untuk grafik (bisa difilter rentangnya di client)
-  const salesPoints = salePointRows.map((s) => ({
-    ts: new Date(s.createdAt).getTime(),
-    total: s.total,
+  // Titik grafik "Penjualan Barang" di dashboard admin = penjualan barang
+  // ADMIN ke konter, yaitu order restok yang sudah dibayar (bukan POS —
+  // POS itu penjualan toko ke end customer, dipakai untuk Produk Terlaris
+  // & data pasar). Dibucket per rentang di client (SalesTrendChart).
+  const salesPoints = paidOrders.map((o) => ({
+    ts: new Date(o.createdAt).getTime(),
+    total: o.total,
   }));
 
   // --- Map points ---
@@ -402,7 +406,10 @@ export default async function DashboardPage() {
             className: "h-full",
             node: (
               <div className="flex h-full flex-col rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-                <h2 className="mb-3 font-semibold">Grafik Penjualan</h2>
+                <h2 className="mb-1 font-semibold">Penjualan Barang</h2>
+                <p className="mb-3 text-xs text-neutral-400">
+                  Order restok konter yang sudah dibayar
+                </p>
                 <div className="flex-1">
                   <SalesTrendChart sales={salesPoints} />
                 </div>

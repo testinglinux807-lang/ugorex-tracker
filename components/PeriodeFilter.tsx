@@ -34,15 +34,15 @@ export function PeriodeFilter({
     { key: "bulan", label: "Bulan ini" },
   ];
   return (
-    <div className="flex gap-1.5">
+    <div className="-mx-1 flex gap-1 overflow-x-auto border-b border-neutral-200 px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {opts.map((o) => (
         <Link
           key={o.key}
           href={o.key === "semua" ? basePath : `${basePath}?periode=${o.key}`}
-          className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium ${
+          className={`-mb-px inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-xs font-medium transition-colors ${
             current === o.key
-              ? "border-neutral-900 bg-neutral-900 text-white"
-              : "border-neutral-300 bg-white text-neutral-600 hover:bg-neutral-100"
+              ? "border-neutral-900 text-neutral-900"
+              : "border-transparent text-neutral-500 hover:text-neutral-800"
           }`}
         >
           {o.label}

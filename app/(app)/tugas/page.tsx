@@ -15,7 +15,13 @@ import { TaskAssignForm } from "@/components/TaskAssignForm";
 import { TugasTabs } from "@/components/TugasTabs";
 import { GradeBadge, LevelBadge } from "@/components/Badge";
 import { taskGrade } from "@/lib/task-grade";
-import { salesGrade, salesLevel, gradePartsSummary } from "@/lib/sales-grade";
+import { computeLevel } from "@/lib/sales-kpi-grade";
+import {
+  computeSalesKpiValues,
+  activeDaysBySalesFrom,
+} from "@/lib/sales-kpi-values";
+import { getLevelTargets } from "@/lib/kpi-config";
+import { wibMonthStart } from "@/lib/date";
 import { STAGES, type Stage } from "@/lib/constants";
 import { waLink } from "@/lib/wa";
 import {
@@ -261,15 +267,43 @@ export default async function TugasPage() {
             {` · ${done ? "selesai" : "belum"}`}
           </p>
         </div>
-        <form action={deleteTask.bind(null, t.id)}>
-          <SubmitButton
-            pendingText="Menghapus…"
-            title="Hapus tugas"
-            className="flex h-7 w-7 items-center justify-center rounded-lg border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-60"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </SubmitButton>
-        </form>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {/* Ingatkan sales ngerjain tugasnya via WhatsApp (chat ke no HP-nya) */}
+          {!done &&
+            (() => {
+              const wa = waLink(
+                t.assignedTo.phone,
+                [
+                  `Halo ${t.assignedTo.name}, reminder tugas dari admin:`,
+                  `"${t.title}"`,
+                  ...(t.dueDate ? [`Tenggat: ${fmtDate(t.dueDate)}`] : []),
+                  ``,
+                  `Mohon dikerjakan ya — cek di menu Tugas → Dari Admin.`,
+                ].join("\n"),
+              );
+              return wa ? (
+                <a
+                  href={wa}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={`Ingatkan ${t.assignedTo.name} via WhatsApp`}
+                  className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-green-700"
+                >
+                  <MessageCircle className="h-3.5 w-3.5" />
+                  Ingatkan
+                </a>
+              ) : null;
+            })()}
+          <form action={deleteTask.bind(null, t.id)}>
+            <SubmitButton
+              pendingText="Menghapus…"
+              title="Hapus tugas"
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-60"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </SubmitButton>
+          </form>
+        </div>
       </div>
     );
   };
@@ -316,39 +350,55 @@ export default async function TugasPage() {
     ratingAgg.map((r) => [r.salesId, Math.round((r._avg.stars ?? 0) * 10) / 10]),
   );
 
+  // ===== Level MILESTONE per level (SAMA dgn beranda/leaderboard) =====
+  const monthStart = wibMonthStart();
+  const levelTargets = await getLevelTargets();
+  const [kpiOrdersMonth, kpiLogsMonth] = await Promise.all([
+    prisma.request.findMany({
+      where: {
+        items: { some: {} },
+        paymentStatus: "PAID",
+        createdAt: { gte: monthStart },
+      },
+      select: { storeId: true, total: true },
+    }),
+    prisma.stageLog.findMany({
+      where: { createdAt: { gte: monthStart } },
+      select: { salesId: true, createdAt: true },
+    }),
+  ]);
+  const activeDaysMap = activeDaysBySalesFrom(kpiLogsMonth);
+
+  // Rumus KPI dari SATU sumber (lib/sales-kpi-values.ts)
   const gradeFor = (salesId: string) => {
     const myStores = gradeStores.filter((s) => s.salesId === salesId);
-    let loyal = 0;
-    let terbengkalai = 0;
-    for (const s of myStores) {
-      const agg = storeAgg.get(s.id);
-      if (agg && agg.furthestIdx >= loyalIdx) loyal++;
-      // aktivitas terakhir; konter tanpa prospek pakai tanggal dibuatnya
-      const lastTs = agg?.lastTs || new Date(s.createdAt).getTime();
-      if (lastTs < neglectCut) terbengkalai++;
-    }
-    return salesGrade({
-      revenue: allTimeBySales.get(salesId) ?? 0,
-      maxRevenue,
-      konter: myStores.length,
-      loyal,
-      terbengkalai,
-      stars: taskGrade(tasks.filter((t) => t.assignedToId === salesId)).stars,
-      rating: ratingBySales.get(salesId) ?? null,
+    const captainArea = salesList.find((u) => u.id === salesId)?.captainArea;
+    const kpiValues = computeSalesKpiValues({
+      stores: myStores,
+      ordersMonth: kpiOrdersMonth,
+      prospects,
+      activeDays: activeDaysMap.get(salesId) ?? 0,
+      monthStart,
     });
+    return computeLevel(kpiValues, levelTargets, captainArea);
   };
 
   // Admin: papan grade & level semua sales; sales: grade dirinya sendiri.
+  // Bentuk {g,lvl} dipertahankan supaya JSX di bawah minim ubah.
+  const toBoard = (r: ReturnType<typeof computeLevel>) => ({
+    g: {
+      grade: r.grade as "S+" | "S" | "A" | "B" | "C" | "D" | "E",
+      score: r.progress,
+      parts: r.milestones,
+    },
+    lvl: { level: r.level, name: r.levelName },
+  });
   const gradeBoard = salesList
-    .map((s) => {
-      const g = gradeFor(s.id);
-      return { ...s, g, lvl: salesLevel(g.grade, s.captainArea) };
-    })
-    .sort((a, b) => (b.g.score ?? -1) - (a.g.score ?? -1));
-  const myGrade = isAdmin ? null : gradeFor(user.id);
-  const myLevel = isAdmin
-    ? null
-    : salesLevel(myGrade!.grade, user.captainArea);
+    .map((s) => ({ ...s, ...toBoard(gradeFor(s.id)) }))
+    .sort((a, b) => b.g.score - a.g.score);
+  const myBoard = isAdmin ? null : toBoard(gradeFor(user.id));
+  const myGrade = myBoard?.g ?? null;
+  const myLevel = myBoard?.lvl ?? null;
 
   // Tab penugasan: admin = form beri tugas + daftar; sales = tugas dari admin
   const penugasanNode = isAdmin ? (
@@ -380,9 +430,8 @@ export default async function TugasPage() {
                     {s.name}
                   </Link>
                   <p className="truncate text-xs text-neutral-400">
-                    {s.g.score === null
-                      ? "Belum ada data untuk dinilai"
-                      : `Skor ${s.g.score}/100 · ${gradePartsSummary(s.g.parts)}`}
+                    {s.g.parts.filter((p) => p.done).length}/{s.g.parts.length}{" "}
+                    syarat naik beres · {s.g.score}% menuju naik
                   </p>
                 </div>
                 <span className="flex shrink-0 items-center gap-1.5">
@@ -434,9 +483,9 @@ export default async function TugasPage() {
               <LevelBadge level={myLevel!.level} name={myLevel!.name} />
             </p>
             <p className="mt-1 text-xs text-neutral-400">
-              {myGrade!.score === null
-                ? "Belum ada data untuk dinilai"
-                : `Skor ${myGrade!.score}/100 · ${gradePartsSummary(myGrade!.parts)}`}
+              {myGrade!.parts.filter((p) => p.done).length}/
+              {myGrade!.parts.length} syarat naik beres · {myGrade!.score}%
+              menuju naik
             </p>
           </div>
           {myGrade!.grade ? (

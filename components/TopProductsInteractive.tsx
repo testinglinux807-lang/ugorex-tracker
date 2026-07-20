@@ -8,6 +8,7 @@ type SaleData = {
   qty: number;
   total: number;
   productName: string;
+  product?: { code: string | null } | null; // kode mold (mis. AA01)
   store: { area: string | null };
 };
 
@@ -55,12 +56,17 @@ export function TopProductsInteractive({ sales }: { sales: SaleData[] }) {
       filtered = filtered.filter((s) => new Date(s.createdAt) >= oneYearAgo);
     }
 
-    // Aggregate by product
-    const byProduct = new Map<string, { units: number; revenue: number }>();
+    // Aggregate by product (bawa kode mold biar bisa tampil)
+    const byProduct = new Map<
+      string,
+      { units: number; revenue: number; code: string | null }
+    >();
     for (const s of filtered) {
-      const r = byProduct.get(s.productName) ?? { units: 0, revenue: 0 };
+      const r =
+        byProduct.get(s.productName) ?? { units: 0, revenue: 0, code: null };
       r.units += s.qty;
       r.revenue += s.total;
+      if (!r.code && s.product?.code) r.code = s.product.code;
       byProduct.set(s.productName, r);
     }
 
@@ -125,14 +131,21 @@ export function TopProductsInteractive({ sales }: { sales: SaleData[] }) {
             const pct = Math.round((p.units / maxUnits) * 100);
             return (
               <li key={p.name}>
-                <div className="mb-1 flex items-center justify-between text-sm">
-                  <span className="flex items-center gap-2">
-                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-neutral-100 text-xs font-bold text-neutral-500">
+                <div className="mb-1 flex items-start justify-between gap-2 text-sm">
+                  <span className="flex min-w-0 flex-1 items-start gap-2">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-xs font-bold text-neutral-500">
                       {actualIndex + 1}
                     </span>
-                    <span className="font-medium truncate max-w-[120px]">{p.name}</span>
+                    <span className="min-w-0 break-words font-medium leading-snug">
+                      {p.code && (
+                        <span className="mr-1.5 rounded bg-neutral-900 px-1 py-0.5 align-middle text-[10px] font-bold text-white">
+                          {p.code}
+                        </span>
+                      )}
+                      {p.name}
+                    </span>
                   </span>
-                  <span className="text-xs text-neutral-500">
+                  <span className="shrink-0 whitespace-nowrap text-xs text-neutral-500">
                     <span className="font-semibold text-neutral-900">
                       {p.units}
                     </span>{" "}

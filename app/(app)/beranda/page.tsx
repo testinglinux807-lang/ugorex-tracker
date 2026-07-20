@@ -13,16 +13,10 @@ import { rupiahShort } from "@/lib/format";
 import { taskGrade } from "@/lib/task-grade";
 import { salesKpi } from "@/lib/sales-kpi";
 import { wibMonthStart } from "@/lib/date";
-import {
-  salesGrade,
-  salesLevel,
-  gradePartsSummary,
-  nextGradeTarget,
-  LEVEL_LADDER,
-  GRADE_DESC,
-  type GradePart,
-} from "@/lib/sales-grade";
-import { GradeBadge, LEVEL_ICON } from "@/components/Badge";
+import { computeLevel, fmtKpi, LEVELS, KPI_COMPONENTS } from "@/lib/sales-kpi-grade";
+import { computeSalesKpiValues } from "@/lib/sales-kpi-values";
+import { getLevelTargets } from "@/lib/kpi-config";
+import { LEVEL_ICON } from "@/components/Badge";
 import { DataTabs } from "@/components/DataTabs";
 import { Paginated } from "@/components/Paginated";
 import {
@@ -34,11 +28,23 @@ import {
   Route,
   CheckCircle2,
   TrendingUp,
+  Lock,
+  Sparkles,
+  Target,
 } from "lucide-react";
 
 // Konter dianggap "terbengkalai" kalau > 30 hari tak ada aktivitas funnel —
 // sama dengan halaman Performa Sales (admin)
 const NEGLECT_DAYS = 30;
+
+// Cara konkret menaikkan tiap KPI — ditampilkan di syarat level terkunci
+const KPI_HOW: Record<string, string> = {
+  omzet: "Dorong konter reorder & naikkan nilai order (bundle/upsell).",
+  konversi: "Pastikan tiap konter yang kamu pegang reorder minimal 1× bulan ini.",
+  seeding: "Buka konter baru — datangi toko yang belum digarap.",
+  closing: "Tindak lanjuti prospek sampai ambil barang (naik ke tahap Conversion).",
+  konsistensi: "Catat kunjungan/update funnel tiap hari kerja di app.",
+};
 
 const rupiah = (n: number) =>
   new Intl.NumberFormat("id-ID", {
@@ -97,6 +103,7 @@ export default async function BerandaPage() {
         storeId: true,
         productId: true,
         productName: true,
+        product: { select: { code: true } },
         qty: true,
         total: true,
         createdAt: true,
@@ -151,6 +158,7 @@ export default async function BerandaPage() {
       select: {
         storeId: true,
         createdAt: true,
+        total: true,
         items: { select: { qty: true } },
       },
     }),
@@ -271,96 +279,110 @@ export default async function BerandaPage() {
       (allTimeBySales.get(s.salesId) ?? 0) + (allTimeByStore.get(s.id) ?? 0),
     );
   }
-  const myRevenue = allTimeBySales.get(user.id) ?? 0;
-  const maxRevenue = Math.max(0, ...allTimeBySales.values());
-  const myStars = taskGrade(myTasks).stars;
-  const myRating = myRatingAgg._avg.stars;
-  const myGrade = salesGrade({
-    revenue: myRevenue,
-    maxRevenue,
-    konter: konterCount,
-    loyal,
-    terbengkalai,
-    stars: myStars,
-    rating: myRating,
+  // ===== Grade & level dari TARGET BULANAN yang di-set admin (5 komponen
+  // KPI, lib/sales-kpi-grade.ts). Poin komponen penuh saat capai target. =====
+  const levelTargets = await getLevelTargets();
+
+  // Hari aktif bulan ini (WIB) = jumlah hari sales mencatat kunjungan/update
+  const activeLogRows = await prisma.stageLog.findMany({
+    where: {
+      prospect: { store: { salesId: user.id } },
+      createdAt: { gte: monthStart },
+    },
+    select: { createdAt: true },
   });
-  // Level 1-5 — dari grade huruf; level 5 kalau diangkat jadi Sales Captain
-  const lvl = salesLevel(myGrade.grade, user.captainArea);
-  const LvlIcon = LEVEL_ICON[lvl.level];
+  const wibDay = (d: Date) =>
+    new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(d);
+  const activeDays = new Set(activeLogRows.map((l) => wibDay(l.createdAt))).size;
 
-  // ===== Panel "Cara Naik Level": progres tiap komponen grade + tips =====
-  const nextTarget =
-    myGrade.score !== null ? nextGradeTarget(myGrade.score) : null;
-  const partByKey = new Map(myGrade.parts.map((p) => [p.key, p]));
-  const fmtStars = (n: number) =>
-    n.toLocaleString("id-ID", { maximumFractionDigits: 1 });
-  // Tips konkret per komponen dari data sales ini; komponen tanpa data
-  // dijelaskan cara mengaktifkannya.
-  const gradeSteps: {
-    key: GradePart["key"];
-    label: string;
-    max: number;
-    tip: string;
-  }[] = [
+  // KPI operasional bulan ini (seeding & konversi) — lib/sales-kpi.ts
+  const kpiNow = salesKpi(
     {
-      key: "omzet",
-      label: "Omzet",
-      max: 30,
-      tip:
-        maxRevenue > 0
-          ? `Omzet-mu ${rupiahShort(myRevenue)} — terbaik di tim ${rupiahShort(maxRevenue)}. Perbanyak penjualan & restok konter.`
-          : "Belum ada omzet di tim — mulai catat penjualan di konter-mu.",
+      stores,
+      orders: kpiOrders.map((o) => ({
+        storeId: o.storeId,
+        createdAt: o.createdAt,
+        pcs: o.items.reduce((a, it) => a + it.qty, 0),
+      })),
+      sales,
     },
-    {
-      key: "loyal",
-      label: "Konter Loyal",
-      max: 20,
-      tip:
-        konterCount > 0
-          ? `${loyal} dari ${konterCount} konter sudah Loyalty — dampingi sisanya sampai repeat order.`
-          : "Belum pegang konter — buka konter baru dulu.",
-    },
-    {
-      key: "aktif",
-      label: "Keaktifan",
-      max: 15,
-      tip:
-        terbengkalai > 0
-          ? `${terbengkalai} konter terbengkalai >30 hari — kunjungi lagi minggu ini.`
-          : "Semua konter aktif — pertahankan kunjungan rutin.",
-    },
-    {
-      key: "tugas",
-      label: "Tugas",
-      max: 20,
-      tip:
-        myStars !== null
-          ? `Grade tugas ${fmtStars(myStars)}/5 — selesaikan tugas admin sebelum tenggat.`
-          : "Belum ada tugas dinilai — selesaikan tugas dari admin tepat waktu.",
-    },
-    {
-      key: "rating",
-      label: "Rating Owner",
-      max: 15,
-      tip:
-        myRating !== null
-          ? `Rata-rata rating owner ${fmtStars(myRating)}/5 — jaga pelayanan biar bintangnya penuh.`
-          : "Belum ada rating — layani owner dengan baik; mereka menilaimu dari halaman POS tokonya.",
-    },
-  ];
-
-  // 4 KPI operasional: bulan ini vs bulan lalu (lib/sales-kpi.ts)
-  const kpiInput = {
+    { from: monthStart, to: null },
+  );
+  // Nilai KPI level dari SATU sumber (lib/sales-kpi-values.ts) — rumus
+  // sama persis dgn leaderboard /sales, detail sales, & /tugas.
+  const kpiValues = computeSalesKpiValues({
     stores,
-    orders: kpiOrders.map((o) => ({
-      storeId: o.storeId,
-      createdAt: o.createdAt,
-      pcs: o.items.reduce((a, it) => a + it.qty, 0),
-    })),
-    sales,
+    ordersMonth: kpiOrders.filter((o) => o.createdAt >= monthStart),
+    prospects,
+    activeDays,
+    monthStart,
+  });
+  const result = computeLevel(kpiValues, levelTargets, user.captainArea);
+  const LvlIcon = LEVEL_ICON[result.level as 1 | 2 | 3 | 4 | 5];
+
+  // Peta level → grade minimum (untuk penjelasan level terkunci)
+  const LEVEL_BENEFIT: Record<number, string> = {
+    1: "Akses dasar — katalog & harga reseller Ugorex.",
+    2: "Bisa seeding konter baru & dapat komisi tiap reorder.",
+    3: "Sales andalan — prioritas restok produk fast-moving.",
+    4: "Top performer tim — akses produk baru duluan & bonus.",
   };
-  const kpiNow = salesKpi(kpiInput, { from: monthStart, to: null });
-  const kpiPrev = salesKpi(kpiInput, { from: prevMonthStart, to: monthStart });
+
+  // ===== Coach: level berikutnya, progres, milestone (syarat naik) =====
+  const nextLevelInfo = result.nextLevel
+    ? { level: result.nextLevel, name: result.nextLevelName ?? "" }
+    : null;
+  const levelPct = result.progress; // 0-100 tertimbang menuju level berikutnya
+  // Milestone syarat naik ke level berikutnya (harus penuhi SEMUA)
+  const milestones = result.milestones.map((m) => ({
+    key: m.key,
+    label: `${m.label} capai ${fmtKpi(m.target, m.unit)}`,
+    done: m.done,
+    pct: m.pct,
+    prog: `${fmtKpi(m.value, m.unit)}/${fmtKpi(m.target, m.unit)}`,
+  }));
+  const msDoneCount = milestones.filter((m) => m.done).length;
+  const sisaSyarat = milestones.filter((m) => !m.done).length;
+  const nextMsKey =
+    [...milestones].filter((m) => !m.done).sort((a, b) => b.pct - a.pct)[0]
+      ?.key ?? null;
+
+  // Strategi rule-based dari KPI vs target (Today's Focus)
+  const strategi = (() => {
+    const t = result.nextTargets;
+    if (!t)
+      return { judul: "Jaga momentum", note: "Pertahankan performa puncakmu." };
+    if (kpiValues.omzet < t.omzet * 0.3)
+      return {
+        judul: "Bundle + Upsell",
+        note: "Omzet masih rendah — naikkan nilai order rata-rata konter.",
+      };
+    if (kpiValues.closing < t.closing * 0.6)
+      return {
+        judul: "Fokus closing",
+        note: "Banyak prospek belum closing — tindak lanjuti yang hangat.",
+      };
+    if (kpiValues.seeding < t.seeding)
+      return {
+        judul: "Buka konter baru",
+        note: "Kejar target seeding — cari konter yang belum digarap.",
+      };
+    return {
+      judul: "Jaga momentum",
+      note: "Pertahankan reorder konter aktif & rating owner.",
+    };
+  })();
+
+  // Target harian = konter belum reorder ÷ sisa hari bulan ini
+  const nowDate = new Date();
+  const daysInMonth = new Date(
+    nowDate.getFullYear(),
+    nowDate.getMonth() + 1,
+    0,
+  ).getDate();
+  const sisaHari = Math.max(1, daysInMonth - nowDate.getDate() + 1);
+  const belumReorder = Math.max(0, konterCount - kpiNow.aktif);
+  const targetHarian = Math.max(1, Math.ceil(belumReorder / sisaHari));
 
   // Penjualan untuk grafik & produk terlaris
   const salesPoints = sales.map((s) => ({
@@ -556,107 +578,257 @@ export default async function BerandaPage() {
 
   return (
     <div className="space-y-6">
-      {/* ===== HERO (dark) ===== */}
-      <section className="rounded-2xl bg-neutral-900 p-4 text-white sm:p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-lg font-bold">Halo, {user.name.split(" ")[0]}</h1>
-            <p className="text-xs text-neutral-400">
-              Ringkasan konter & penjualanmu
+      {/* ===== HERO COACH (dark): insight naik level + progres + ring grade ===== */}
+      <section className="overflow-hidden rounded-2xl bg-neutral-900 p-5 text-white sm:p-6">
+        <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
+          {/* Kiri: coach insight + fokus + progres level.
+              Mobile: gradebox naik ke atas (order), desktop: coach di kiri. */}
+          <div className="order-2 lg:order-1">
+            <span className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-brand/30 bg-brand/10 px-3 py-1 text-[11px] font-medium text-brand">
+              <Sparkles className="h-3 w-3" /> Coach Ugorex · Halo,{" "}
+              {user.name.split(" ")[0]}
+            </span>
+            <h1 className="text-xl font-bold leading-snug sm:text-2xl">
+              {nextLevelInfo ? (
+                <>
+                  Tinggal{" "}
+                  <span className="text-brand">{sisaSyarat} syarat</span> lagi
+                  buat naik ke{" "}
+                  <span className="text-brand">{nextLevelInfo.name}</span>
+                </>
+              ) : (
+                <>
+                  Kamu di level tertinggi —{" "}
+                  <span className="text-brand">{result.levelName}</span>
+                </>
+              )}
+            </h1>
+            <p className="mt-2 max-w-lg text-sm text-neutral-400">
+              {nextLevelInfo
+                ? `Naik level = ${(LEVELS.find((l) => l.level === nextLevelInfo.level)?.benefit ?? "").toLowerCase()}`
+                : "Pertahankan performa biar level & komisimu terjaga."}
             </p>
+
+            {/* Fokus hari ini */}
+            <div className="mt-4 max-w-lg rounded-xl border border-white/10 border-l-[3px] border-l-brand bg-white/5 px-4 py-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-brand">
+                Fokus hari ini
+              </p>
+              <p className="mt-1 text-sm text-neutral-100">
+                Strategi <b className="text-brand">{strategi.judul}</b> —{" "}
+                {strategi.note}
+              </p>
+            </div>
+
+            {/* Progres ke level berikutnya */}
+            {nextLevelInfo && (
+              <div className="mt-5 max-w-lg">
+                <div className="mb-1.5 flex justify-between text-xs font-medium">
+                  <span>
+                    Lv. {result.level} {result.levelName}
+                  </span>
+                  <span className="text-brand">
+                    Lv. {nextLevelInfo.level} {nextLevelInfo.name} →
+                  </span>
+                </div>
+                <div className="h-3 overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-brand-dark to-brand"
+                    style={{ width: `${levelPct}%` }}
+                  />
+                </div>
+                <p className="mt-2 text-xs text-neutral-400">
+                  Syarat beres{" "}
+                  <b className="font-mono text-white">{msDoneCount}</b> /{" "}
+                  {milestones.length} —{" "}
+                  <span className="font-semibold text-brand">
+                    {levelPct}% jalan
+                  </span>
+                  .
+                  {belumReorder > 0 && (
+                    <>
+                      {" "}
+                      Target hari ini{" "}
+                      <b className="font-mono text-white">{targetHarian}</b>{" "}
+                      konter reorder.
+                    </>
+                  )}
+                </p>
+              </div>
+            )}
           </div>
-          {/* Level 1-5 + grade huruf (S+ … E) — rumus sama dengan yang
-              dilihat admin di Performa Sales; hover untuk rincian poin.
-              Level 5 (Sales Captain) rahasia: hanya tampil kalau diangkat
-              admin, tidak pernah disebut sebagai jenjang berikutnya. */}
-          {(myGrade.grade !== null || lvl.level === 5) && (
-            <div
-              title={gradePartsSummary(myGrade.parts)}
-              className="w-full rounded-xl bg-neutral-800 px-3.5 py-2.5 sm:w-auto sm:min-w-64"
-            >
-              <div className="flex items-center gap-3">
-                <LvlIcon className="h-4 w-4 shrink-0 text-brand" />
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold">
-                    Lv. {lvl.level} · {lvl.name}
+
+          {/* Kanan: gradebox — ring skor + tier + milestone */}
+          <div className="order-1 self-start rounded-2xl border border-white/10 bg-white/5 p-5 lg:order-2">
+            {/* Mobile: ring + info ditumpuk & rata tengah; desktop: sejajar */}
+            <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:text-left">
+              <div
+                className="relative grid h-20 w-20 shrink-0 place-items-center rounded-full"
+                style={{
+                  background: `conic-gradient(#d2ec0a ${levelPct}%, rgba(255,255,255,.12) 0)`,
+                }}
+              >
+                <div className="absolute inset-[6px] rounded-full bg-neutral-900" />
+                <div className="relative text-center">
+                  <p className="text-[26px] font-extrabold leading-none text-brand">
+                    {result.grade}
                   </p>
-                  <p className="truncate text-[11px] text-neutral-400">
-                    {lvl.level === 5
-                      ? `Kepala sales wilayah ${user.captainArea}`
-                      : myGrade.grade && GRADE_DESC[myGrade.grade]}
+                  <p className="mt-0.5 text-[9px] uppercase tracking-wider text-neutral-500">
+                    Grade
                   </p>
                 </div>
-                {myGrade.grade && (
-                  <div className="shrink-0 text-center">
-                    <GradeBadge grade={myGrade.grade} size="lg" />
-                    <p className="mt-0.5 text-[10px] text-neutral-400">
-                      Skor {myGrade.score}/100
-                    </p>
-                  </div>
-                )}
               </div>
-              {lvl.next && (
-                <p className="mt-2 border-t border-white/10 pt-1.5 text-[10px] text-neutral-500">
-                  {lvl.next}
+              <div className="min-w-0">
+                <p className="flex items-center justify-center gap-1.5 text-base font-bold sm:justify-start">
+                  <LvlIcon className="h-4 w-4 shrink-0 text-brand" />
+                  Lv. {result.level} · {result.levelName}
                 </p>
-              )}
+                <p className="mt-1 text-xs text-neutral-400">
+                  Grade <b className="text-white">{result.grade}</b>
+                  {nextLevelInfo ? ` · ${levelPct}% menuju naik` : " · puncak"}
+                </p>
+                <p className="mt-0.5 text-[11px] text-neutral-500">
+                  {LEVELS.find((l) => l.level === result.level)?.benefit}
+                </p>
+              </div>
             </div>
-          )}
-        </div>
-
-        {/* 4 KPI operasional bulan berjalan (lib/sales-kpi.ts) */}
-        <div className="mt-4">
-          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-400">
-            KPI bulan ini · pembanding bulan lalu
-          </p>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <div className="rounded-2xl bg-white p-4 text-neutral-900">
-              <p className="text-xs text-neutral-500">Seeding Konter Baru</p>
-              <p className="mt-1 text-2xl font-bold">{kpiNow.seeding}</p>
-              <p className="text-xs text-neutral-400">
-                Bulan lalu {kpiPrev.seeding}
-              </p>
-            </div>
-            <div className="rounded-2xl bg-white p-4 text-neutral-900">
-              <p className="text-xs text-neutral-500">Konversi Konter Aktif</p>
-              <p className="mt-1 text-2xl font-bold">
-                {kpiNow.konversi !== null ? `${kpiNow.konversi}%` : "—"}
-              </p>
-              <p className="text-xs text-neutral-400">
-                {kpiNow.aktif} konter reorder · lalu{" "}
-                {kpiPrev.konversi !== null ? `${kpiPrev.konversi}%` : "—"}
-              </p>
-            </div>
-            <div className="rounded-2xl bg-white p-4 text-neutral-900">
-              <p className="text-xs text-neutral-500">Reorder / Konter Aktif</p>
-              <p className="mt-1 text-2xl font-bold">
-                {kpiNow.reorder !== null ? (
-                  <>
-                    {kpiNow.reorder}
-                    <span className="ml-1 text-sm font-medium text-neutral-400">
-                      pcs
-                    </span>
-                  </>
-                ) : (
-                  "—"
-                )}
-              </p>
-              <p className="text-xs text-neutral-400">
-                Bulan lalu{" "}
-                {kpiPrev.reorder !== null ? `${kpiPrev.reorder} pcs` : "—"}
-              </p>
-            </div>
-            <div className="rounded-2xl bg-white p-4 text-neutral-900">
-              <p className="text-xs text-neutral-500">Harga Jual Rata-rata</p>
-              <p className="mt-1 truncate text-2xl font-bold">
-                {kpiNow.harga !== null ? rupiahShort(kpiNow.harga) : "—"}
-              </p>
-              <p className="text-xs text-neutral-400">
-                per pcs · bulan lalu{" "}
-                {kpiPrev.harga !== null ? rupiahShort(kpiPrev.harga) : "—"}
-              </p>
+            <div className="mt-4 flex justify-between border-t border-white/10 pt-3 text-xs">
+              <span className="text-neutral-400">Milestone beres</span>
+              <span className="font-semibold text-brand">
+                {msDoneCount}/{milestones.length}
+              </span>
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* ===== Today's Focus (lime) — aksi hari ini ===== */}
+      <section className="rounded-2xl bg-gradient-to-br from-brand to-brand-dark p-5 text-neutral-900">
+        <h2 className="flex items-center gap-1.5 text-base font-extrabold">
+          <Target className="h-4 w-4" /> Fokus Hari Ini
+        </h2>
+        <p className="text-xs text-neutral-800/70">
+          Kerjakan ini biar skor & level cepat naik
+        </p>
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="rounded-xl border border-neutral-900/10 bg-white/55 p-3.5">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-800/60">
+              Target hari ini
+            </p>
+            <p className="mt-1 text-xl font-extrabold">
+              {targetHarian} <span className="text-sm font-semibold">konter</span>
+            </p>
+            <p className="mt-1 text-xs text-neutral-800/70">
+              {belumReorder} konter belum reorder bulan ini
+            </p>
+          </div>
+          <div className="rounded-xl border border-neutral-900/10 bg-white/55 p-3.5">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-800/60">
+              Strategi
+            </p>
+            <p className="mt-1 text-base font-extrabold leading-tight">
+              {strategi.judul}
+            </p>
+            <p className="mt-1 text-xs text-neutral-800/70">{strategi.note}</p>
+          </div>
+          <Link
+            href="/konter"
+            className="rounded-xl border border-neutral-900/10 bg-neutral-900 p-3.5 text-white transition hover:opacity-90"
+          >
+            <p className="text-[10px] font-bold uppercase tracking-wider text-brand">
+              KPI paling perlu digenjot
+            </p>
+            <p className="mt-1 text-base font-extrabold leading-tight">
+              {nextMsKey
+                ? result.milestones.find((m) => m.key === nextMsKey)?.label
+                : "Semua syarat tercapai 🎉"}
+            </p>
+            <p className="mt-1 text-xs text-neutral-400">Buka konter saya →</p>
+          </Link>
+        </div>
+      </section>
+
+      {/* ===== KPI Bulan Ini = matrix utama (status vs target admin) ===== */}
+      <section>
+        <div className="mb-2 flex items-baseline justify-between gap-2">
+          <p className="text-xs font-bold uppercase tracking-wider text-neutral-400">
+            Performa Bulan Ini
+          </p>
+          <p className="text-[11px] text-neutral-500">
+            {new Date().toLocaleDateString("id-ID", { month: "long" })} ·{" "}
+            {nextLevelInfo ? (
+              <span className="font-semibold text-brand-dark">
+                target Lv. {nextLevelInfo.level}
+              </span>
+            ) : (
+              <span className="font-semibold text-brand-dark">level puncak</span>
+            )}
+          </p>
+        </div>
+        {/* Hanya 4 KPI operasional di sini (Konsistensi cuma di Rincian skor
+            bawah) — target = syarat level berikutnya */}
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {result.milestones
+            .filter((p) => p.key !== "konsistensi")
+            .map((p) => {
+            // Status dari progres ke target: ≥100 Excellent, ≥60 On Track, else Behind
+            const st =
+              p.pct >= 100
+                ? {
+                    label: "Excellent",
+                    badge: "bg-brand/15 text-brand-dark",
+                    bar: "bg-brand-dark",
+                    accent: "bg-brand-dark",
+                  }
+                : p.pct >= 60
+                  ? {
+                      label: "On Track",
+                      badge: "bg-green-100 text-green-700",
+                      bar: "bg-green-500",
+                      accent: "bg-green-500",
+                    }
+                  : {
+                      label: "Behind",
+                      badge: "bg-red-100 text-red-600",
+                      bar: "bg-red-500",
+                      accent: "bg-red-400",
+                    };
+            return (
+              <div
+                key={p.key}
+                className="relative overflow-hidden rounded-2xl border border-neutral-200 bg-white p-3.5 shadow-sm"
+              >
+                <span
+                  className={`absolute left-0 top-4 bottom-4 w-1 rounded-r ${st.accent}`}
+                />
+                <div className="flex items-start justify-between gap-1">
+                  <p className="text-[11px] leading-tight text-neutral-500">
+                    {p.label}
+                  </p>
+                  <span
+                    className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold ${st.badge}`}
+                  >
+                    {st.label}
+                  </span>
+                </div>
+                <p className="mt-1 truncate text-xl font-bold">
+                  {fmtKpi(p.value, p.unit)}
+                </p>
+                <p className="text-[11px] text-neutral-400">
+                  target {fmtKpi(p.target, p.unit)}
+                </p>
+                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-neutral-100">
+                  <div
+                    className={`h-full rounded-full ${st.bar}`}
+                    style={{ width: `${p.pct}%` }}
+                  />
+                </div>
+                <p className="mt-1 font-mono text-[10px] text-neutral-400">
+                  {p.pct}% ke target
+                </p>
+              </div>
+            );
+          })}
         </div>
       </section>
 
@@ -722,96 +894,215 @@ export default async function BerandaPage() {
         </Link>
       </section>
 
-      {/* ===== Cara naik level: tangga level + progres komponen grade ===== */}
+      {/* ===== Cara naik level: tangga level (terkunci bisa diklik) +
+          ambang grade + progres komponen KPI vs target admin ===== */}
       <section className="rounded-2xl border border-neutral-200 bg-white p-5">
         <div className="mb-1 flex items-center gap-2">
           <TrendingUp className="h-4 w-4 text-neutral-500" />
           <h2 className="font-semibold">Cara Naik Level</h2>
         </div>
         <p className="mb-3 text-xs text-neutral-400">
-          Level mengikuti grade, dan grade dihitung dari 5 komponen di bawah —
-          naikkan poinnya, grade & level naik otomatis.
+          Kamu naik ke sebuah level kalau MEMENUHI SEMUA target level itu
+          (di-set admin per level). Ketuk level terkunci untuk lihat syaratnya.
         </p>
 
-        {/* Tangga level 1-4 — level saat ini disorot */}
-        <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {LEVEL_LADDER.map((l) => {
-            const Icon = LEVEL_ICON[l.level];
-            const current = lvl.level === l.level;
-            const passed = lvl.level > l.level;
-            return (
-              <div
-                key={l.level}
-                className={`rounded-xl border p-2.5 ${
-                  current
-                    ? "border-brand bg-brand/10"
-                    : passed
-                      ? "border-neutral-200 bg-neutral-50"
-                      : "border-neutral-200"
-                }`}
-              >
-                <p className="flex items-center gap-1.5 text-xs font-semibold">
+        {/* Tangga level 1-4. Level terkunci = <details> yang bisa diketuk.
+            items-start: kartu yang tidak dibuka TIDAK ikut memanjang saat
+            kartu sebelahnya di-expand (biar tak ada kotak putih kosong). */}
+        <div className="mb-4 grid grid-cols-1 items-start gap-2 sm:grid-cols-2">
+          {LEVELS.map((l) => {
+            const Icon = LEVEL_ICON[l.level as 1 | 2 | 3 | 4 | 5];
+            const current = result.level === l.level;
+            const passed = result.level > l.level;
+            const locked = result.level < l.level;
+            const head = (
+              <span className="flex items-center gap-1.5 text-xs font-semibold">
+                {locked ? (
+                  <Lock className="h-3.5 w-3.5 shrink-0 text-neutral-400" />
+                ) : (
                   <Icon
-                    className={`h-3.5 w-3.5 shrink-0 ${
-                      current ? "text-brand-dark" : "text-neutral-400"
-                    }`}
+                    className={`h-3.5 w-3.5 shrink-0 ${current ? "text-brand-dark" : "text-neutral-400"}`}
                   />
-                  Lv. {l.level} {l.name}
-                </p>
-                <p className="mt-0.5 text-[11px] text-neutral-400">
-                  {passed ? "Terlewati" : current ? "Posisimu sekarang" : l.req}
-                </p>
+                )}
+                Lv. {l.level} {l.name}
+                <span
+                  className={`ml-auto text-[10px] font-bold uppercase tracking-wide ${
+                    current
+                      ? "text-brand-dark"
+                      : passed
+                        ? "text-neutral-400"
+                        : "text-neutral-400"
+                  }`}
+                >
+                  {passed ? "Terlewati" : current ? "Sekarang" : "Terkunci"}
+                </span>
+              </span>
+            );
+            const boxCls = `rounded-xl border p-2.5 ${
+              current
+                ? "border-brand bg-brand/10"
+                : passed
+                  ? "border-neutral-200 bg-neutral-50"
+                  : "border-neutral-200"
+            }`;
+            // Level terkunci → bisa diketuk untuk lihat syarat
+            if (locked) {
+              return (
+                <details key={l.level} className={`ug-acc ${boxCls}`}>
+                  <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+                    {head}
+                  </summary>
+                  <div className="mt-2 space-y-2.5 border-t border-neutral-200 pt-2.5">
+                    <p className="text-[11px] font-semibold text-neutral-700">
+                      Syarat naik ke Lv. {l.level} — penuhi SEMUA target ini:
+                    </p>
+                    {KPI_COMPONENTS.map((c) => {
+                      const target = levelTargets[l.level]?.[c.key] ?? 0;
+                      const value = kpiValues[c.key];
+                      const done = value >= target;
+                      const pct =
+                        target > 0
+                          ? Math.min(100, Math.round((value / target) * 100))
+                          : 100;
+                      return (
+                        <div key={c.key}>
+                          <div className="flex items-center justify-between gap-2 text-[11px]">
+                            <span
+                              className={`flex items-center gap-1.5 font-medium ${done ? "text-brand-dark" : "text-neutral-700"}`}
+                            >
+                              {done ? (
+                                <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                              ) : (
+                                <span className="h-3.5 w-3.5 shrink-0 rounded-full border border-neutral-300" />
+                              )}
+                              {c.label}
+                            </span>
+                            <span className="shrink-0 font-mono text-neutral-500">
+                              {fmtKpi(value, c.unit)} /{" "}
+                              <b className="text-neutral-800">
+                                {fmtKpi(target, c.unit)}
+                              </b>
+                            </span>
+                          </div>
+                          <div className="mt-1 h-1 overflow-hidden rounded-full bg-neutral-100">
+                            <div
+                              className={`h-full rounded-full ${done ? "bg-brand-dark" : "bg-neutral-400"}`}
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                          <p className="mt-0.5 text-[10px] leading-snug text-neutral-400">
+                            Cara: {KPI_HOW[c.key]}
+                          </p>
+                        </div>
+                      );
+                    })}
+                    <p className="border-t border-dashed border-neutral-200 pt-1.5 text-[11px] text-neutral-500">
+                      <span className="font-semibold text-neutral-700">
+                        Hadiah:
+                      </span>{" "}
+                      {l.benefit}
+                    </p>
+                  </div>
+                </details>
+              );
+            }
+            return (
+              <div key={l.level} className={boxCls}>
+                {head}
+                <p className="mt-1 text-[11px] text-neutral-400">{l.benefit}</p>
               </div>
             );
           })}
         </div>
 
-        {/* Target skor grade berikutnya */}
-        {myGrade.score !== null && (
-          <div className="mb-4 rounded-lg bg-neutral-50 px-3 py-2 text-sm">
-            {nextTarget ? (
-              <>
-                Skor-mu <span className="font-bold">{myGrade.score}/100</span> —
-                butuh <span className="font-bold">{nextTarget.min}</span> untuk
-                grade <span className="font-bold">{nextTarget.grade}</span>{" "}
-                <span className="text-neutral-500">
-                  (kurang {nextTarget.min - myGrade.score} poin)
-                </span>
-              </>
-            ) : (
-              <>
-                Skor-mu <span className="font-bold">{myGrade.score}/100</span> —
-                grade S+ tertinggi, pertahankan!
-              </>
-            )}
-          </div>
-        )}
-
-        {/* Progres + tips per komponen grade */}
-        <div className="space-y-3">
-          {gradeSteps.map((s) => {
-            const part = partByKey.get(s.key);
-            const pct = part ? Math.round((part.earned / part.max) * 100) : 0;
+        {/* Milestone: syarat naik level (tiap KPI capai target) — gaya
+            checklist referensi. "Berikutnya" = belum beres, paling dekat. */}
+        <div className="mb-2 mt-1 flex items-center gap-2 text-xs font-semibold">
+          {nextLevelInfo
+            ? `Syarat naik ke Lv. ${nextLevelInfo.level} ${nextLevelInfo.name}`
+            : "Semua target — pertahankan"}
+          <span className="rounded-full bg-brand/15 px-2 py-0.5 text-[10px] font-bold text-brand-dark">
+            {msDoneCount}/{milestones.length} beres
+          </span>
+        </div>
+        <div className="mb-4 space-y-2">
+          {milestones.map((m) => {
+            const isNext = !m.done && m.key === nextMsKey;
             return (
-              <div key={s.key}>
-                <div className="mb-1 flex items-center justify-between text-xs">
-                  <span className="font-medium text-neutral-700">{s.label}</span>
-                  <span className="text-neutral-400">
-                    {part
-                      ? `${part.earned.toLocaleString("id-ID")}/${part.max} poin`
-                      : `0/${s.max} poin · belum dihitung`}
+              <div
+                key={m.key}
+                className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${
+                  m.done
+                    ? "border-brand/40 bg-brand/10"
+                    : isNext
+                      ? "border-brand-dark bg-brand/5"
+                      : "border-neutral-200"
+                }`}
+              >
+                <span
+                  className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-xs font-bold ${
+                    m.done
+                      ? "bg-brand text-neutral-900"
+                      : isNext
+                        ? "border-2 border-brand-dark text-brand-dark"
+                        : "bg-neutral-100 text-neutral-400"
+                  }`}
+                >
+                  {m.done ? "✓" : isNext ? "→" : "•"}
+                </span>
+                <span
+                  className={`min-w-0 flex-1 text-sm font-medium ${
+                    m.done || isNext ? "text-neutral-900" : "text-neutral-500"
+                  }`}
+                >
+                  {m.label}
+                </span>
+                {isNext && (
+                  <span className="shrink-0 rounded-full bg-brand/20 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-brand-dark">
+                    Berikutnya
                   </span>
-                </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-neutral-100">
-                  <div
-                    className="h-full rounded-full bg-neutral-900"
-                    style={{ width: `${pct}%` }}
-                  />
-                </div>
-                <p className="mt-1 text-xs text-neutral-400">{s.tip}</p>
+                )}
+                <span
+                  className={`shrink-0 font-mono text-xs font-bold ${
+                    m.done ? "text-brand-dark" : "text-neutral-400"
+                  }`}
+                >
+                  {m.prog}
+                  {m.done ? " ✓" : ""}
+                </span>
               </div>
             );
           })}
+        </div>
+
+        {/* Progres tiap komponen KPI vs target level berikutnya */}
+        <p className="mb-2 text-xs font-semibold text-neutral-700">
+          Rincian 5 komponen{" "}
+          {nextLevelInfo ? `(target Lv. ${nextLevelInfo.level})` : "(target puncak)"}
+        </p>
+        <div className="space-y-3">
+          {result.milestones.map((p) => (
+            <div key={p.key}>
+              <div className="mb-1 flex items-center justify-between gap-2 text-xs">
+                <span className="font-medium text-neutral-700">{p.label}</span>
+                <span className="shrink-0 text-neutral-400">
+                  {fmtKpi(p.value, p.unit)} / {fmtKpi(p.target, p.unit)} ·{" "}
+                  <span
+                    className={`font-semibold ${p.done ? "text-brand-dark" : "text-neutral-700"}`}
+                  >
+                    {p.pct}%
+                  </span>
+                </span>
+              </div>
+              <div className="h-1.5 overflow-hidden rounded-full bg-neutral-100">
+                <div
+                  className={`h-full rounded-full ${p.done ? "bg-brand-dark" : "bg-neutral-900"}`}
+                  style={{ width: `${p.pct}%` }}
+                />
+              </div>
+              <p className="mt-1 text-xs text-neutral-400">{p.hint}</p>
+            </div>
+          ))}
         </div>
       </section>
 

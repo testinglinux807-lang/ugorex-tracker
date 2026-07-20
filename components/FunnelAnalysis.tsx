@@ -167,8 +167,8 @@ export function FunnelAnalysis({ stores }: { stores: StoreFunnel[] }) {
         </select>
       </div>
 
-      {/* Chip filter tahap */}
-      <div className="flex flex-wrap gap-1.5">
+      {/* Filter tahap — tab garis-bawah, bisa digeser di mobile */}
+      <div className="-mx-1 flex gap-1 overflow-x-auto border-b border-neutral-200 px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {(["ALL", ...STAGES] as const).map((st) => {
           const on = stage === st;
           return (
@@ -176,10 +176,10 @@ export function FunnelAnalysis({ stores }: { stores: StoreFunnel[] }) {
               key={st}
               type="button"
               onClick={() => setStage(st)}
-              className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+              className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2 text-xs font-medium transition-colors ${
                 on
-                  ? "border-neutral-900 bg-neutral-900 text-white"
-                  : "border-neutral-300 bg-white text-neutral-600 hover:bg-neutral-100"
+                  ? "border-neutral-900 text-neutral-900"
+                  : "border-transparent text-neutral-500 hover:text-neutral-800"
               }`}
             >
               {st === "ALL" ? "Semua tahap" : STAGE_LABEL[st]}

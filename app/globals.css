@@ -138,3 +138,38 @@ body {
   z-index: 9999 !important;
   border-radius: 0 !important;
 }
+
+/* Accordion <details class="ug-acc"> buka/tutup halus (Chrome/Edge 129+).
+   Browser lama: tetap jalan, cuma tanpa animasi (langsung buka). */
+@supports (interpolate-size: allow-keywords) {
+  :root {
+    interpolate-size: allow-keywords;
+  }
+}
+.ug-acc::details-content {
+  block-size: 0;
+  overflow: hidden;
+  transition:
+    block-size 0.28s ease,
+    content-visibility 0.28s ease allow-discrete;
+}
+.ug-acc[open]::details-content {
+  block-size: auto;
+}
+/* Fallback animasi untuk browser tanpa ::details-content: isi meluncur
+   turun + fade saat dibuka (tutup tetap instan). */
+@supports not (interpolate-size: allow-keywords) {
+  .ug-acc[open] > *:not(summary) {
+    animation: ugacc 0.24s ease;
+  }
+}
+@keyframes ugacc {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
