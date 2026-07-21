@@ -53,7 +53,12 @@ export async function updateGudang(formData: FormData) {
     coord.homeLng = lng;
   }
 
-  await prisma.user.update({ where: { id }, data: { basePay, ...coord } });
+  const bankAccount = String(formData.get("bankAccount") ?? "").trim() || null;
+
+  await prisma.user.update({
+    where: { id },
+    data: { basePay, bankAccount, ...coord },
+  });
   revalidatePath("/payroll");
   revalidatePath("/order");
   return { ok: true };

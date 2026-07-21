@@ -14,8 +14,6 @@ import {
   CheckCircle2,
   Wallet,
   Clock,
-  MapPin,
-  Crosshair,
   ChevronDown,
   History,
   Landmark,
@@ -33,7 +31,6 @@ import {
   addLembur,
   deleteLog,
   setPayrollConfig,
-  updateGudang,
   setGudangRadius,
   deleteLemburSession,
   markKpiBonusPaid,
@@ -41,11 +38,7 @@ import {
   markGudangSalaryPaid,
   unmarkGudangSalaryPaid,
 } from "@/app/actions/payroll";
-import {
-  createGudangAccount,
-  deleteGudangAccount,
-  recordCommissionPayout,
-} from "@/app/actions/users";
+import { recordCommissionPayout } from "@/app/actions/users";
 
 const rp = (n: number) => "Rp" + Math.round(n).toLocaleString("id-ID");
 const jam = (n: number) =>
@@ -56,6 +49,7 @@ type Employee = {
   name: string;
   phone: string;
   basePay: number;
+  bankAccount: string | null;
   homeLat: number | null;
   homeLng: number | null;
 };
@@ -145,7 +139,6 @@ export function PayrollTabs(props: Props) {
       {tab === "gudang" && (
         <GudangView
           rows={props.gudang}
-          employees={props.employees}
           total={gudangTotal}
           monthLabel={props.monthLabel}
           period={props.period}
@@ -715,7 +708,6 @@ function Field({
 // ===== Gudang =====
 function GudangView({
   rows,
-  employees,
   total,
   monthLabel,
   period,
@@ -724,7 +716,6 @@ function GudangView({
   radiusKm,
 }: {
   rows: GudangPayrollRow[];
-  employees: Employee[];
   total: number;
   monthLabel: string;
   period: string;
@@ -762,6 +753,7 @@ function GudangView({
             <thead>
               <tr className="border-b border-neutral-200 text-left text-xs text-neutral-500">
                 <th className="px-4 py-3 font-semibold">Nama</th>
+                <th className="px-4 py-3 font-semibold">No. Rekening</th>
                 <th className="px-4 py-3 text-right font-semibold">Gaji Pokok</th>
                 <th className="px-4 py-3 text-right font-semibold">Jam Lembur</th>
                 <th className="px-4 py-3 text-right font-semibold">Upah Lembur</th>
@@ -773,7 +765,7 @@ function GudangView({
             <tbody>
               {shownRows.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-neutral-400">
+                  <td colSpan={8} className="px-4 py-8 text-center text-neutral-400">
                     {rows.length === 0
                       ? "Belum ada karyawan gudang - tambah akun di bawah."
                       : "Tidak ada yang cocok dengan filter."}
@@ -783,6 +775,9 @@ function GudangView({
                 shownRows.map((g) => (
                   <tr key={g.userId} className="border-b border-neutral-100">
                     <td className="px-4 py-3 font-medium">{g.name}</td>
+                    <td className="px-4 py-3">
+                      <BankAccountInline bankAccount={g.bankAccount} />
+                    </td>
                     <td className="px-4 py-3 text-right tabular-nums">
                       {rp(g.basePay)}
                     </td>
@@ -812,7 +807,7 @@ function GudangView({
             </tbody>
             <tfoot>
               <tr className="border-t border-neutral-200 font-semibold text-neutral-900">
-                <td colSpan={5} className="px-4 py-3">
+                <td colSpan={6} className="px-4 py-3">
                   TOTAL
                 </td>
                 <td className="px-4 py-3 text-right tabular-nums">{rp(total)}</td>
@@ -835,7 +830,7 @@ function GudangView({
         </div>
       </Panel>
 
-      <GudangManager employees={employees} radiusKm={radiusKm} tarif={tarif} />
+      <GudangSettingsForm radiusKm={radiusKm} tarif={tarif} />
     </div>
   );
 }
@@ -896,92 +891,24 @@ function GudangSalaryStatus({
   );
 }
 
-// Input koordinat gudang + tombol GPS "lokasi saya".
-function GudangCoordFields({
-  defLat,
-  defLng,
-}: {
-  defLat?: number | null;
-  defLng?: number | null;
-}) {
-  const [lat, setLat] = useState(defLat != null ? String(defLat) : "");
-  const [lng, setLng] = useState(defLng != null ? String(defLng) : "");
-  const [locating, setLocating] = useState(false);
-  const useMyLocation = () => {
-    if (!navigator.geolocation) return;
-    setLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setLat(pos.coords.latitude.toFixed(6));
-        setLng(pos.coords.longitude.toFixed(6));
-        setLocating(false);
-      },
-      () => setLocating(false),
-      { enableHighAccuracy: true, timeout: 10000 },
-    );
-  };
-  return (
-    <>
-      <label className="flex flex-col gap-1 text-xs font-medium text-neutral-500">
-        Latitude gudang
-        <input
-          name="homeLat"
-          value={lat}
-          onChange={(e) => setLat(e.target.value)}
-          inputMode="decimal"
-          placeholder="-6.30"
-          className="rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-900"
-        />
-      </label>
-      <label className="flex flex-col gap-1 text-xs font-medium text-neutral-500">
-        Longitude gudang
-        <input
-          name="homeLng"
-          value={lng}
-          onChange={(e) => setLng(e.target.value)}
-          inputMode="decimal"
-          placeholder="107.30"
-          className="rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-900"
-        />
-      </label>
-      <button
-        type="button"
-        onClick={useMyLocation}
-        disabled={locating}
-        className="inline-flex items-center gap-1.5 self-end rounded-lg border border-neutral-300 px-3 py-2 text-sm font-medium hover:bg-neutral-100 disabled:opacity-60"
-      >
-        <Crosshair className="h-4 w-4" />
-        {locating ? "Mencari…" : "Lokasi saya"}
-      </button>
-    </>
-  );
-}
-
-function GudangManager({
-  employees,
+// Setelan operasional gudang (tarif lembur + radius jangkauan) — kelola
+// AKUN gudang (tambah/edit/hapus, link registrasi) sekarang di Data →
+// Akun Gudang, bukan di sini lagi.
+function GudangSettingsForm({
   radiusKm,
   tarif,
 }: {
-  employees: Employee[];
   radiusKm: number;
   tarif: number;
 }) {
-  const [addState, addAction, addPending] = useActionState(
-    async (_p: unknown, fd: FormData) => (await createGudangAccount(fd)) ?? null,
-    null,
-  );
   return (
     <details className="ug-acc group rounded-2xl border border-neutral-200 bg-white">
       <summary className="flex cursor-pointer list-none items-center gap-2 p-5 [&::-webkit-details-marker]:hidden">
         <Settings2 className="h-4 w-4 text-neutral-500" />
-        <h2 className="font-semibold">Kelola Karyawan Gudang</h2>
-        <span className="ml-auto text-xs text-neutral-400">
-          {employees.length} akun
-        </span>
-        <ChevronDown className="h-4 w-4 shrink-0 text-neutral-400 transition-transform group-open:rotate-180" />
+        <h2 className="font-semibold">Setelan Gudang</h2>
+        <ChevronDown className="ml-auto h-4 w-4 shrink-0 text-neutral-400 transition-transform group-open:rotate-180" />
       </summary>
       <div className="space-y-3 border-t border-neutral-200 p-5 pt-4">
-        {/* Setelan gudang: tarif lembur + radius jangkauan */}
         <div className="grid gap-2 sm:grid-cols-2">
           <form
             action={async (fd) => {
@@ -1027,115 +954,12 @@ function GudangManager({
         </div>
         <p className="text-[11px] text-neutral-400">
           Toko di luar radius dari gudang terdekat ditandai “di luar jangkauan”
-          di halaman Order.
+          di halaman Order. Tambah/edit/hapus akun gudang sekarang di{" "}
+          <Link href="/data" className="underline hover:text-neutral-700">
+            Data → Akun Gudang
+          </Link>
+          .
         </p>
-
-        {employees.map((e) => (
-          <form
-            key={e.id}
-            action={async (fd) => {
-              await updateGudang(fd);
-            }}
-            className="grid gap-2 rounded-xl border border-neutral-200 p-3 sm:grid-cols-2 lg:grid-cols-4"
-          >
-            <input type="hidden" name="id" value={e.id} />
-            <div className="flex flex-col justify-center sm:col-span-2 lg:col-span-1">
-              <p className="text-sm font-medium">{e.name}</p>
-              <p className="text-xs text-neutral-400">{e.phone}</p>
-              {e.homeLat == null && (
-                <p className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-medium text-amber-700">
-                  <MapPin className="h-3 w-3" /> belum ada lokasi
-                </p>
-              )}
-            </div>
-            <label className="flex flex-col gap-1 text-xs font-medium text-neutral-500">
-              Gaji pokok
-              <input
-                name="basePay"
-                type="number"
-                min={0}
-                defaultValue={e.basePay}
-                className="rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-900"
-              />
-            </label>
-            <GudangCoordFields defLat={e.homeLat} defLng={e.homeLng} />
-            <div className="flex gap-2 sm:col-span-2 lg:col-span-4">
-              <button className="rounded-lg border border-neutral-300 px-3 py-2 text-sm font-semibold hover:bg-neutral-100">
-                Simpan
-              </button>
-              <button
-                formAction={async (fd) => {
-                  await deleteGudangAccount(fd);
-                }}
-                className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-2.5 py-2 text-sm text-red-600 hover:bg-red-50"
-                title="Hapus akun gudang"
-              >
-                <Trash2 className="h-4 w-4" /> Hapus
-              </button>
-            </div>
-          </form>
-        ))}
-
-        {/* Tambah akun gudang */}
-        <form
-          action={addAction}
-          className="grid gap-2 rounded-xl border border-dashed border-neutral-300 bg-neutral-50 p-3 sm:grid-cols-2 lg:grid-cols-4"
-        >
-          <label className="flex flex-col gap-1 text-xs font-medium text-neutral-500">
-            Nama
-            <input
-              name="name"
-              required
-              placeholder="mis. Budi Santoso"
-              className="rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-900"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-neutral-500">
-            No HP (login)
-            <input
-              name="phone"
-              required
-              placeholder="08…"
-              className="rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-900"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-neutral-500">
-            Password
-            <input
-              name="password"
-              required
-              placeholder="min. 4 karakter"
-              className="rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-900"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-neutral-500">
-            Gaji pokok
-            <input
-              name="basePay"
-              type="number"
-              min={0}
-              defaultValue={0}
-              className="rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-900"
-            />
-          </label>
-          <GudangCoordFields />
-          <div className="sm:col-span-2 lg:col-span-4">
-            <button
-              disabled={addPending}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-neutral-900 px-3.5 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-60"
-            >
-              <Plus className="h-4 w-4" /> Tambah Akun Gudang
-            </button>
-          </div>
-        </form>
-        {addState && "error" in addState && addState.error && (
-          <p className="text-sm text-red-600">{addState.error}</p>
-        )}
-        {addState && "ok" in addState && addState.ok && (
-          <p className="text-sm font-medium text-brand-dark">
-            Akun gudang dibuat.
-          </p>
-        )}
       </div>
     </details>
   );

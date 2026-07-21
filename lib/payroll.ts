@@ -110,10 +110,17 @@ export type GudangPayrollRow = {
   potongan: number;
   total: number;
   salaryPaid: boolean; // gaji bulan ini sudah ditandai dicairkan admin
+  bankAccount: string | null;
 };
 
 export function computeGudangPayroll(
-  e: { userId: string; name: string; basePay: number; salaryPaid?: boolean },
+  e: {
+    userId: string;
+    name: string;
+    basePay: number;
+    salaryPaid?: boolean;
+    bankAccount?: string | null;
+  },
   lemburJam: number,
   potonganLogs: { type: string; amount: number }[],
   cfg: PayrollConfig,
@@ -131,6 +138,7 @@ export function computeGudangPayroll(
     upahLembur,
     potongan,
     total: e.basePay + upahLembur - potongan,
+    bankAccount: e.bankAccount ?? null,
     salaryPaid: e.salaryPaid ?? false,
   };
 }

@@ -165,6 +165,22 @@ model SalesInvite {
   usedById    String? // id user sales hasil registrasi
 }
 
+// Undangan registrasi gudang: admin buat link unik /daftar-gudang/[token]
+// (tab Akun Gudang di /data), calon karyawan isi datanya sendiri dari HP
+// (nama, no HP, password, no rekening, titik gudang via GPS). Sekali pakai,
+// kedaluwarsa 7 hari. Struktur sama dgn SalesInvite, model terpisah supaya
+// query per-role tetap sederhana (tanpa kolom role di tabel invite).
+model GudangInvite {
+  id          String    @id @default(cuid())
+  token       String    @unique
+  note        String?
+  createdById String?
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime
+  usedAt      DateTime?
+  usedById    String?
+}
+
 // Langganan Web Push per perangkat/browser (notifikasi order untuk admin/sales)
 // Kode voucher diskon — dibuat admin (menu Data), dipakai owner saat
 // order restok (/order) dan catat penjualan (/pos).

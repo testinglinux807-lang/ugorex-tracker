@@ -120,6 +120,7 @@ export default async function PayrollPage({
           name: true,
           phone: true,
           basePay: true,
+          bankAccount: true,
           homeLat: true,
           homeLng: true,
           payrollLogs: {
@@ -227,6 +228,7 @@ export default async function PayrollPage({
         name: e.name,
         basePay: e.basePay,
         salaryPaid: gudangSalaryPaidSet.has(e.id),
+        bankAccount: e.bankAccount,
       },
       lemburJam,
       e.payrollLogs,
@@ -238,6 +240,7 @@ export default async function PayrollPage({
     name: e.name,
     phone: e.phone,
     basePay: e.basePay,
+    bankAccount: e.bankAccount,
     homeLat: e.homeLat,
     homeLng: e.homeLng,
   }));

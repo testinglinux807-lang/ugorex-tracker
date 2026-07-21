@@ -13,9 +13,14 @@ const SECRET = new TextEncoder().encode(
 
 // /api/midtrans: webhook notifikasi pembayaran — tanpa sesi,
 // diamankan lewat verifikasi signature di route-nya sendiri.
-// /daftar-sales: registrasi sales via link undangan (diamankan token
-// sekali-pakai di halamannya sendiri).
-const PUBLIC_PATHS = ["/login", "/api/midtrans", "/daftar-sales"];
+// /daftar-sales, /daftar-gudang: registrasi sales/gudang via link undangan
+// (diamankan token sekali-pakai di halamannya sendiri).
+const PUBLIC_PATHS = [
+  "/login",
+  "/api/midtrans",
+  "/daftar-sales",
+  "/daftar-gudang",
+];
 
 // Sliding session: token berumur 30 hari, tapi tiap kali dipakai dan sudah
 // lewat 7 hari sejak diterbitkan, diterbitkan ulang diam-diam — user yang

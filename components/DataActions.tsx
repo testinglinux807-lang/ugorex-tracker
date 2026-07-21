@@ -8,9 +8,11 @@ import {
 import {
   updateSalesAccount,
   deleteSalesAccount,
+  deleteGudangAccount,
 } from "@/app/actions/users";
+import { updateGudang } from "@/app/actions/payroll";
 import { SubmitButton, PendingLabel } from "@/components/SubmitButton";
-import { Pencil, Trash2, X } from "lucide-react";
+import { Pencil, Trash2, X, MapPin } from "lucide-react";
 
 const inputCls = "w-full rounded-lg border border-neutral-300 px-2 py-1.5 text-sm";
 
@@ -318,6 +320,113 @@ export function SalesRow({
               name="homeLng"
               defaultValue={user.homeLng ?? ""}
               placeholder="Longitude rumah"
+              inputMode="decimal"
+              className={inputCls}
+            />
+          </div>
+          {state?.error && (
+            <p className="text-xs font-medium text-red-600">{state.error}</p>
+          )}
+          <button
+            type="submit"
+            disabled={pending}
+            className="w-full rounded-lg bg-neutral-900 py-1.5 text-xs font-semibold text-white hover:bg-neutral-800 disabled:opacity-60"
+          >
+            {pending ? <PendingLabel text="Menyimpan…" /> : "Simpan Perubahan"}
+          </button>
+        </form>
+      )}
+    </div>
+  );
+}
+
+// Baris akun gudang di menu Data: info + edit (gaji pokok, no. rekening,
+// titik gudang) + hapus. Nama/no HP/password TIDAK bisa diedit di sini —
+// dulu juga begitu waktu masih di Payroll, belum ada kebutuhannya.
+export function GudangRow({
+  user,
+}: {
+  user: {
+    id: string;
+    name: string;
+    phone: string;
+    basePay: number;
+    bankAccount: string | null;
+    homeLat: number | null;
+    homeLng: number | null;
+  };
+}) {
+  const [editing, setEditing] = useState(false);
+  const [state, formAction, pending] = useActionState(
+    async (_prev: unknown, fd: FormData) => (await updateGudang(fd)) ?? null,
+    null,
+  );
+
+  const [seenState, setSeenState] = useState(state);
+  if (state !== seenState) {
+    setSeenState(state);
+    if (state?.ok) setEditing(false);
+  }
+
+  return (
+    <div className="py-2">
+      <div className="flex items-center justify-between gap-2 text-sm">
+        <span className="min-w-0 truncate font-medium">{user.name}</span>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="text-neutral-400">{user.phone}</span>
+          <EditToggle
+            open={editing}
+            onClick={() => setEditing((v) => !v)}
+            title="Edit akun gudang"
+          />
+          <DeleteWithConfirm
+            action={deleteGudangAccount.bind(null, user.id)}
+            title="Hapus akun gudang"
+            confirmText={`Hapus akun gudang "${user.name}"?`}
+          />
+        </div>
+      </div>
+      {user.homeLat == null && (
+        <p className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-medium text-amber-700">
+          <MapPin className="h-3 w-3" /> belum ada titik gudang
+        </p>
+      )}
+
+      {editing && (
+        <form
+          action={formAction}
+          className="mt-2 space-y-2 rounded-lg bg-neutral-50 p-2"
+        >
+          <input type="hidden" name="id" value={user.id} />
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              name="basePay"
+              type="number"
+              min={0}
+              defaultValue={user.basePay}
+              placeholder="Gaji pokok"
+              className={inputCls}
+            />
+            <input
+              name="bankAccount"
+              defaultValue={user.bankAccount ?? ""}
+              placeholder="No. rekening"
+              className={inputCls}
+            />
+          </div>
+          {/* Titik gudang — dasar penugasan paket terdekat */}
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              name="homeLat"
+              defaultValue={user.homeLat ?? ""}
+              placeholder="Latitude gudang"
+              inputMode="decimal"
+              className={inputCls}
+            />
+            <input
+              name="homeLng"
+              defaultValue={user.homeLng ?? ""}
+              placeholder="Longitude gudang"
               inputMode="decimal"
               className={inputCls}
             />

@@ -135,6 +135,7 @@ export async function createGudangAccount(formData: FormData) {
       passwordHash,
       role: "GUDANG",
       basePay,
+      bankAccount: String(formData.get("bankAccount") ?? "").trim() || null,
       createdById: user.id,
       ...parseHomePoint(formData), // lokasi gudang → dasar penugasan terdekat
     },
@@ -144,13 +145,11 @@ export async function createGudangAccount(formData: FormData) {
   return { ok: true };
 }
 
-export async function deleteGudangAccount(formData: FormData) {
+export async function deleteGudangAccount(id: string) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (user.role !== "ADMIN") return { error: "Hanya admin." };
 
-  const id = String(formData.get("id") ?? "").trim();
-  if (!id) return { error: "Karyawan tidak ditemukan." };
   const target = await prisma.user.findUnique({ where: { id } });
   if (!target || target.role !== "GUDANG")
     return { error: "Karyawan gudang tidak ditemukan." };
@@ -260,6 +259,105 @@ export async function registerSalesViaInvite(
   revalidatePath("/data");
   await createSession({ userId: created.id, role: "SALES", name: created.name });
   redirect("/beranda");
+}
+
+// ===== Link registrasi gudang (undangan sekali pakai) =====
+// Struktur sama persis dengan link registrasi sales di atas.
+
+// Admin membuat link undangan /daftar-gudang/[token] — dibagikan ke calon
+// karyawan gudang, dia isi datanya sendiri dari HP (termasuk GPS titik
+// gudang, dasar penugasan paket terdekat).
+export async function createGudangInvite(formData: FormData) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (user.role !== "ADMIN") return { error: "Hanya admin." };
+
+  await prisma.gudangInvite.create({
+    data: {
+      token: randomBytes(18).toString("base64url"),
+      note: String(formData.get("note") ?? "").trim() || null,
+      createdById: user.id,
+      expiresAt: new Date(Date.now() + INVITE_DAYS * 86_400_000),
+    },
+  });
+  revalidatePath("/data");
+  return { ok: true };
+}
+
+// Admin menghapus / mencabut link undangan
+export async function deleteGudangInvite(id: string) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (user.role !== "ADMIN") return { error: "Hanya admin." };
+
+  await prisma.gudangInvite.delete({ where: { id } });
+  revalidatePath("/data");
+  return { ok: true };
+}
+
+// Registrasi gudang lewat link undangan — PUBLIK (tanpa sesi), diamankan
+// token sekali-pakai. Sukses = akun GUDANG dibuat + langsung login.
+// Gaji pokok TIDAK diisi sendiri — admin atur belakangan di Data → Akun
+// Gudang (default 0, sama seperti akun dibuat manual admin).
+export async function registerGudangViaInvite(
+  token: string,
+  formData: FormData,
+) {
+  const invite = await prisma.gudangInvite.findUnique({ where: { token } });
+  if (!invite || invite.usedAt || invite.expiresAt < new Date()) {
+    return { error: "Link registrasi tidak berlaku. Minta link baru ke admin." };
+  }
+
+  const name = String(formData.get("name") ?? "").trim();
+  const phone = String(formData.get("phone") ?? "").trim();
+  const password = String(formData.get("password") ?? "");
+  if (!name || !phone || !password) {
+    return { error: "Nama, no HP, dan password wajib diisi." };
+  }
+  if (password.length < 4) return { error: "Password minimal 4 karakter." };
+
+  const existing = await prisma.user.findUnique({ where: { phone } });
+  if (existing) return { error: "Nomor HP sudah terdaftar. Coba login." };
+
+  // Klaim token dulu secara atomik (anti dobel submit / rebutan), baru
+  // buat akunnya; kalau pembuatan akun gagal, klaimnya dilepas lagi.
+  const claimed = await prisma.gudangInvite.updateMany({
+    where: { token, usedAt: null, expiresAt: { gt: new Date() } },
+    data: { usedAt: new Date() },
+  });
+  if (claimed.count === 0) {
+    return { error: "Link registrasi baru saja terpakai. Minta link baru ke admin." };
+  }
+
+  let created;
+  try {
+    created = await prisma.user.create({
+      data: {
+        name,
+        phone,
+        passwordHash: await bcrypt.hash(password, 10),
+        role: "GUDANG",
+        createdById: invite.createdById,
+        bankAccount: String(formData.get("bankAccount") ?? "").trim() || null,
+        ...parseHomePoint(formData),
+      },
+    });
+    await prisma.gudangInvite.update({
+      where: { token },
+      data: { usedById: created.id },
+    });
+  } catch {
+    await prisma.gudangInvite.updateMany({
+      where: { token },
+      data: { usedAt: null },
+    });
+    return { error: "Gagal membuat akun. Coba lagi." };
+  }
+
+  revalidatePath("/data");
+  revalidatePath("/payroll");
+  await createSession({ userId: created.id, role: "GUDANG", name: created.name });
+  redirect("/gudang");
 }
 
 // Admin mengubah akun SALES (password hanya diganti kalau diisi)

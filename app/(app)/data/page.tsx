@@ -2,16 +2,27 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { createProduct, createStore } from "@/app/actions/tracker";
-import { CreateSalesForm } from "@/components/AccountForms";
+import { CreateSalesForm, CreateGudangForm } from "@/components/AccountForms";
 import { Paginated } from "@/components/Paginated";
 import { KonterList } from "@/components/KonterList";
-import { SalesRow } from "@/components/DataActions";
+import { SalesRow, GudangRow } from "@/components/DataActions";
 import { ProductTable } from "@/components/ProductTable";
 import { SubmitButton } from "@/components/SubmitButton";
 import { DataTabs } from "@/components/DataTabs";
 import { VoucherManager } from "@/components/VoucherManager";
 import { GrosirManager } from "@/components/GrosirManager";
-import { Package, Percent, Store, TicketPercent, Users } from "lucide-react";
+import {
+  GudangInviteManager,
+  type GudangInviteItem,
+} from "@/components/GudangInviteManager";
+import {
+  Package,
+  Percent,
+  Store,
+  TicketPercent,
+  Users,
+  Warehouse,
+} from "lucide-react";
 
 const inputCls = "w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm";
 const btnCls =
@@ -33,32 +44,68 @@ export default async function DataPage() {
 
   const isAdmin = user.role === "ADMIN";
 
-  const [products, stores, salesList, vouchers, grosirTiers] =
-    await Promise.all([
-      prisma.product.findMany({ orderBy: { name: "asc" } }),
-      prisma.store.findMany({
-        where: isAdmin ? {} : { salesId: user.id },
-        include: { sales: true, ownerUser: true },
-        orderBy: { name: "asc" },
-      }),
-      prisma.user.findMany({
-        where: { role: "SALES" },
-        orderBy: { name: "asc" },
-      }),
-      isAdmin
-        ? prisma.voucher.findMany({ orderBy: { createdAt: "desc" } })
-        : Promise.resolve([]),
-      isAdmin
-        ? prisma.grosirTier.findMany({ orderBy: { minQty: "asc" } })
-        : Promise.resolve([]),
-    ]);
+  const [
+    products,
+    stores,
+    salesList,
+    vouchers,
+    grosirTiers,
+    gudangList,
+    gudangInviteRows,
+  ] = await Promise.all([
+    prisma.product.findMany({ orderBy: { name: "asc" } }),
+    prisma.store.findMany({
+      where: isAdmin ? {} : { salesId: user.id },
+      include: { sales: true, ownerUser: true },
+      orderBy: { name: "asc" },
+    }),
+    prisma.user.findMany({
+      where: { role: "SALES" },
+      orderBy: { name: "asc" },
+    }),
+    isAdmin
+      ? prisma.voucher.findMany({ orderBy: { createdAt: "desc" } })
+      : Promise.resolve([]),
+    isAdmin
+      ? prisma.grosirTier.findMany({ orderBy: { minQty: "asc" } })
+      : Promise.resolve([]),
+    isAdmin
+      ? prisma.user.findMany({
+          where: { role: "GUDANG" },
+          orderBy: { name: "asc" },
+        })
+      : Promise.resolve([]),
+    isAdmin
+      ? prisma.gudangInvite.findMany({
+          orderBy: { createdAt: "desc" },
+          take: 10,
+        })
+      : Promise.resolve([]),
+  ]);
+
+  const appUrl = process.env.APP_URL ?? "http://localhost:3000";
+  const now = new Date();
+  const gudangInvites: GudangInviteItem[] = gudangInviteRows.map((inv) => ({
+    id: inv.id,
+    url: `${appUrl}/daftar-gudang/${inv.token}`,
+    note: inv.note,
+    status: inv.usedAt
+      ? "TERPAKAI"
+      : inv.expiresAt < now
+        ? "KEDALUWARSA"
+        : "AKTIF",
+    expiresAtLabel: inv.expiresAt.toLocaleDateString("id-ID", {
+      day: "numeric",
+      month: "short",
+    }),
+  }));
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Data</h1>
         <p className="text-sm text-neutral-500">
-          Kelola barang, konter, dan akun sales
+          Kelola barang, konter, dan akun sales/gudang
         </p>
       </div>
 
@@ -75,6 +122,7 @@ export default async function DataPage() {
             ? [
                 { key: "voucher", label: "Voucher", count: vouchers.length },
                 { key: "sales", label: "Akun Sales", count: salesList.length },
+                { key: "gudang", label: "Akun Gudang", count: gudangList.length },
               ]
             : []),
           { key: "konter", label: "Konter", count: stores.length },
@@ -248,6 +296,56 @@ export default async function DataPage() {
                 Tambah Sales
               </p>
               <CreateSalesForm />
+            </div>
+          </section>
+                  ),
+                },
+                {
+                  tab: "gudang",
+                  className: "lg:col-span-2",
+                  node: (
+          <section className="flex flex-col rounded-xl border border-neutral-200 bg-white p-5">
+            <div className="mb-3 flex items-center gap-2">
+              <Warehouse className="h-4 w-4 text-neutral-500" />
+              <h2 className="font-semibold">Akun Gudang</h2>
+              <Count n={gudangList.length} />
+            </div>
+            <div className="flex-1">
+              <Paginated
+                perPage={5}
+                className="divide-y divide-neutral-100"
+                empty={
+                  <p className="text-sm text-neutral-400">
+                    Belum ada karyawan gudang.
+                  </p>
+                }
+                items={gudangList.map((g) => (
+                  <GudangRow
+                    key={g.id}
+                    user={{
+                      id: g.id,
+                      name: g.name,
+                      phone: g.phone,
+                      basePay: g.basePay,
+                      bankAccount: g.bankAccount,
+                      homeLat: g.homeLat,
+                      homeLng: g.homeLng,
+                    }}
+                  />
+                ))}
+              />
+            </div>
+            <div className="mt-4 border-t border-neutral-100 pt-4">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-400">
+                Tambah Karyawan Gudang
+              </p>
+              <CreateGudangForm />
+            </div>
+            <div className="mt-4 border-t border-neutral-100 pt-4">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-400">
+                Atau kirim link registrasi (sekali pakai, 7 hari)
+              </p>
+              <GudangInviteManager invites={gudangInvites} />
             </div>
           </section>
                   ),
