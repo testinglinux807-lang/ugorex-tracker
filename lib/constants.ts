@@ -63,13 +63,14 @@ export const RESULT_COLOR: Record<Result, string> = {
   POSITIVE: "bg-brand text-neutral-900 border-brand",
 };
 
-export const ROLES = ["ADMIN", "SALES", "OWNER"] as const;
+export const ROLES = ["ADMIN", "SALES", "OWNER", "GUDANG"] as const;
 export type Role = (typeof ROLES)[number];
 
 export const ROLE_LABEL: Record<Role, string> = {
   ADMIN: "Admin",
   SALES: "Sales",
   OWNER: "Owner Toko",
+  GUDANG: "Gudang",
 };
 
 // Pencatatan keuangan (menu Keuangan, admin)

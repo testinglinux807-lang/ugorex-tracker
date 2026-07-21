@@ -31,6 +31,7 @@ import {
   Printer,
   XCircle,
   BadgeCheck,
+  MapPinOff,
 } from "lucide-react";
 
 export type OrderRequest = Prisma.RequestGetPayload<{
@@ -39,7 +40,9 @@ export type OrderRequest = Prisma.RequestGetPayload<{
     createdBy: true;
     items: {
       include: {
-        product: { select: { id: true; name: true; centralStock: true } };
+        product: {
+          select: { id: true; name: true; code: true; centralStock: true };
+        };
       };
     };
   };
@@ -78,20 +81,27 @@ function ItemRow({
   item: it,
   canRespond,
   remaining,
+  showPrice = true,
 }: {
   item: OrderRequest["items"][number];
   canRespond: boolean;
   remaining: number | undefined;
+  showPrice?: boolean;
 }) {
   const short = it.product.centralStock < it.qty;
   return (
     <div className="flex items-center gap-3">
       <div className="min-w-0 flex-1">
         <p className="break-words text-sm font-medium leading-snug">
+          {it.product.code && (
+            <span className="mr-1 rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-neutral-600">
+              {it.product.code}
+            </span>
+          )}
           {it.product.name}
         </p>
         <p className="text-xs text-neutral-500">
-          {it.qty} × {rupiah(it.price)}
+          {showPrice ? `${it.qty} × ${rupiah(it.price)}` : `${it.qty} pcs`}
         </p>
         {canRespond && (
           <p
@@ -104,9 +114,11 @@ function ItemRow({
           </p>
         )}
       </div>
-      <span className="shrink-0 text-sm font-semibold">
-        {rupiah(it.qty * it.price)}
-      </span>
+      {showPrice && (
+        <span className="shrink-0 text-sm font-semibold">
+          {rupiah(it.qty * it.price)}
+        </span>
+      )}
     </div>
   );
 }
@@ -117,14 +129,35 @@ export function OrderCard({
   order: r,
   canRespond,
   isAdmin = false,
+  isGudang = false,
+  canTrack = true,
+  showPrice = true,
+  assignedGudangName = null,
+  assignedToMe = false,
+  assignedFar = false,
+  assignedDistKm = null,
   remaining,
   highlighted = false,
   orderSeq,
 }: {
   order: OrderRequest;
   canRespond: boolean;
-  // ADMIN (gudang): tombol "Siap Dipickup" + tandai refund dana
+  // ADMIN: aksi admin (refund, cetak resi, batal, dll.)
   isAdmin?: boolean;
+  // GUDANG: cukup Cetak Resi + Siap Dipickup; tak ikut urusan owner/harga
+  isGudang?: boolean;
+  // Boleh buka timeline "Lacak paket" (gudang tidak — cukup sampai packing)
+  canTrack?: boolean;
+  // Boleh lihat harga/total order. Gudang = false (cuma perlu barang & qty);
+  // sales/admin/owner = true.
+  showPrice?: boolean;
+  // Penugasan packing: order jatuh ke gudang terdekat dari sales pemegang
+  // toko (lib/gudang-assign.ts). Cuma gudang yang ditugaskan (atau admin)
+  // yang boleh menandai "Siap Dipickup".
+  assignedGudangName?: string | null;
+  assignedToMe?: boolean; // gudang aktif = yang ditugaskan
+  assignedFar?: boolean; // toko di luar radius gudang
+  assignedDistKm?: number | null; // jarak gudang ↔ sales (km)
   remaining: Map<string, number>;
   highlighted?: boolean; // datang dari klik notifikasi — kartu disorot
   orderSeq?: number; // orderan ke-berapa dari toko ini (dihitung di page)
@@ -250,9 +283,41 @@ export function OrderCard({
         {/* Status alur berjalan — baris polos (bukan kotak abu) biar latar
             kartu tetap satu warna. Ikon lime kecil sbg penanda. */}
         {r.status === "PENDING" && (
-          <div className="flex items-center gap-2 text-xs font-medium text-neutral-600">
-            <Package className="h-4 w-4 shrink-0 text-brand-dark" />
-            Pesanan sedang disiapkan gudang
+          <div className="space-y-1 text-xs">
+            <div className="flex items-center gap-2 font-medium text-neutral-600">
+              <Package className="h-4 w-4 shrink-0 text-brand-dark" />
+              Pesanan sedang disiapkan gudang
+            </div>
+            {/* Penugasan gudang terdekat (dari sales pemegang toko) */}
+            {assignedGudangName ? (
+              <p
+                className={`flex flex-wrap items-center gap-x-1.5 gap-y-1 pl-6 ${
+                  assignedFar ? "text-amber-700" : "text-neutral-400"
+                }`}
+              >
+                <span>
+                  Ditugaskan:{" "}
+                  <span className="font-medium text-neutral-600">
+                    {assignedToMe ? "kamu" : assignedGudangName}
+                  </span>
+                </span>
+                {assignedDistKm != null && (
+                  <span>· {assignedDistKm.toFixed(1)} km dari sales</span>
+                )}
+                {assignedFar && (
+                  <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                    <MapPinOff className="h-3 w-3" /> toko di luar jangkauan
+                  </span>
+                )}
+              </p>
+            ) : (
+              isAdmin && (
+                <p className="flex items-center gap-1 pl-6 text-neutral-400">
+                  <MapPinOff className="h-3.5 w-3.5 shrink-0" />
+                  Belum ada gudang berlokasi — atur di Payroll.
+                </p>
+              )
+            )}
           </div>
         )}
         {r.status === "READY" && (
@@ -480,6 +545,7 @@ export function OrderCard({
             item={it}
             canRespond={canRespond}
             remaining={remaining.get(`${r.storeId}:${it.productId}`)}
+            showPrice={showPrice}
           />
         ))}
         {rest.length > 0 && (
@@ -495,6 +561,7 @@ export function OrderCard({
                   item={it}
                   canRespond={canRespond}
                   remaining={remaining.get(`${r.storeId}:${it.productId}`)}
+                  showPrice={showPrice}
                 />
               ))}
             </div>
@@ -518,41 +585,55 @@ export function OrderCard({
             {r.items.reduce((a, it) => a + it.qty, 0)} pcs
             {r.createdBy?.name ? ` · oleh ${r.createdBy.name}` : ""}
           </p>
-          {/* Lacak paket — semua role bisa buka timeline statusnya */}
-          <Link
-            href={`/order/${r.id}/lacak`}
-            className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-neutral-700 hover:underline"
-          >
-            <Truck className="h-3.5 w-3.5" />
-            Lacak paket
-          </Link>
+          {/* Lacak paket — timeline status. Gudang tak perlu (tugasnya
+              selesai di packing), jadi disembunyikan lewat canTrack. */}
+          {canTrack && (
+            <Link
+              href={`/order/${r.id}/lacak`}
+              className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-neutral-700 hover:underline"
+            >
+              <Truck className="h-3.5 w-3.5" />
+              Lacak paket
+            </Link>
+          )}
         </div>
-        <div className="mt-1 flex items-baseline justify-between gap-2">
-          <span className="text-xs text-neutral-500">Total Pesanan</span>
-          <span className="flex items-baseline gap-2">
-            {r.discount + r.grosirDiscount > 0 && (
-              <span className="text-[11px] text-neutral-400">
-                hemat {rupiah(r.discount + r.grosirDiscount)}
-              </span>
-            )}
-            <span className="text-base font-bold">{rupiah(r.total)}</span>
-          </span>
-        </div>
-        {r.paymentFee > 0 && (
+        {showPrice ? (
           <>
-            <div className="mt-0.5 flex items-baseline justify-between gap-2 text-xs text-neutral-500">
-              <span>Biaya layanan</span>
-              <span>{rupiah(r.paymentFee)}</span>
-            </div>
-            <div className="mt-0.5 flex items-baseline justify-between gap-2">
-              <span className="text-xs font-medium text-neutral-600">
-                Total Bayar
+            <div className="mt-1 flex items-baseline justify-between gap-2">
+              <span className="text-xs text-neutral-500">Total Pesanan</span>
+              <span className="flex items-baseline gap-2">
+                {r.discount + r.grosirDiscount > 0 && (
+                  <span className="text-[11px] text-neutral-400">
+                    hemat {rupiah(r.discount + r.grosirDiscount)}
+                  </span>
+                )}
+                <span className="text-base font-bold">{rupiah(r.total)}</span>
               </span>
-              <span className="text-sm font-bold">
-                {rupiah(r.total + r.paymentFee)}
-              </span>
             </div>
+            {r.paymentFee > 0 && (
+              <>
+                <div className="mt-0.5 flex items-baseline justify-between gap-2 text-xs text-neutral-500">
+                  <span>Biaya layanan</span>
+                  <span>{rupiah(r.paymentFee)}</span>
+                </div>
+                <div className="mt-0.5 flex items-baseline justify-between gap-2">
+                  <span className="text-xs font-medium text-neutral-600">
+                    Total Bayar
+                  </span>
+                  <span className="text-sm font-bold">
+                    {rupiah(r.total + r.paymentFee)}
+                  </span>
+                </div>
+              </>
+            )}
           </>
+        ) : (
+          <div className="mt-1 flex items-baseline justify-between gap-2">
+            <span className="text-xs text-neutral-500">Total barang</span>
+            <span className="text-sm font-semibold">
+              {r.items.reduce((a, it) => a + it.qty, 0)} pcs
+            </span>
+          </div>
         )}
       </div>
 
@@ -617,7 +698,8 @@ export function OrderCard({
           melar selebar kartu */}
       {canRespond && (
         <div className="grid grid-cols-2 gap-2 border-t border-neutral-200 px-4 py-2.5 sm:grid-cols-4">
-          {wa && (
+          {/* Hubungi Owner — urusan sales/admin, gudang tak ikut campur */}
+          {wa && !isGudang && (
             <a
               href={wa}
               target="_blank"
@@ -629,9 +711,9 @@ export function OrderCard({
             </a>
           )}
           {/* Cetak label resi (dibuat sekali di klik pertama) — halaman
-              /order/[id]/resi berisi label siap print. Khusus ADMIN/gudang
+              /order/[id]/resi berisi label siap print. ADMIN & GUDANG
               (resi dicetak & ditempel saat packing, bukan urusan sales). */}
-          {isAdmin && !cancelled && !returned && (
+          {(isAdmin || isGudang) && !cancelled && !returned && (
             <form
               action={async () => {
                 "use server";
@@ -648,9 +730,13 @@ export function OrderCard({
               </SubmitButton>
             </form>
           )}
-          {/* Alur: Disiapkan gudang → [admin] Siap Dipickup → [sales]
-              Pickup Barang → report sampai / diterima owner */}
-          {r.status === "PENDING" && isAdmin && (
+          {/* Penugasan gudang terdekat (bukan rebutan): order jatuh ke gudang
+              paling dekat dari sales pemegang toko. Hanya gudang itu (atau
+              admin) yang boleh menandai Siap Dipickup.
+              Alur: Disiapkan Gudang → Siap Dipickup → [sales] Pickup → sampai */}
+          {/* Tombol packing — penugasan/di-luar-jangkauan tampil di header
+              status atas, jadi di sini cukup tombolnya saja. */}
+          {r.status === "PENDING" && (isAdmin || assignedToMe) && (
             <form
               action={async () => {
                 "use server";

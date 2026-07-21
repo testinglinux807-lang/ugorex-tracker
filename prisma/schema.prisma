@@ -40,6 +40,9 @@ model User {
   // NIK KTP (role SALES, 16 digit) — data administrasi karyawan
   nik String?
 
+  // Gaji pokok bulanan (role GUDANG) — dipakai payroll. 0 = belum diatur.
+  basePay Int @default(0)
+
   // Untuk OWNER: toko yang dimilikinya
   ownedStore   Store?   @relation("StoreOwnerUser")
 
@@ -65,6 +68,13 @@ model User {
 
   // Rating bintang dari owner konter untuk sales ini (menu Performa Sales)
   salesRatings SalesRating[] @relation("SalesRatingTarget")
+
+  // Riwayat skor grade bulanan (untuk rata-rata rolling 3 bulan)
+  monthlyScores SalesMonthlyScore[] @relation("SalesMonthlyScore")
+
+  // Payroll gudang (role GUDANG): potongan & sesi lembur
+  payrollLogs    PayrollLog[]    @relation("PayrollLogUser")
+  lemburSessions LemburSession[] @relation("LemburUser")
 
   // Pencairan fee bagi hasil yang diterima sales ini (dicatat admin)
   commissionPayouts CommissionPayout[] @relation("CommissionPayoutSales")
@@ -211,6 +221,54 @@ model SalesRating {
   updatedAt DateTime @updatedAt
 
   @@index([salesId])
+}
+
+// Potongan gaji gudang (telat, kasbon, absen) — dicatat admin per karyawan
+// (User role GUDANG). Lembur TIDAK di sini; lembur pakai LemburSession
+// (clock-in/out oleh karyawan sendiri).
+model PayrollLog {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation("PayrollLogUser", fields: [userId], references: [id], onDelete: Cascade)
+  date       DateTime // tanggal kejadian (jam 0 WIB)
+  type       String // TELAT | KASBON | ABSEN
+  amount     Int // Rupiah potongan
+  note       String?
+  createdById String? // admin pencatat (snapshot id, tanpa relasi)
+  createdAt  DateTime @default(now())
+
+  @@index([userId, date])
+}
+
+// Sesi lembur gudang — karyawan (User role GUDANG) clock-in (startAt) lalu
+// clock-out (endAt). Jam lembur = (endAt − startAt); endAt null = sedang
+// berjalan. Upah lembur = jam × tarif global (Config payroll_lembur_tarif).
+model LemburSession {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation("LemburUser", fields: [userId], references: [id], onDelete: Cascade)
+  startAt   DateTime  @default(now())
+  endAt     DateTime? // null = masih berjalan
+  note      String?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, startAt])
+}
+
+// Snapshot skor grade sales per bulan (0-100). Skor bulan berjalan ditulis
+// ulang tiap sales buka beranda (dedup kalau sama); bulan lampau dibaca beku
+// untuk rata-rata rolling 3 bulan (lib/sales-kpi-grade.ts + sales-score-history.ts).
+model SalesMonthlyScore {
+  id        String   @id @default(cuid())
+  salesId   String
+  sales     User     @relation("SalesMonthlyScore", fields: [salesId], references: [id], onDelete: Cascade)
+  period    String // "YYYY-MM" (WIB)
+  score     Int // 0-100
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([salesId, period])
+  @@index([salesId, period])
 }
 
 // Barang yang dijual, mis. Antigores

@@ -12,6 +12,11 @@ import { OrderPaymentWatcher } from "@/components/OrderPaymentWatcher";
 import { OrderTabs } from "@/components/OrderTabs";
 import { RestockCheckout } from "@/components/RequestForm";
 import { deliveryPhotoSrcMap } from "@/lib/product-image";
+import {
+  loadGudangLocs,
+  getGudangRadiusKm,
+  assignForOrder,
+} from "@/lib/gudang-assign";
 import { Printer, ShoppingBag } from "lucide-react";
 
 const rupiah = (n: number) =>
@@ -28,6 +33,8 @@ export default async function OrderPage({
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  // Gudang punya halaman sendiri (/gudang) — cegah masuk ke /order.
+  if (user.role === "GUDANG") redirect("/gudang");
 
   const isOwner = user.role === "OWNER";
   const { focus } = await searchParams;
@@ -59,7 +66,9 @@ export default async function OrderPage({
     // Cukup nama + stok pusat — description (daftar HP kompatibel) berat
     items: {
       include: {
-        product: { select: { id: true, name: true, centralStock: true } },
+        product: {
+          select: { id: true, name: true, code: true, centralStock: true },
+        },
       },
     },
   } as const;
@@ -361,6 +370,25 @@ export default async function OrderPage({
     );
   }
 
+  // Penugasan gudang terdekat (dari sales pemegang toko) untuk order PENDING
+  const [gudangLocs, gudangRadius] = await Promise.all([
+    loadGudangLocs(),
+    getGudangRadiusKm(),
+  ]);
+
+  // Gudang: halaman fokus ke antrian PACKING miliknya saja (paket PENDING
+  // yang ditugaskan ke dirinya) — tanpa filter status & total nilai order.
+  const isGudang = user.role === "GUDANG";
+  const withAssign = orders.map((r) => ({
+    r,
+    a: assignForOrder(r, gudangLocs, gudangRadius),
+  }));
+  const visible = isGudang
+    ? withAssign.filter(
+        (x) => x.r.status === "PENDING" && x.a != null && x.a.gudangId === user.id,
+      )
+    : withAssign;
+
   // Orderan membeludak: admin cetak semua resi order yang belum dikirim
   // (Disiapkan Gudang + Siap Dipickup) sekali jalan → /order/resi-massal
   const printableCount =
@@ -374,11 +402,15 @@ export default async function OrderPage({
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Order</h1>
+          <h1 className="text-2xl font-bold">
+            {isGudang ? "Paket untuk Disiapkan" : "Order"}
+          </h1>
           <p className="text-sm text-neutral-500">
-            {user.role === "SALES"
-              ? "Orderan restok dari toko yang kamu pegang"
-              : "Orderan restok dari semua toko"}
+            {isGudang
+              ? "Paket yang ditugaskan ke kamu — siapkan & cetak resinya"
+              : user.role === "SALES"
+                ? "Orderan restok dari toko yang kamu pegang"
+                : "Orderan restok dari semua toko"}
           </p>
         </div>
         {printableCount > 0 && (
@@ -400,26 +432,41 @@ export default async function OrderPage({
         )}
       </div>
 
-      {/* Ringkasan — di HP kartu nilai (angka panjang) span penuh di bawah */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+      {/* Ringkasan — gudang cukup lihat jumlah paket yang harus disiapkan;
+          admin/sales lihat total order, antre, & nilai. Harga disembunyikan
+          dari gudang (urusan sales yang tanggung jawab ke owner toko). */}
+      {isGudang ? (
         <div className="rounded-2xl border border-neutral-200 bg-white p-4">
-          <p className="text-xs text-neutral-500">Total Order</p>
-          <p className="text-2xl font-bold">{orderCount}</p>
+          <p className="text-xs text-neutral-500">Paket untuk disiapkan</p>
+          <p className="text-2xl font-bold">{visible.length}</p>
         </div>
-        <div className="rounded-2xl border border-neutral-200 bg-white p-4">
-          <p className="text-xs text-neutral-500">Menunggu Diproses</p>
-          <p className="text-2xl font-bold">{pending}</p>
+      ) : (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <div className="rounded-2xl border border-neutral-200 bg-white p-4">
+            <p className="text-xs text-neutral-500">Total Order</p>
+            <p className="text-2xl font-bold">{orderCount}</p>
+          </div>
+          <div className="rounded-2xl border border-neutral-200 bg-white p-4">
+            <p className="text-xs text-neutral-500">Menunggu Diproses</p>
+            <p className="text-2xl font-bold">{pending}</p>
+          </div>
+          <div className="col-span-2 rounded-2xl border border-neutral-200 bg-white p-4 sm:col-span-1">
+            <p className="text-xs text-neutral-500">Total Nilai Order</p>
+            <p className="break-words text-xl font-bold sm:text-2xl">
+              {rupiah(totalValue)}
+            </p>
+          </div>
         </div>
-        <div className="col-span-2 rounded-2xl border border-neutral-200 bg-white p-4 sm:col-span-1">
-          <p className="text-xs text-neutral-500">Total Nilai Order</p>
-          <p className="break-words text-xl font-bold sm:text-2xl">
-            {rupiah(totalValue)}
-          </p>
-        </div>
-      </div>
+      )}
 
       <OrderList
-        items={orders.map((r) => ({
+        showFilters={!isGudang}
+        emptyAll={
+          isGudang
+            ? "Belum ada paket yang ditugaskan ke kamu."
+            : "Belum ada orderan restok dari toko."
+        }
+        items={visible.map(({ r, a }) => ({
           status: r.status,
           search: searchOf(r),
           node: (
@@ -428,6 +475,13 @@ export default async function OrderPage({
               order={r}
               canRespond
               isAdmin={user.role === "ADMIN"}
+              isGudang={isGudang}
+              canTrack={!isGudang}
+              showPrice={!isGudang}
+              assignedGudangName={a?.gudangName ?? null}
+              assignedToMe={a != null && a.gudangId === user.id}
+              assignedFar={a?.far ?? false}
+              assignedDistKm={a?.salesDistKm ?? null}
               remaining={remaining}
               highlighted={isFocused(r.id)}
               orderSeq={orderSeq.get(r.id)}

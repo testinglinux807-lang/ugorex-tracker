@@ -19,6 +19,11 @@ import {
 import { paymentFee } from "@/lib/payment-fee";
 import { findUsableVoucher, consumeVoucher } from "@/lib/voucher";
 import {
+  loadGudangLocs,
+  getGudangRadiusKm,
+  assignForOrder,
+} from "@/lib/gudang-assign";
+import {
   voucherDiscount,
   grosirTierFor,
   grosirDiscount,
@@ -642,29 +647,60 @@ export async function respondRequest(id: string, formData: FormData) {
 //            tetap COMPLETED, nilai retur tercatat di returnedTotal)
 
 // Admin/gudang menandai barang order sudah dipacking & siap dipickup.
+// Gudang hanya boleh order yang DITUGASKAN ke dirinya (gudang terdekat dari
+// sales pemegang toko) — bukan rebutan. Admin boleh override.
 export async function markOrderReady(id: string) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  if (user.role !== "ADMIN") {
+  if (user.role !== "ADMIN" && user.role !== "GUDANG") {
     return { error: "Hanya admin/gudang yang bisa menandai siap dipickup." };
   }
+  const roleLabel = user.role === "GUDANG" ? "Gudang" : "Admin";
 
   const req = await prisma.request.findUnique({
     where: { id },
-    select: { storeId: true, status: true, items: { select: { id: true }, take: 1 } },
+    select: {
+      storeId: true,
+      status: true,
+      items: { select: { id: true }, take: 1 },
+      store: {
+        select: {
+          lat: true,
+          lng: true,
+          sales: { select: { homeLat: true, homeLng: true } },
+        },
+      },
+    },
   });
   if (!req || req.items.length === 0) return { error: "Order tidak ditemukan." };
   if (req.status !== "PENDING") {
     return { error: "Order sudah diproses, muat ulang halaman." };
   }
+  // Gudang: cek apakah order ini memang ditugaskan ke dirinya (terdekat).
+  if (user.role === "GUDANG") {
+    const [gudangs, radius] = await Promise.all([
+      loadGudangLocs(),
+      getGudangRadiusKm(),
+    ]);
+    const a = assignForOrder(req, gudangs, radius);
+    if (!a) {
+      return {
+        error:
+          "Belum ada gudang berkoordinat / order tanpa lokasi — minta admin.",
+      };
+    }
+    if (a.gudangId !== user.id) {
+      return { error: `Order ini ditugaskan ke ${a.gudangName}.` };
+    }
+  }
 
-  // Guard status di WHERE: anti dobel-klik / balapan antar admin
+  // Guard status di WHERE: anti dobel-klik / balapan antar proses.
   const res = await prisma.request.updateMany({
     where: { id, status: "PENDING" },
     data: {
       status: "READY",
       readyAt: new Date(),
-      readyBy: `${user.name} (Admin)`,
+      readyBy: `${user.name} (${roleLabel})`,
     },
   });
   if (res.count === 0) return { error: "Status order keburu berubah." };
@@ -1320,23 +1356,54 @@ async function generateResiNo(id: string): Promise<boolean> {
 export async function printAllOrderResi() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  if (user.role !== "ADMIN") {
+  if (user.role !== "ADMIN" && user.role !== "GUDANG") {
     return { error: "Hanya admin/gudang yang bisa mencetak resi." };
   }
 
-  const orders = await prisma.request.findMany({
-    where: { items: { some: {} }, status: { in: ["PENDING", "READY"] } },
-    select: { id: true, resiNo: true },
-  });
-  if (orders.length === 0) {
-    return { error: "Tidak ada order yang perlu dicetak resinya." };
+  let targets: { id: string; resiNo: string | null }[];
+  if (user.role === "GUDANG") {
+    // Gudang: hanya paket yang ditugaskan ke dirinya (terdekat)
+    const all = await prisma.request.findMany({
+      where: { items: { some: {} }, status: { in: ["PENDING", "READY"] } },
+      select: {
+        id: true,
+        resiNo: true,
+        store: {
+          select: {
+            lat: true,
+            lng: true,
+            sales: { select: { homeLat: true, homeLng: true } },
+          },
+        },
+      },
+    });
+    const [gudangs, radius] = await Promise.all([
+      loadGudangLocs(),
+      getGudangRadiusKm(),
+    ]);
+    targets = all
+      .filter((o) => {
+        const a = assignForOrder(o, gudangs, radius);
+        return a != null && a.gudangId === user.id;
+      })
+      .map((o) => ({ id: o.id, resiNo: o.resiNo }));
+  } else {
+    targets = await prisma.request.findMany({
+      where: { items: { some: {} }, status: { in: ["PENDING", "READY"] } },
+      select: { id: true, resiNo: true },
+    });
   }
-  for (const o of orders) {
+
+  if (targets.length === 0) {
+    return { error: "Tidak ada paket yang perlu dicetak resinya." };
+  }
+  for (const o of targets) {
     if (!o.resiNo && !(await generateResiNo(o.id))) {
       return { error: "Gagal membuat nomor resi, coba lagi." };
     }
   }
   revalidatePath("/order");
+  revalidatePath("/gudang");
   redirect("/order/resi-massal?auto=1");
 }
 

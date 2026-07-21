@@ -13,9 +13,24 @@ import { rupiahShort } from "@/lib/format";
 import { taskGrade } from "@/lib/task-grade";
 import { salesKpi } from "@/lib/sales-kpi";
 import { wibMonthStart } from "@/lib/date";
-import { computeLevel, fmtKpi, LEVELS, KPI_COMPONENTS } from "@/lib/sales-kpi-grade";
+import {
+  computeLevel,
+  fmtKpi,
+  LEVELS,
+  LEVEL_MIN,
+  KPI_COMPONENTS,
+} from "@/lib/sales-kpi-grade";
 import { computeSalesKpiValues } from "@/lib/sales-kpi-values";
-import { getLevelTargets } from "@/lib/kpi-config";
+import { getScoreTargets } from "@/lib/kpi-config";
+import {
+  getPriorScoreRows,
+  recordMonthlyScore,
+  wibPeriod,
+  periodLabel,
+  periodMonthShort,
+  rollingRangeLabel,
+} from "@/lib/sales-score-history";
+import { Skor3Bulan } from "@/components/Skor3Bulan";
 import { LEVEL_ICON } from "@/components/Badge";
 import { DataTabs } from "@/components/DataTabs";
 import { Paginated } from "@/components/Paginated";
@@ -279,9 +294,12 @@ export default async function BerandaPage() {
       (allTimeBySales.get(s.salesId) ?? 0) + (allTimeByStore.get(s.id) ?? 0),
     );
   }
-  // ===== Grade & level dari TARGET BULANAN yang di-set admin (5 komponen
-  // KPI, lib/sales-kpi-grade.ts). Poin komponen penuh saat capai target. =====
-  const levelTargets = await getLevelTargets();
+  // ===== Grade & level dari SKOR TERTIMBANG 5 KPI vs target bulan-ideal
+  // (lib/sales-kpi-grade.ts). Grade = rata-rata skor 3 bulan (rolling). =====
+  const scoreTargets = await getScoreTargets();
+  const period = wibPeriod();
+  const priorRows = await getPriorScoreRows(user.id, period);
+  const priorScores = priorRows.map((r) => r.score);
 
   // Hari aktif bulan ini (WIB) = jumlah hari sales mencatat kunjungan/update
   const activeLogRows = await prisma.stageLog.findMany({
@@ -317,8 +335,27 @@ export default async function BerandaPage() {
     activeDays,
     monthStart,
   });
-  const result = computeLevel(kpiValues, levelTargets, user.captainArea);
+  const result = computeLevel(
+    kpiValues,
+    scoreTargets,
+    user.captainArea,
+    priorScores,
+  );
+  // Bekukan skor bulan berjalan ke DB (setelah respons; dedup kalau sama) —
+  // jadi bahan rata-rata rolling bulan-bulan berikutnya.
+  recordMonthlyScore(user.id, period, result.score);
   const LvlIcon = LEVEL_ICON[result.level as 1 | 2 | 3 | 4 | 5];
+
+  // Bar "Skor 3 Bulan" (kronologis: bulan lama → bulan ini)
+  const skorBars = [
+    ...priorRows
+      .slice()
+      .reverse()
+      .map((r) => ({ label: periodMonthShort(r.period), score: r.score })),
+    { label: periodMonthShort(period), score: result.score, current: true },
+  ];
+  const skorAvg =
+    skorBars.reduce((a, b) => a + b.score, 0) / skorBars.length;
 
   // Peta level → grade minimum (untuk penjelasan level terkunci)
   const LEVEL_BENEFIT: Record<number, string> = {
@@ -328,12 +365,19 @@ export default async function BerandaPage() {
     4: "Top performer tim — akses produk baru duluan & bonus.",
   };
 
-  // ===== Coach: level berikutnya, progres, milestone (syarat naik) =====
+  // ===== Coach: level berikutnya, progres, kontribusi KPI =====
   const nextLevelInfo = result.nextLevel
     ? { level: result.nextLevel, name: result.nextLevelName ?? "" }
     : null;
-  const levelPct = result.progress; // 0-100 tertimbang menuju level berikutnya
-  // Milestone syarat naik ke level berikutnya (harus penuhi SEMUA)
+  const levelPct = result.progress; // 0-100 posisi avgScore menuju ambang berikutnya
+  const bulanIni = periodLabel(period); // mis. "Jul 2026"
+  const rataLabel = rollingRangeLabel(period, result.monthsUsed); // rentang rata-rata
+  // Poin rata-rata yang masih kurang untuk tembus level berikutnya
+  const poinKurang =
+    result.nextThreshold != null
+      ? Math.max(0, result.nextThreshold - result.avgScore)
+      : 0;
+  // Rincian per-KPI (kontribusi ke skor bulan ini)
   const milestones = result.milestones.map((m) => ({
     key: m.key,
     label: `${m.label} capai ${fmtKpi(m.target, m.unit)}`,
@@ -342,7 +386,6 @@ export default async function BerandaPage() {
     prog: `${fmtKpi(m.value, m.unit)}/${fmtKpi(m.target, m.unit)}`,
   }));
   const msDoneCount = milestones.filter((m) => m.done).length;
-  const sisaSyarat = milestones.filter((m) => !m.done).length;
   const nextMsKey =
     [...milestones].filter((m) => !m.done).sort((a, b) => b.pct - a.pct)[0]
       ?.key ?? null;
@@ -592,7 +635,7 @@ export default async function BerandaPage() {
               {nextLevelInfo ? (
                 <>
                   Tinggal{" "}
-                  <span className="text-brand">{sisaSyarat} syarat</span> lagi
+                  <span className="text-brand">{poinKurang} poin</span> lagi
                   buat naik ke{" "}
                   <span className="text-brand">{nextLevelInfo.name}</span>
                 </>
@@ -638,11 +681,14 @@ export default async function BerandaPage() {
                   />
                 </div>
                 <p className="mt-2 text-xs text-neutral-400">
-                  Syarat beres{" "}
-                  <b className="font-mono text-white">{msDoneCount}</b> /{" "}
-                  {milestones.length} —{" "}
+                  Skor rata-rata{" "}
+                  <b className="font-mono text-white">{result.avgScore}</b>/100
+                  {result.monthsUsed > 1
+                    ? ` (rata ${rataLabel})`
+                    : ` (${bulanIni})`}{" "}
+                  —{" "}
                   <span className="font-semibold text-brand">
-                    {levelPct}% jalan
+                    butuh {result.nextThreshold} buat naik
                   </span>
                   .
                   {belumReorder > 0 && (
@@ -693,14 +739,24 @@ export default async function BerandaPage() {
               </div>
             </div>
             <div className="mt-4 flex justify-between border-t border-white/10 pt-3 text-xs">
-              <span className="text-neutral-400">Milestone beres</span>
+              <span className="text-neutral-400">Skor {bulanIni}</span>
               <span className="font-semibold text-brand">
-                {msDoneCount}/{milestones.length}
+                {result.score}/100 · {msDoneCount}/{milestones.length} KPI
               </span>
             </div>
           </div>
         </div>
       </section>
+
+      {/* ===== Skor 3 Bulan — bar rolling + ambang naik level ===== */}
+      {!result.captain && (
+        <Skor3Bulan
+          bars={skorBars}
+          avg={skorAvg}
+          threshold={result.nextThreshold}
+          nextLevelName={result.nextLevelName}
+        />
+      )}
 
       {/* ===== Today's Focus (lime) — aksi hari ini ===== */}
       <section className="rounded-2xl bg-gradient-to-br from-brand to-brand-dark p-5 text-neutral-900">
@@ -741,7 +797,7 @@ export default async function BerandaPage() {
             <p className="mt-1 text-base font-extrabold leading-tight">
               {nextMsKey
                 ? result.milestones.find((m) => m.key === nextMsKey)?.label
-                : "Semua syarat tercapai 🎉"}
+                : "Semua KPI capai target"}
             </p>
             <p className="mt-1 text-xs text-neutral-400">Buka konter saya →</p>
           </Link>
@@ -755,18 +811,14 @@ export default async function BerandaPage() {
             Performa Bulan Ini
           </p>
           <p className="text-[11px] text-neutral-500">
-            {new Date().toLocaleDateString("id-ID", { month: "long" })} ·{" "}
-            {nextLevelInfo ? (
-              <span className="font-semibold text-brand-dark">
-                target Lv. {nextLevelInfo.level}
-              </span>
-            ) : (
-              <span className="font-semibold text-brand-dark">level puncak</span>
-            )}
+            {bulanIni} ·{" "}
+            <span className="font-semibold text-brand-dark">
+              skor {result.score}/100
+            </span>
           </p>
         </div>
         {/* Hanya 4 KPI operasional di sini (Konsistensi cuma di Rincian skor
-            bawah) — target = syarat level berikutnya */}
+            bawah) — target = bulan ideal (skor 100%) */}
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {result.milestones
             .filter((p) => p.key !== "konsistensi")
@@ -954,10 +1006,11 @@ export default async function BerandaPage() {
                   </summary>
                   <div className="mt-2 space-y-2.5 border-t border-neutral-200 pt-2.5">
                     <p className="text-[11px] font-semibold text-neutral-700">
-                      Syarat naik ke Lv. {l.level} — penuhi SEMUA target ini:
+                      Naik ke Lv. {l.level} butuh rata-rata skor{" "}
+                      {LEVEL_MIN[l.level]}/100 — genjot KPI ini:
                     </p>
                     {KPI_COMPONENTS.map((c) => {
-                      const target = levelTargets[l.level]?.[c.key] ?? 0;
+                      const target = scoreTargets[c.key] ?? 0;
                       const value = kpiValues[c.key];
                       const done = value >= target;
                       const pct =
@@ -1015,14 +1068,14 @@ export default async function BerandaPage() {
           })}
         </div>
 
-        {/* Milestone: syarat naik level (tiap KPI capai target) — gaya
-            checklist referensi. "Berikutnya" = belum beres, paling dekat. */}
+        {/* KPI vs target bulan-ideal (tiap KPI capai target = skor penuh) —
+            gaya checklist. "Berikutnya" = belum beres, paling dekat. */}
         <div className="mb-2 mt-1 flex items-center gap-2 text-xs font-semibold">
           {nextLevelInfo
-            ? `Syarat naik ke Lv. ${nextLevelInfo.level} ${nextLevelInfo.name}`
+            ? `Genjot KPI buat naik ke Lv. ${nextLevelInfo.level} ${nextLevelInfo.name}`
             : "Semua target — pertahankan"}
           <span className="rounded-full bg-brand/15 px-2 py-0.5 text-[10px] font-bold text-brand-dark">
-            {msDoneCount}/{milestones.length} beres
+            {msDoneCount}/{milestones.length} target
           </span>
         </div>
         <div className="mb-4 space-y-2">
@@ -1075,10 +1128,12 @@ export default async function BerandaPage() {
           })}
         </div>
 
-        {/* Progres tiap komponen KPI vs target level berikutnya */}
+        {/* Progres tiap komponen KPI vs target bulan-ideal (skor 100%) */}
         <p className="mb-2 text-xs font-semibold text-neutral-700">
           Rincian 5 komponen{" "}
-          {nextLevelInfo ? `(target Lv. ${nextLevelInfo.level})` : "(target puncak)"}
+          <span className="font-normal text-neutral-400">
+            (skor {bulanIni} {result.score}/100)
+          </span>
         </p>
         <div className="space-y-3">
           {result.milestones.map((p) => (

@@ -4,12 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
-import { kpiKey } from "@/lib/kpi-config";
-import {
-  DEFAULT_LEVEL_TARGETS,
-  TARGET_LEVELS,
-  KPI_COMPONENTS,
-} from "@/lib/sales-kpi-grade";
+import { kpiTargetKey } from "@/lib/kpi-config";
+import { DEFAULT_TARGETS, KPI_COMPONENTS } from "@/lib/sales-kpi-grade";
 
 export async function setMonthlyTarget(formData: FormData) {
   const user = await getCurrentUser();
@@ -28,30 +24,28 @@ export async function setMonthlyTarget(formData: FormData) {
   return { ok: true };
 }
 
-// Admin set target KPI PER LEVEL (Lv 2/3/4 × 5 KPI). Field form: `L{lvl}_{kpi}`.
-// Nilai <=0 → jatuh ke default level itu (biar syarat tetap masuk akal).
+// Admin set SATU set target KPI ("bulan ideal" = skor 100%). Field form:
+// `t_{kpi}`. Nilai <=0 → jatuh ke default (biar skor tetap masuk akal).
 export async function setKpiTargets(formData: FormData) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (user.role !== "ADMIN") return { error: "Hanya admin." };
 
   const ops = [];
-  for (const L of TARGET_LEVELS) {
-    for (const c of KPI_COMPONENTS) {
-      const raw = parseInt(String(formData.get(`L${L}_${c.key}`) ?? ""), 10);
-      const val =
-        Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_LEVEL_TARGETS[L][c.key];
-      ops.push(
-        prisma.config.upsert({
-          where: { key: kpiKey(L, c.key) },
-          update: { value: String(val) },
-          create: { key: kpiKey(L, c.key), value: String(val) },
-        }),
-      );
-    }
+  for (const c of KPI_COMPONENTS) {
+    const raw = parseInt(String(formData.get(`t_${c.key}`) ?? ""), 10);
+    const val = Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_TARGETS[c.key];
+    ops.push(
+      prisma.config.upsert({
+        where: { key: kpiTargetKey(c.key) },
+        update: { value: String(val) },
+        create: { key: kpiTargetKey(c.key), value: String(val) },
+      }),
+    );
   }
   await prisma.$transaction(ops);
   revalidatePath("/sales");
   revalidatePath("/beranda");
+  revalidatePath("/tugas");
   return { ok: true };
 }

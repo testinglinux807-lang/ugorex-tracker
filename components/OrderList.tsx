@@ -20,10 +20,14 @@ const TABS = [
 export function OrderList({
   items,
   emptyAll = "Belum ada orderan restok dari toko.",
+  showFilters = true,
 }: {
   // search: teks yang bisa dicari dari order ini (resi, toko, barang, dst)
   items: { status: string; search?: string; node: ReactNode }[];
   emptyAll?: string;
+  // Tab filter status (Semua/Disiapkan/…). Gudang tak perlu — antriannya
+  // sudah difilter ke paket yang harus dia siapkan saja.
+  showFilters?: boolean;
 }) {
   const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("ALL");
   const [q, setQ] = useState("");
@@ -54,7 +58,11 @@ export function OrderList({
       {/* Tab garis-bawah ala marketplace: satu baris, bisa digeser
           horizontal di mobile (overflow-x-auto, scrollbar disembunyikan).
           Tab aktif ditandai garis bawah hitam, bukan tombol pill. */}
-      <div className="-mx-1 flex gap-1 overflow-x-auto border-b border-neutral-200 px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div
+        className={`-mx-1 flex gap-1 overflow-x-auto border-b border-neutral-200 px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
+          showFilters ? "" : "hidden"
+        }`}
+      >
         {TABS.map((t) => {
           const active = tab === t.key;
           const n = countOf(t.key);

@@ -3,6 +3,11 @@ import { prisma } from "./prisma";
 import { waNumber } from "./wa";
 import { sendPushToUsers } from "./push";
 import { PAYMENT_METHOD_LABEL } from "./payment-fee";
+import {
+  loadGudangLocs,
+  getGudangRadiusKm,
+  assignForOrder,
+} from "./gudang-assign";
 
 // Notifikasi WhatsApp otomatis via gateway Fonnte (fonnte.com).
 // Isi FONNTE_TOKEN di .env untuk mengaktifkan; kosong = tidak kirim apa-apa.
@@ -376,6 +381,32 @@ export async function notifyOrder(
       userIds.add(u.id);
     }
   }
+
+  // Gudang terdekat (yang ditugaskan) ikut dikabari saat ada paket masuk
+  // untuk dipacking — hanya order yang benar-benar siap dikerjakan: PENDING
+  // & sudah lunas. (assignForOrder = gudang terdekat dari sales toko).
+  if (
+    (kind === "new" || kind === "paid") &&
+    order.status === "PENDING" &&
+    order.paymentStatus === "PAID"
+  ) {
+    const [gudangs, radius] = await Promise.all([
+      loadGudangLocs(),
+      getGudangRadiusKm(),
+    ]);
+    const assign = assignForOrder(order, gudangs, radius);
+    if (assign) {
+      const g = await prisma.user.findUnique({
+        where: { id: assign.gudangId },
+        select: { id: true, phone: true },
+      });
+      if (g) {
+        if (g.phone) phones.add(g.phone);
+        userIds.add(g.id);
+      }
+    }
+  }
+
   if (phones.size === 0 && userIds.size === 0) return;
 
   const lines = order.items

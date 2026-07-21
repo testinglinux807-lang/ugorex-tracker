@@ -19,7 +19,8 @@ import {
   type SalesInviteItem,
 } from "@/components/SalesInviteManager";
 import { KpiTargetForm } from "@/components/KpiTargetForm";
-import { getLevelTargets } from "@/lib/kpi-config";
+import { getScoreTargets } from "@/lib/kpi-config";
+import { getPriorScoresBatch, wibPeriod } from "@/lib/sales-score-history";
 import { UserPlus, Users } from "lucide-react";
 
 // Konter dianggap "terbengkalai" kalau > 30 hari tak ada aktivitas funnel.
@@ -114,7 +115,13 @@ export default async function SalesPage({
     orderBy: { createdAt: "desc" },
     take: 10,
   });
-  const kpiTargets = await getLevelTargets();
+  const kpiTargets = await getScoreTargets();
+  // Skor 2 bulan sebelumnya tiap sales — untuk rata-rata rolling 3 bulan
+  const period = wibPeriod();
+  const priorScores = await getPriorScoresBatch(
+    salesUsers.map((u) => u.id),
+    period,
+  );
   const appUrl = process.env.APP_URL ?? "http://localhost:3000";
   const now = new Date();
   const invites: SalesInviteItem[] = inviteRows.map((inv) => ({
@@ -239,7 +246,12 @@ export default async function SalesPage({
         activeDays: activeDaysMap.get(u.id) ?? 0,
         monthStart,
       });
-      const result = computeLevel(kpiValues, kpiTargets, u.captainArea);
+      const result = computeLevel(
+        kpiValues,
+        kpiTargets,
+        u.captainArea,
+        priorScores.get(u.id) ?? [],
+      );
       return {
         id: u.id,
         name: u.name,
@@ -252,7 +264,7 @@ export default async function SalesPage({
         taskTotal: ts.total,
         stars,
         grade: result.grade as "S+" | "S" | "A" | "B" | "C" | "D" | "E",
-        score: result.progress,
+        score: result.avgScore,
         level: result.level,
         levelName: result.levelName,
         captainArea: u.captainArea,

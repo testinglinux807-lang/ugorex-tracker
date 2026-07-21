@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
-import { syncOrderIncome } from "@/lib/finance-sync";
+import { syncOrderIncome, syncGudangSalary } from "@/lib/finance-sync";
 import { wibMonthStart, fmtDate } from "@/lib/date";
 import {
   monthlyCashflow,
@@ -25,8 +25,8 @@ export async function GET() {
     return new Response("Hanya admin.", { status: 403 });
   }
 
-  // Pastikan pemasukan order lunas sudah tercatat sebelum laporan disusun
-  await syncOrderIncome();
+  // Pastikan pemasukan order lunas & gaji gudang tercatat sebelum laporan
+  await Promise.all([syncOrderIncome(), syncGudangSalary()]);
 
   const [allEntries, piutangAgg, products] = await Promise.all([
     prisma.financeEntry.findMany({

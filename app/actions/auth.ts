@@ -39,6 +39,7 @@ export async function login(_prev: unknown, formData: FormData) {
     role: user.role as Role,
     name: user.name,
   });
+  if (user.role === "GUDANG") redirect("/gudang");
   redirect("/dashboard");
 }
 
@@ -160,5 +161,6 @@ export async function confirmResetOtp(_prev: unknown, formData: FormData) {
   });
   if (user.role === "OWNER") redirect("/pos");
   if (user.role === "SALES") redirect("/beranda");
+  if (user.role === "GUDANG") redirect("/gudang");
   redirect("/dashboard");
 }

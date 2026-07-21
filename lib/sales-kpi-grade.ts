@@ -1,7 +1,13 @@
-// Grade & level sales model MILESTONE per level (di-set admin). Admin isi
-// target tiap KPI untuk Lv 2/3/4 (matrix). Sales naik ke level berikutnya
-// kalau MEMENUHI SEMUA target level itu. Grade huruf ikut level. Level 1 =
-// awal (tanpa syarat); level 5 (Sales Captain) diangkat admin manual.
+// Grade & level sales model SKOR TERTIMBANG + rata-rata rolling 3 bulan.
+// Tiap KPI dibanding SATU target ("bulan ideal") jadi rasio 0-1, dikali
+// bobot, dijumlah jadi skor 0-100 bulan itu. Grade huruf & level diambil
+// dari RATA-RATA skor 3 bulan terakhir yang tersedia (biar nggak bisa naik
+// cuma modal 1 bulan gacor). Level 5 (Sales Captain) diangkat admin manual.
+//
+//   Tahap 1  rasio   = min(1, nilai / target)         (0-1, cap 100%)
+//   Tahap 2  poin    = rasio × bobot                  (bobot total = 100)
+//   Tahap 3  skor    = Σ poin                          (0-100 bulan ini)
+//   Tahap 4  grade   = band dari rata-rata 3 bulan     (lihat LEVEL_MIN)
 
 export type KpiKey =
   | "omzet"
@@ -10,8 +16,8 @@ export type KpiKey =
   | "closing"
   | "konsistensi";
 
-// Bobot dipakai HANYA untuk menimbang progres (% menuju level berikutnya);
-// syarat naik level tetap "penuhi semua target". unit utk format tampilan.
+// Bobot tiap KPI dalam skor 0-100 (total = 100). Omzet paling besar karena
+// ujung tujuan bisnis; konsistensi paling kecil (pendukung).
 export const KPI_COMPONENTS: {
   key: KpiKey;
   label: string;
@@ -57,10 +63,10 @@ export const KPI_COMPONENTS: {
 ];
 
 export type KpiValues = Record<KpiKey, number>;
-export type KpiTargets = Record<KpiKey, number>; // target satu level
+export type KpiTargets = Record<KpiKey, number>; // satu set target "bulan ideal"
 
-// Jenjang level + grade huruf + benefit. Lv 1 titik awal (tanpa syarat),
-// Lv 2-4 punya target (matrix admin). Lv 5 Sales Captain = diangkat admin.
+// Jenjang level + grade huruf + benefit. Lv 1-4 otomatis dari band skor,
+// Lv 5 Sales Captain = diangkat admin (grade S).
 export const LEVELS: {
   level: number;
   name: string;
@@ -93,14 +99,21 @@ export const LEVELS: {
   },
 ];
 
-// Level yang punya target (bisa diatur admin di matrix)
-export const TARGET_LEVELS = [2, 3, 4] as const;
+// Ambang RATA-RATA skor (0-100) minimum tiap level. Grade huruf ikut level.
+//   0-24  D  Lv.1 Trainee
+//   25-54 C  Lv.2 Sales
+//   55-79 B  Lv.3 Sales Expert
+//   80+   A  Lv.4 Top Performer
+export const LEVEL_MIN: Record<number, number> = { 1: 0, 2: 25, 3: 55, 4: 80 };
+const BAND_LEVELS = [2, 3, 4] as const;
 
-// Default target tiap level — makin tinggi level makin berat
-export const DEFAULT_LEVEL_TARGETS: Record<number, KpiTargets> = {
-  2: { omzet: 1_000_000, konversi: 50, seeding: 1, closing: 50, konsistensi: 6 },
-  3: { omzet: 3_000_000, konversi: 70, seeding: 3, closing: 70, konsistensi: 12 },
-  4: { omzet: 6_000_000, konversi: 85, seeding: 6, closing: 85, konsistensi: 18 },
+// Satu set target default ("bulan ideal") — dipakai kalau admin belum set.
+export const DEFAULT_TARGETS: KpiTargets = {
+  omzet: 3_000_000,
+  konversi: 75,
+  seeding: 3,
+  closing: 85,
+  konsistensi: 12,
 };
 
 export type Milestone = {
@@ -110,7 +123,10 @@ export type Milestone = {
   value: number;
   target: number;
   done: boolean;
-  pct: number; // 0-100 progres ke target level berikutnya
+  ratio: number; // 0-1 (nilai/target, cap 1)
+  pct: number; // 0-100 (= ratio × 100), untuk bar progres
+  weight: number; // bobot komponen di skor
+  points: number; // poin disumbang ke skor (ratio × weight, 1 desimal)
   hint: string;
 };
 
@@ -119,23 +135,69 @@ export type LevelResult = {
   levelName: string;
   grade: string;
   captain: boolean;
+  score: number; // skor bulan ini (0-100)
+  avgScore: number; // rata-rata rolling — grade/level dihitung dari ini
+  monthsUsed: number; // berapa bulan dipakai untuk rata-rata (1-3)
   nextLevel: number | null;
   nextLevelName: string | null;
-  nextTargets: KpiTargets | null;
-  progress: number; // 0-100 tertimbang menuju level berikutnya
-  milestones: Milestone[]; // syarat ke level berikutnya (kosong kalau puncak)
-  doneCount: number;
+  nextThreshold: number | null; // skor rata-rata minimum untuk naik level
+  nextTargets: KpiTargets | null; // = target set (bahan coach/strategi)
+  progress: number; // 0-100 posisi avgScore menuju ambang level berikutnya
+  milestones: Milestone[]; // rincian per-KPI (kontribusi skor)
+  doneCount: number; // berapa KPI sudah tembus targetnya
 };
 
-// Tentukan level dari nilai KPI vs matrix target. Naik ke level L kalau
-// SEMUA target level itu terpenuhi (berurutan dari 2). captainArea = Lv 5.
+// Tahap 1-3: hitung skor 0-100 satu bulan dari nilai KPI vs target.
+export function scoreMonth(
+  values: KpiValues,
+  targets: KpiTargets,
+): { score: number; milestones: Milestone[] } {
+  let total = 0;
+  const milestones = KPI_COMPONENTS.map((c) => {
+    const value = Math.max(0, values[c.key] ?? 0);
+    const target = targets[c.key] ?? 0;
+    const ratio = target > 0 ? Math.min(1, value / target) : 1;
+    const points = ratio * c.weight;
+    total += points;
+    return {
+      key: c.key,
+      label: c.label,
+      unit: c.unit,
+      value,
+      target,
+      done: value >= target,
+      ratio,
+      pct: Math.round(ratio * 100),
+      weight: c.weight,
+      points: Math.round(points * 10) / 10,
+      hint: c.hint,
+    };
+  });
+  return { score: Math.round(total), milestones };
+}
+
+// Band level/grade dari sebuah skor rata-rata.
+export function bandFromScore(avg: number): {
+  level: number;
+  name: string;
+  grade: string;
+} {
+  let level = 1;
+  for (const L of BAND_LEVELS) if (avg >= LEVEL_MIN[L]) level = L;
+  const info = LEVELS.find((l) => l.level === level)!;
+  return { level, name: info.name, grade: info.grade };
+}
+
+// Tahap 4: gabung skor bulan ini dengan skor bulan-bulan sebelumnya
+// (paling banyak 2, terbaru dulu) → rata-rata → band grade/level.
 export function computeLevel(
   values: KpiValues,
-  matrix: Record<number, KpiTargets>,
+  targets: KpiTargets,
   captainArea?: string | null,
+  priorScores: number[] = [],
 ): LevelResult {
-  const meetsAll = (t: KpiTargets) =>
-    KPI_COMPONENTS.every((c) => (values[c.key] ?? 0) >= (t[c.key] ?? 0));
+  const { score, milestones } = scoreMonth(values, targets);
+  const doneCount = milestones.filter((m) => m.done).length;
 
   if (captainArea) {
     return {
@@ -143,61 +205,57 @@ export function computeLevel(
       levelName: "Sales Captain",
       grade: "S",
       captain: true,
+      score,
+      avgScore: score,
+      monthsUsed: 1,
       nextLevel: null,
       nextLevelName: null,
-      nextTargets: null,
+      nextThreshold: null,
+      nextTargets: targets,
       progress: 100,
-      milestones: [],
-      doneCount: 0,
+      milestones,
+      doneCount,
     };
   }
 
-  let level = 1;
-  for (const L of TARGET_LEVELS) {
-    if (matrix[L] && meetsAll(matrix[L])) level = L;
-    else break;
-  }
-  const info = LEVELS.find((l) => l.level === level)!;
-  const nextLevel = level < 4 ? level + 1 : null;
-  const nextTargets = nextLevel ? matrix[nextLevel] : null;
-  const nextInfo = nextLevel ? LEVELS.find((l) => l.level === nextLevel)! : null;
+  // Rata-rata skor: bulan ini + maksimal 2 bulan sebelumnya
+  const window = [score, ...priorScores].slice(0, 3);
+  const avgScore = Math.round(
+    window.reduce((a, b) => a + b, 0) / window.length,
+  );
 
-  let progress = 100;
-  let milestones: Milestone[] = [];
-  if (nextTargets) {
-    milestones = KPI_COMPONENTS.map((c) => {
-      const value = Math.max(0, values[c.key] ?? 0);
-      const target = nextTargets[c.key] ?? 0;
-      const pct = target > 0 ? Math.min(100, Math.round((value / target) * 100)) : 100;
-      return {
-        key: c.key,
-        label: c.label,
-        unit: c.unit,
-        value,
-        target,
-        done: value >= target,
-        pct,
-        hint: c.hint,
-      };
-    });
-    const totalW = KPI_COMPONENTS.reduce((a, c) => a + c.weight, 0);
-    progress = Math.round(
-      milestones.reduce((a, m, i) => a + m.pct * KPI_COMPONENTS[i].weight, 0) /
-        totalW,
-    );
-  }
+  const band = bandFromScore(avgScore);
+  const nextLevel = band.level < 4 ? band.level + 1 : null;
+  const nextInfo = nextLevel ? LEVELS.find((l) => l.level === nextLevel)! : null;
+  const nextThreshold = nextLevel ? LEVEL_MIN[nextLevel] : null;
+
+  const curMin = LEVEL_MIN[band.level];
+  const progress =
+    nextThreshold != null
+      ? Math.max(
+          0,
+          Math.min(
+            100,
+            Math.round(((avgScore - curMin) / (nextThreshold - curMin)) * 100),
+          ),
+        )
+      : 100;
 
   return {
-    level,
-    levelName: info.name,
-    grade: info.grade,
+    level: band.level,
+    levelName: band.name,
+    grade: band.grade,
     captain: false,
+    score,
+    avgScore,
+    monthsUsed: window.length,
     nextLevel,
     nextLevelName: nextInfo?.name ?? null,
-    nextTargets,
+    nextThreshold,
+    nextTargets: targets,
     progress,
     milestones,
-    doneCount: milestones.filter((m) => m.done).length,
+    doneCount,
   };
 }
 

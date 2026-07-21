@@ -20,6 +20,7 @@ import {
   ShoppingBag,
   Users,
   Wallet,
+  Coins,
   X,
   Bell,
   BellOff,
@@ -38,6 +39,7 @@ const NAV: Record<string, Item[]> = {
     { href: "/sales", label: "Sales", icon: Users },
     { href: "/order", label: "Order", icon: ShoppingBag },
     { href: "/keuangan", label: "Keuangan", icon: Wallet },
+    { href: "/payroll", label: "Payroll", icon: Coins },
     { href: "/data", label: "Data", icon: Database },
     { href: "/request", label: "Request", icon: Inbox },
   ],
@@ -52,12 +54,14 @@ const NAV: Record<string, Item[]> = {
   
   OWNER: [
     { href: "/pos", label: "Penjualan", icon: ShoppingCart },
-    { href: "/order", label: "Restock", icon: ShoppingBag },
+    { href: "/order", label: "Belanja", icon: ShoppingBag },
     { href: "/stok", label: "Penyimpanan", icon: Boxes },
     // Komplain + Request dilebur jadi satu pintu Feedback (kategori:
     // keluhan / saran / request barang)
     { href: "/feedback", label: "Feedback", icon: MessagesSquare },
   ],
+
+  GUDANG: [{ href: "/gudang", label: "Paket", icon: ShoppingBag }],
 };
 
 function useItems(role: string) {

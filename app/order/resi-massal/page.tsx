@@ -7,6 +7,11 @@ import { AutoPrintResi } from "@/components/AutoPrintResi";
 import { ResiFitScale } from "@/components/ResiFitScale";
 import { ResiLabel } from "@/components/ResiLabel";
 import { ResiPrintStyle } from "@/components/ResiPrintStyle";
+import {
+  loadGudangLocs,
+  getGudangRadiusKm,
+  assignForOrder,
+} from "@/lib/gudang-assign";
 import { ArrowLeft } from "lucide-react";
 
 // Cetak resi MASSAL (admin) — semua order yang belum dikirim (Disiapkan
@@ -21,10 +26,12 @@ export default async function ResiMassalPage({
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  if (user.role !== "ADMIN") redirect("/order");
+  if (user.role !== "ADMIN" && user.role !== "GUDANG") redirect("/order");
+  const isGudang = user.role === "GUDANG";
+  const backHref = isGudang ? "/gudang" : "/order";
 
   const { auto } = await searchParams;
-  const orders = await prisma.request.findMany({
+  const all = await prisma.request.findMany({
     where: {
       items: { some: {} },
       status: { in: ["PENDING", "READY"] },
@@ -37,15 +44,28 @@ export default async function ResiMassalPage({
     orderBy: { createdAt: "asc" },
   });
 
+  // Gudang: hanya resi paket yang ditugaskan ke dirinya
+  let orders = all;
+  if (isGudang) {
+    const [gudangs, radius] = await Promise.all([
+      loadGudangLocs(),
+      getGudangRadiusKm(),
+    ]);
+    orders = all.filter((o) => {
+      const a = assignForOrder(o, gudangs, radius);
+      return a != null && a.gudangId === user.id;
+    });
+  }
+
   if (orders.length === 0) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-neutral-100 p-6">
         <div className="rounded-2xl border border-neutral-200 bg-white p-8 text-center">
           <p className="text-sm text-neutral-600">
-            Tidak ada order yang perlu dicetak resinya.
+            Tidak ada paket yang perlu dicetak resinya.
           </p>
           <Link
-            href="/order"
+            href={backHref}
             className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-50"
           >
             <ArrowLeft className="h-4 w-4" />
@@ -65,7 +85,7 @@ export default async function ResiMassalPage({
       {/* Toolbar — hilang saat print */}
       <div className="mx-auto mb-4 flex w-full max-w-md items-center justify-between px-4 print:hidden">
         <Link
-          href="/order"
+          href={backHref}
           className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-bold text-neutral-700 hover:bg-neutral-50"
         >
           <ArrowLeft className="h-4 w-4" />

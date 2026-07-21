@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { rupiah } from "@/lib/format";
 import { wibMonthStart } from "@/lib/date";
-import { syncOrderIncome } from "@/lib/finance-sync";
+import { syncOrderIncome, syncGudangSalary } from "@/lib/finance-sync";
 import { financeStatements, classifyExpense } from "@/lib/finance-statements";
 import { FinanceManager, type FinanceRow } from "@/components/FinanceManager";
 import { FinanceStatements } from "@/components/FinanceStatements";
@@ -64,9 +64,9 @@ export default async function KeuanganPage({
   if (!user) redirect("/login");
   if (user.role !== "ADMIN") redirect("/beranda");
 
-  // Order lunas yang belum tercatat → masuk buku kas sebagai pemasukan
-  // otomatis, sebelum angka-angka di bawah dihitung.
-  await syncOrderIncome();
+  // Order lunas & gaji gudang bulan berjalan → masuk buku kas otomatis,
+  // sebelum angka-angka di bawah dihitung.
+  await Promise.all([syncOrderIncome(), syncGudangSalary()]);
 
   const monthStart = wibMonthStart();
 

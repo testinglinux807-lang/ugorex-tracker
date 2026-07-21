@@ -1,4 +1,22 @@
-// Util geospasial: point-in-polygon + agregasi minat per kecamatan
+// Util geospasial: point-in-polygon + agregasi minat per kecamatan +
+// jarak haversine (penugasan order ke gudang terdekat).
+
+// Jarak dua titik lat/long dalam kilometer (haversine).
+export function haversineKm(
+  aLat: number,
+  aLng: number,
+  bLat: number,
+  bLng: number,
+): number {
+  const R = 6371; // radius bumi (km)
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(bLat - aLat);
+  const dLng = toRad(bLng - aLng);
+  const s =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.asin(Math.min(1, Math.sqrt(s)));
+}
 
 function inRing(pt: [number, number], ring: number[][]) {
   let inside = false;

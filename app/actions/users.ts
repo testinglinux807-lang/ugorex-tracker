@@ -107,6 +107,59 @@ export async function createSalesAccount(formData: FormData) {
   return { ok: true };
 }
 
+// ===== Akun karyawan gudang (role GUDANG) =====
+// Admin buatkan akun login untuk orang gudang di halaman Payroll. Mereka
+// hanya bisa lihat halaman Order & catat lembur (clock-in/out).
+export async function createGudangAccount(formData: FormData) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (user.role !== "ADMIN") return { error: "Hanya admin." };
+
+  const name = String(formData.get("name") ?? "").trim();
+  const phone = String(formData.get("phone") ?? "").trim();
+  const password = String(formData.get("password") ?? "");
+  if (!name || !phone || !password) {
+    return { error: "Nama, no HP, dan password wajib diisi." };
+  }
+  const basePay = Math.max(0, Math.round(Number(formData.get("basePay") ?? 0)));
+
+  const existing = await prisma.user.findUnique({ where: { phone } });
+  if (existing) return { error: "Nomor HP sudah terdaftar." };
+
+  const passwordHash = await bcrypt.hash(password, 10);
+  await prisma.user.create({
+    data: {
+      name,
+      phone,
+      passwordHash,
+      role: "GUDANG",
+      basePay,
+      createdById: user.id,
+      ...parseHomePoint(formData), // lokasi gudang → dasar penugasan terdekat
+    },
+  });
+  revalidatePath("/payroll");
+  revalidatePath("/data");
+  return { ok: true };
+}
+
+export async function deleteGudangAccount(formData: FormData) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (user.role !== "ADMIN") return { error: "Hanya admin." };
+
+  const id = String(formData.get("id") ?? "").trim();
+  if (!id) return { error: "Karyawan tidak ditemukan." };
+  const target = await prisma.user.findUnique({ where: { id } });
+  if (!target || target.role !== "GUDANG")
+    return { error: "Karyawan gudang tidak ditemukan." };
+
+  await prisma.user.delete({ where: { id } });
+  revalidatePath("/payroll");
+  revalidatePath("/data");
+  return { ok: true };
+}
+
 // ===== Link registrasi sales (undangan sekali pakai) =====
 
 const INVITE_DAYS = 7;

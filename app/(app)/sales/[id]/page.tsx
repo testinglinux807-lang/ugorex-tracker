@@ -22,7 +22,13 @@ import {
   computeSalesKpiValues,
   activeDaysBySalesFrom,
 } from "@/lib/sales-kpi-values";
-import { getLevelTargets } from "@/lib/kpi-config";
+import { getScoreTargets } from "@/lib/kpi-config";
+import {
+  getPriorScores,
+  wibPeriod,
+  periodLabel,
+  rollingRangeLabel,
+} from "@/lib/sales-score-history";
 import { salesKpi } from "@/lib/sales-kpi";
 import { wibMonthStart } from "@/lib/date";
 import { parsePeriode, periodeStart, PERIODE_LABEL } from "@/lib/periode";
@@ -258,9 +264,12 @@ export default async function SalesDetailPage({
   const paidOutTotal = payouts.reduce((s, p) => s + p.amount, 0);
   const feeOutstanding = feeAllTime - paidOutTotal;
 
-  // ===== Level MILESTONE — rumus KPI dari SATU sumber, sama dgn beranda,
-  // leaderboard, & /tugas (lib/sales-kpi-values.ts) =====
-  const levelTargets = await getLevelTargets();
+  // ===== Skor & level — rumus KPI dari SATU sumber, sama dgn beranda,
+  // leaderboard, & /tugas (lib/sales-kpi-values.ts). Grade dari rata-rata
+  // skor 3 bulan (rolling). =====
+  const scoreTargets = await getScoreTargets();
+  const period = wibPeriod();
+  const priorScores = await getPriorScores(id, period);
   const kpiLogRows = await prisma.stageLog.findMany({
     where: { salesId: id, createdAt: { gte: monthStart } },
     select: { salesId: true, createdAt: true },
@@ -275,11 +284,16 @@ export default async function SalesDetailPage({
     activeDays,
     monthStart,
   });
-  const result = computeLevel(kpiValues, levelTargets, sales.captainArea);
+  const result = computeLevel(
+    kpiValues,
+    scoreTargets,
+    sales.captainArea,
+    priorScores,
+  );
   // Alias supaya JSX (letter/lvl) tetap jalan dengan model baru
   const letter = {
     grade: result.grade as "S+" | "S" | "A" | "B" | "C" | "D" | "E",
-    score: result.progress,
+    score: result.avgScore,
     parts: result.milestones,
   };
   const lvl = { level: result.level, name: result.levelName };
@@ -325,9 +339,10 @@ export default async function SalesDetailPage({
             {letter.grade && (
               <p className="mb-1.5 flex items-center gap-2 sm:justify-end">
                 <span className="text-xs text-neutral-400">
-                  {result.nextLevel
-                    ? `${letter.score}% menuju naik`
-                    : "Level puncak"}
+                  Skor {result.avgScore}/100
+                  {result.monthsUsed > 1
+                    ? ` · rata ${rollingRangeLabel(period, result.monthsUsed)}`
+                    : ` · ${periodLabel(period)}`}
                 </span>
                 <GradeBadge grade={letter.grade} size="lg" />
               </p>
@@ -357,8 +372,9 @@ export default async function SalesDetailPage({
             </p>
             {letter.parts.length > 0 && (
               <p className="mt-0.5 text-xs text-neutral-400">
+                Skor {periodLabel(period)} {result.score}/100 ·{" "}
                 {letter.parts.filter((p) => p.done).length}/
-                {letter.parts.length} syarat naik level beres
+                {letter.parts.length} KPI capai target
               </p>
             )}
           </div>

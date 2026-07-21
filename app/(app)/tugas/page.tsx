@@ -20,7 +20,8 @@ import {
   computeSalesKpiValues,
   activeDaysBySalesFrom,
 } from "@/lib/sales-kpi-values";
-import { getLevelTargets } from "@/lib/kpi-config";
+import { getScoreTargets } from "@/lib/kpi-config";
+import { getPriorScoresBatch, wibPeriod } from "@/lib/sales-score-history";
 import { wibMonthStart } from "@/lib/date";
 import { STAGES, type Stage } from "@/lib/constants";
 import { waLink } from "@/lib/wa";
@@ -128,7 +129,8 @@ export default async function TugasPage() {
       prisma.task.findMany({
         where: isAdmin ? {} : { assignedToId: user.id },
         include: { assignedTo: true, store: true },
-        orderBy: [{ status: "asc" }, { createdAt: "desc" }],
+        // status desc → "PENDING" (belum selesai) di atas, "DONE" ke bawah
+        orderBy: [{ status: "desc" }, { createdAt: "desc" }],
       }),
       isAdmin
         ? prisma.user.findMany({
@@ -352,7 +354,12 @@ export default async function TugasPage() {
 
   // ===== Level MILESTONE per level (SAMA dgn beranda/leaderboard) =====
   const monthStart = wibMonthStart();
-  const levelTargets = await getLevelTargets();
+  const scoreTargets = await getScoreTargets();
+  const period = wibPeriod();
+  const priorScores = await getPriorScoresBatch(
+    salesList.map((s) => s.id),
+    period,
+  );
   const [kpiOrdersMonth, kpiLogsMonth] = await Promise.all([
     prisma.request.findMany({
       where: {
@@ -380,7 +387,12 @@ export default async function TugasPage() {
       activeDays: activeDaysMap.get(salesId) ?? 0,
       monthStart,
     });
-    return computeLevel(kpiValues, levelTargets, captainArea);
+    return computeLevel(
+      kpiValues,
+      scoreTargets,
+      captainArea,
+      priorScores.get(salesId) ?? [],
+    );
   };
 
   // Admin: papan grade & level semua sales; sales: grade dirinya sendiri.
@@ -388,7 +400,7 @@ export default async function TugasPage() {
   const toBoard = (r: ReturnType<typeof computeLevel>) => ({
     g: {
       grade: r.grade as "S+" | "S" | "A" | "B" | "C" | "D" | "E",
-      score: r.progress,
+      score: r.avgScore,
       parts: r.milestones,
     },
     lvl: { level: r.level, name: r.levelName },

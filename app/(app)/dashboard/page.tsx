@@ -27,6 +27,7 @@ export default async function DashboardPage() {
   if (!user) redirect("/login");
   if (user.role === "OWNER") redirect("/pos");
   if (user.role === "SALES") redirect("/prospects");
+  if (user.role === "GUDANG") redirect("/gudang");
 
   // Awal bulan di zona WIB (server produksi UTC — tanpa ini "bulan ini"
   // bisa meleset di tanggal awal/akhir bulan).

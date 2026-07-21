@@ -8,7 +8,6 @@ import {
   GeoJSON,
   Marker,
   Circle,
-  CircleMarker,
   Popup,
   useMap,
 } from "react-leaflet";
@@ -338,11 +337,13 @@ export default function MapInner({
     filter === "ALL" ? true : !p.otherSales && p.stage === filter,
   );
 
-  // Radius bubble sebanding akar(revenue) — supaya konter dengan omzet 4x
-  // lipat tidak jadi 4x lebih lebar (visual tidak proporsional), cukup ~2x.
+  // Radius bubble (METER, bukan pixel) sebanding akar(revenue) — supaya
+  // konter omzet 4x lipat tidak jadi 4x lebih lebar (cukup ~2x). Pakai meter
+  // biar bubble ikut skala peta: zoom out mengecil, zoom in membesar —
+  // konsisten, tidak "membesar" saat di-zoom out seperti CircleMarker pixel.
   const maxRevenue = Math.max(1, ...storePoints.map((s) => s.revenue));
   const radiusFor = (revenue: number) =>
-    10 + 26 * Math.sqrt(revenue / maxRevenue);
+    250 + 900 * Math.sqrt(revenue / maxRevenue);
 
   return (
     <MapContainer
@@ -436,7 +437,7 @@ export default function MapInner({
       {/* Bubble konter yang benar-benar berkontribusi ke penjualan —
           ukuran = besar kontribusinya, di bawah pin funnel */}
       {storePoints.map((s) => (
-        <CircleMarker
+        <Circle
           key={`rev-${s.storeId}`}
           center={[s.lat, s.lng]}
           radius={radiusFor(s.revenue)}
@@ -463,7 +464,7 @@ export default function MapInner({
               </Link>
             </div>
           </Popup>
-        </CircleMarker>
+        </Circle>
       ))}
 
       {shown.map((p) => (
