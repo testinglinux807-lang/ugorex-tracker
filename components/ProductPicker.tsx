@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Search, ChevronDown, Check } from "lucide-react";
+import { Search, ChevronDown, Check, ShoppingBag } from "lucide-react";
 
 const rupiah = (n: number) =>
   new Intl.NumberFormat("id-ID", {
@@ -44,10 +45,16 @@ export function ProductPicker({
   products,
   value,
   onChange,
+  notFoundHref,
+  notFoundCta,
 }: {
   products: PickerProduct[];
   value: string;
   onChange: (id: string) => void;
+  // Kalau diisi: waktu pencarian tidak ketemu, tampilkan ajakan order barang
+  // itu (bukan sekadar "tidak ditemukan") — link ke halaman order/restok.
+  notFoundHref?: string;
+  notFoundCta?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -157,8 +164,25 @@ export function ProductPicker({
           </div>
           <ul className="max-h-56 overflow-y-auto py-1">
             {shown.length === 0 ? (
-              <li className="px-3 py-2 text-sm text-neutral-400">
-                Barang tidak ditemukan.
+              <li className="px-3 py-3">
+                <p className="text-sm text-neutral-500">
+                  {term ? (
+                    <>
+                      Belum ada di stok tokomu buat kata kunci “{q}”.
+                    </>
+                  ) : (
+                    "Barang tidak ditemukan."
+                  )}
+                </p>
+                {term && notFoundHref && (
+                  <Link
+                    href={notFoundHref}
+                    className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-neutral-900 hover:opacity-90"
+                  >
+                    <ShoppingBag className="h-3.5 w-3.5" />
+                    {notFoundCta ?? "Order barang ini sekarang"}
+                  </Link>
+                )}
               </li>
             ) : (
               shown.map((row, idx) =>

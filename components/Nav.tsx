@@ -16,7 +16,6 @@ import {
   MessagesSquare,
   Inbox,
   ListTodo,
-  Boxes,
   ShoppingBag,
   Users,
   Wallet,
@@ -54,8 +53,8 @@ const NAV: Record<string, Item[]> = {
   
   OWNER: [
     { href: "/pos", label: "Penjualan", icon: ShoppingCart },
+    // Stok digabung jadi tab di dalam /order (dulu /stok halaman terpisah)
     { href: "/order", label: "Belanja", icon: ShoppingBag },
-    { href: "/stok", label: "Penyimpanan", icon: Boxes },
     // Komplain + Request dilebur jadi satu pintu Feedback (kategori:
     // keluhan / saran / request barang)
     { href: "/feedback", label: "Feedback", icon: MessagesSquare },

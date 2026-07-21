@@ -126,6 +126,8 @@ export function PosForm({
           products={products}
           value={pickerId}
           onChange={addProduct}
+          notFoundHref="/order"
+          notFoundCta="Order barang ini ke stok pusat"
         />
         <p className="mt-1 text-xs text-neutral-400">
           Pilih barang lagi untuk menambah ke daftar - bisa beberapa barang

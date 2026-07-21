@@ -213,7 +213,7 @@ export async function updateProduct(productId: string, formData: FormData) {
   revalidatePath("/katalog");
   revalidatePath("/pos");
   revalidatePath("/request");
-  revalidatePath("/stok");
+  revalidatePath("/order");
   return { ok: true };
 }
 
@@ -229,7 +229,7 @@ export async function deleteProduct(productId: string) {
   revalidatePath("/katalog");
   revalidatePath("/pos");
   revalidatePath("/request");
-  revalidatePath("/stok");
+  revalidatePath("/order");
   return { ok: true };
 }
 

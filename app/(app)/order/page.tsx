@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -11,13 +12,14 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { OrderPaymentWatcher } from "@/components/OrderPaymentWatcher";
 import { OrderTabs } from "@/components/OrderTabs";
 import { RestockCheckout } from "@/components/RequestForm";
+import { StockEditor } from "@/components/StockEditor";
 import { deliveryPhotoSrcMap } from "@/lib/product-image";
 import {
   loadGudangLocs,
   getGudangRadiusKm,
   assignForOrder,
 } from "@/lib/gudang-assign";
-import { Printer, ShoppingBag } from "lucide-react";
+import { Info, Printer, ShoppingBag } from "lucide-react";
 
 const rupiah = (n: number) =>
   new Intl.NumberFormat("id-ID", {
@@ -164,7 +166,7 @@ export default async function OrderPage({
   // ===== Tampilan OWNER: checkout + riwayat order toko =====
   if (isOwner) {
     const storeId = user.ownedStore!.id;
-    const [products, prospects, grosirTiers] = await Promise.all([
+    const [products, prospects, grosirTiers, sold] = await Promise.all([
       prisma.product.findMany({
         select: {
           id: true,
@@ -179,6 +181,12 @@ export default async function OrderPage({
       prisma.grosirTier.findMany({
         where: { active: true },
         select: { minQty: true, percent: true },
+      }),
+      // Terjual per barang (bahan sisa stok tab "Stok" — dulu /stok terpisah)
+      prisma.sale.groupBy({
+        by: ["productId"],
+        where: { storeId },
+        _sum: { qty: true },
       }),
     ]);
     // Order yang masih perlu dibayar online — dipantau watcher supaya status
@@ -263,6 +271,55 @@ export default async function OrderPage({
         central: g.central,
       }));
 
+    // Sisa stok per kode (dulu halaman /stok) — beda dari storeStock di atas:
+    // di sini dikurangi yang sudah TERJUAL, jadi ini sisa fisik sekarang.
+    const soldByProduct = new Map<string, number>();
+    for (const s of sold) {
+      if (s.productId) soldByProduct.set(s.productId, s._sum.qty ?? 0);
+    }
+    type StockCodeAgg = {
+      code: string;
+      type: string;
+      models: string[];
+      remaining: number;
+      price: number;
+      isCustomPrice: boolean;
+    };
+    const stockCodeMap = new Map<string, StockCodeAgg>();
+    for (const p of products) {
+      const key = p.code ?? `__${p.id}`;
+      const { type, model } = splitName(p.name);
+      const remaining = Math.max(
+        0,
+        (stockBy.get(p.id) ?? 0) - (soldByProduct.get(p.id) ?? 0),
+      );
+      const g =
+        stockCodeMap.get(key) ??
+        ({
+          code: p.code ?? "-",
+          type: type || p.name,
+          models: [],
+          remaining: 0,
+          price: p.price,
+          isCustomPrice: false,
+        } satisfies StockCodeAgg);
+      g.models.push(model);
+      g.remaining += remaining;
+      const customPrice = prospects.find(
+        (pr) => pr.productId === p.id && pr.price != null,
+      )?.price;
+      if (customPrice != null && !g.isCustomPrice) {
+        g.price = customPrice;
+        g.isCustomPrice = true;
+      }
+      stockCodeMap.set(key, g);
+    }
+    const stockCodes = [...stockCodeMap.values()].sort((a, b) =>
+      a.code.localeCompare(b.code),
+    );
+    const stockedCodes = stockCodes.filter((c) => c.remaining > 0);
+    const totalStockUnits = stockedCodes.reduce((a, c) => a + c.remaining, 0);
+
     return (
       <div className="space-y-5">
         <OrderPaymentWatcher pendingIds={pendingPayIds} />
@@ -278,6 +335,37 @@ export default async function OrderPage({
           historyCount={orderCount}
           checkout={
             <RestockCheckout codes={restockCodes} grosirTiers={grosirTiers} />
+          }
+          stok={
+            <div className="space-y-4">
+              <div className="flex items-start gap-2 rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-600">
+                <Info className="mt-0.5 h-4 w-4 shrink-0 text-neutral-400" />
+                <p>
+                  Stok tidak sinkron dengan fisik (kurang / lebih)? Ajukan
+                  lewat halaman{" "}
+                  <Link
+                    href="/tiket"
+                    className="font-semibold text-neutral-900 underline underline-offset-2"
+                  >
+                    Tiket Keluhan
+                  </Link>{" "}
+                  - pengaduan diproses dalam 1-2 hari kerja.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-2xl border border-neutral-200 bg-white p-4">
+                  <p className="text-xs text-neutral-500">Kode Barang</p>
+                  <p className="text-2xl font-bold">{stockedCodes.length}</p>
+                </div>
+                <div className="rounded-2xl border border-neutral-200 bg-white p-4">
+                  <p className="text-xs text-neutral-500">Total Unit</p>
+                  <p className="text-2xl font-bold">{totalStockUnits}</p>
+                </div>
+              </div>
+              <div className="rounded-2xl border border-neutral-200 bg-white p-5">
+                <StockEditor codes={stockCodes} />
+              </div>
+            </div>
           }
           history={
             // Tanpa panel pembungkus — kartu order langsung di halaman

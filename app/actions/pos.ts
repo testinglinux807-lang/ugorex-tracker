@@ -132,7 +132,7 @@ export async function createSale(formData: FormData) {
   );
 
   revalidatePath("/pos");
-  revalidatePath("/stok");
+  revalidatePath("/order");
   return { ok: true };
 }
 

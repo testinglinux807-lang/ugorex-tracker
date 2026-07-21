@@ -1531,7 +1531,6 @@ function revalidateOrderPaths(storeId: string) {
   revalidatePath("/order");
   revalidatePath("/data");
   revalidatePath("/pos");
-  revalidatePath("/stok");
   revalidatePath(`/konter/${storeId}`);
   revalidatePath("/", "layout");
 }
