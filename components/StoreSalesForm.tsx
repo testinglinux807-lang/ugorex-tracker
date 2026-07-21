@@ -28,7 +28,7 @@ export function StoreSalesForm({
         defaultValue={currentSalesId ?? ""}
         className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
       >
-        <option value="">— Tanpa sales —</option>
+        <option value="">- Tanpa sales -</option>
         {salesOptions.map((s) => (
           <option key={s.id} value={s.id}>
             {s.name}

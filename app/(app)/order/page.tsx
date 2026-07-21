@@ -228,7 +228,7 @@ export default async function OrderPage({
       const g =
         codeMap.get(key) ??
         ({
-          code: p.code ?? "—",
+          code: p.code ?? "-",
           repId: p.id,
           type: type || p.name,
           models: [],
@@ -407,7 +407,7 @@ export default async function OrderPage({
           </h1>
           <p className="text-sm text-neutral-500">
             {isGudang
-              ? "Paket yang ditugaskan ke kamu — siapkan & cetak resinya"
+              ? "Paket yang ditugaskan ke kamu - siapkan & cetak resinya"
               : user.role === "SALES"
                 ? "Orderan restok dari toko yang kamu pegang"
                 : "Orderan restok dari semua toko"}

@@ -152,7 +152,7 @@ export default async function FeedbackPage() {
                     <div className="mt-2 rounded-lg border border-neutral-200 bg-neutral-50 p-2.5">
                       <p className="flex items-center gap-1 text-[11px] font-semibold text-neutral-500">
                         <MessageSquareReply className="h-3 w-3" />
-                        Balasan · {it.respondedBy ?? "—"}
+                        Balasan · {it.respondedBy ?? "-"}
                         {it.respondedAt &&
                           ` · ${it.respondedAt.toLocaleDateString("id-ID", {
                             day: "numeric",

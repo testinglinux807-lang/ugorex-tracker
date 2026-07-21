@@ -49,7 +49,7 @@ export function ReturnOrderForm({
         className="mt-2 space-y-2 rounded-lg border border-red-200 bg-red-50 p-2.5"
       >
         <p className="text-xs font-semibold text-red-700">
-          Tolak barang saat serah terima — barang yang dikembalikan balik ke
+          Tolak barang saat serah terima - barang yang dikembalikan balik ke
           gudang pusat dan tagihanmu dikurangi.
         </p>
 

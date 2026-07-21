@@ -247,7 +247,7 @@ export async function createRestockRequest(formData: FormData) {
     if (res.count === 0) {
       await undoReserve();
       return {
-        error: `Stok pusat ${g.label} keburu diambil order lain — sisanya tidak cukup, kurangi jumlahnya.`,
+        error: `Stok pusat ${g.label} keburu diambil order lain - sisanya tidak cukup, kurangi jumlahnya.`,
       };
     }
     reserved.push({ target, qty: g.qty });
@@ -686,7 +686,7 @@ export async function markOrderReady(id: string) {
     if (!a) {
       return {
         error:
-          "Belum ada gudang berkoordinat / order tanpa lokasi — minta admin.",
+          "Belum ada gudang berkoordinat / order tanpa lokasi - minta admin.",
       };
     }
     if (a.gudangId !== user.id) {
@@ -727,7 +727,7 @@ export async function pickupOrder(id: string) {
     (user.role === "SALES" && req.store.salesId === user.id);
   if (!allowed) return { error: "Order ini bukan dari toko yang kamu pegang." };
   if (req.status === "PENDING") {
-    return { error: "Barang masih disiapkan gudang — tunggu tanda siap dipickup." };
+    return { error: "Barang masih disiapkan gudang - tunggu tanda siap dipickup." };
   }
   if (req.status !== "READY") {
     return { error: "Status order keburu berubah, muat ulang halaman." };
@@ -1163,7 +1163,7 @@ export async function cancelOrder(id: string, formData: FormData) {
   }
   if (!isStaff && (req.status !== "PENDING" || req.paymentStatus === "PAID")) {
     return {
-      error: "Order sudah dibayar/diproses — hubungi sales untuk pembatalan.",
+      error: "Order sudah dibayar/diproses - hubungi sales untuk pembatalan.",
     };
   }
 
@@ -1218,7 +1218,7 @@ export async function markOrderRefunded(id: string, formData: FormData) {
     req.status === "RETURNED" ||
     req.returnedTotal > 0;
   if (!refundable) {
-    return { error: "Order ini tidak dibatalkan/diretur — tidak ada refund." };
+    return { error: "Order ini tidak dibatalkan/diretur - tidak ada refund." };
   }
   if (req.paymentStatus !== "PAID") {
     return { error: "Order ini belum dibayar, tidak ada dana yang kembali." };

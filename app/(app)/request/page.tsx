@@ -99,7 +99,7 @@ export default async function RequestPage() {
           <div className="mt-2 rounded-lg border border-neutral-200 bg-neutral-50 p-2.5">
             <p className="flex items-center gap-1 text-[11px] font-semibold text-neutral-500">
               <MessageSquareReply className="h-3 w-3" />
-              Balasan · {r.respondedBy ?? "—"}
+              Balasan · {r.respondedBy ?? "-"}
               {r.respondedAt &&
                 ` · ${new Date(r.respondedAt).toLocaleDateString("id-ID", {
                   day: "numeric",
@@ -113,7 +113,7 @@ export default async function RequestPage() {
         )}
         <p className="mt-1 text-xs text-neutral-400">
           {canRespond ? `${r.store.name} · ` : ""}
-          {r.createdBy?.name ?? "—"} ·{" "}
+          {r.createdBy?.name ?? "-"} ·{" "}
           {new Date(r.createdAt).toLocaleDateString("id-ID", {
             day: "numeric",
             month: "short",
@@ -192,7 +192,7 @@ export default async function RequestPage() {
           {isOwner
             ? "Ajukan kebutuhan ke sales/admin (restok barang lewat menu Order)"
             : user.role === "SALES"
-              ? "Permintaan dari toko yang kamu pegang — bisa juga catat keluhan yang disampaikan langsung ke kamu"
+              ? "Permintaan dari toko yang kamu pegang - bisa juga catat keluhan yang disampaikan langsung ke kamu"
               : "Semua permintaan dari toko"}
         </p>
       </div>

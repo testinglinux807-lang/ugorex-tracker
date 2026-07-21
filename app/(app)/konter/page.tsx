@@ -235,7 +235,7 @@ export default async function KonterPage({
                         .map((it) => `• ${it.product} (sisa ${it.remaining})`)
                         .join("\n")}\n\n` +
                       `Terima kasih banyak atas kerja samanya.\n` +
-                      `Wassalamualaikum.\n— ${user.name}, Ugorex`,
+                      `Wassalamualaikum.\n- ${user.name}, Ugorex`,
                   )
                 : null;
             const revenue = revenueByStore.get(s.id) ?? 0;
@@ -258,7 +258,7 @@ export default async function KonterPage({
                       {s.name}
                     </Link>
                     <p className="flex items-center gap-1 truncate text-sm text-neutral-500">
-                      <MapPin className="h-3 w-3 shrink-0" /> {s.area ?? "—"}
+                      <MapPin className="h-3 w-3 shrink-0" /> {s.area ?? "-"}
                     </p>
                     {rank && rank <= 3 ? (
                       <p className="mt-1 flex items-center gap-1 text-xs font-semibold text-neutral-900">

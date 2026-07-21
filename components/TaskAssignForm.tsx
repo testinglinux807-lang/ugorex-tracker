@@ -137,7 +137,7 @@ export function TaskAssignForm({
         <input name="dueDate" type="date" className={inputCls} />
       </div>
       <select name="storeId" defaultValue="" className={inputCls}>
-        <option value="">— Tanpa konter —</option>
+        <option value="">- Tanpa konter -</option>
         {stores.map((s) => (
           <option key={s.id} value={s.id}>
             {s.name}
@@ -162,7 +162,7 @@ export function TaskAssignForm({
         {pending ? (
           <PendingLabel text="Mengirim…" />
         ) : sel.size === 0 ? (
-          "Beri Tugas — pilih sales dulu"
+          "Beri Tugas - pilih sales dulu"
         ) : sel.size === salesList.length ? (
           "Beri Tugas ke Semua Sales"
         ) : (

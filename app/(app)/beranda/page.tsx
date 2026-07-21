@@ -56,7 +56,7 @@ const NEGLECT_DAYS = 30;
 const KPI_HOW: Record<string, string> = {
   omzet: "Dorong konter reorder & naikkan nilai order (bundle/upsell).",
   konversi: "Pastikan tiap konter yang kamu pegang reorder minimal 1× bulan ini.",
-  seeding: "Buka konter baru — datangi toko yang belum digarap.",
+  seeding: "Buka konter baru - datangi toko yang belum digarap.",
   closing: "Tindak lanjuti prospek sampai ambil barang (naik ke tahap Conversion).",
   konsistensi: "Catat kunjungan/update funnel tiap hari kerja di app.",
 };
@@ -167,6 +167,7 @@ export default async function BerandaPage() {
       where: {
         items: { some: {} },
         paymentStatus: "PAID",
+        status: { not: "CANCELLED" },
         createdAt: { gte: prevMonthStart },
         store: { salesId: user.id },
       },
@@ -359,10 +360,10 @@ export default async function BerandaPage() {
 
   // Peta level → grade minimum (untuk penjelasan level terkunci)
   const LEVEL_BENEFIT: Record<number, string> = {
-    1: "Akses dasar — katalog & harga reseller Ugorex.",
+    1: "Akses dasar - katalog & harga reseller Ugorex.",
     2: "Bisa seeding konter baru & dapat komisi tiap reorder.",
-    3: "Sales andalan — prioritas restok produk fast-moving.",
-    4: "Top performer tim — akses produk baru duluan & bonus.",
+    3: "Sales andalan - prioritas restok produk fast-moving.",
+    4: "Top performer tim - akses produk baru duluan & bonus.",
   };
 
   // ===== Coach: level berikutnya, progres, kontribusi KPI =====
@@ -398,17 +399,17 @@ export default async function BerandaPage() {
     if (kpiValues.omzet < t.omzet * 0.3)
       return {
         judul: "Bundle + Upsell",
-        note: "Omzet masih rendah — naikkan nilai order rata-rata konter.",
+        note: "Omzet masih rendah - naikkan nilai order rata-rata konter.",
       };
     if (kpiValues.closing < t.closing * 0.6)
       return {
         judul: "Fokus closing",
-        note: "Banyak prospek belum closing — tindak lanjuti yang hangat.",
+        note: "Banyak prospek belum closing - tindak lanjuti yang hangat.",
       };
     if (kpiValues.seeding < t.seeding)
       return {
         judul: "Buka konter baru",
-        note: "Kejar target seeding — cari konter yang belum digarap.",
+        note: "Kejar target seeding - cari konter yang belum digarap.",
       };
     return {
       judul: "Jaga momentum",
@@ -483,7 +484,7 @@ export default async function BerandaPage() {
       store: o.store.name,
       sub:
         o.status === "SHIPPED"
-          ? `#${o.id.slice(-8).toUpperCase()} · di jalan — report saat sampai`
+          ? `#${o.id.slice(-8).toUpperCase()} · di jalan - report saat sampai`
           : `#${o.id.slice(-8).toUpperCase()} · ${rupiah(o.total)} · siap dipickup di gudang`,
       href: `/order?focus=${o.id}`,
       lat: o.store.lat,
@@ -502,7 +503,7 @@ export default async function BerandaPage() {
     key: `rutin-${storeId}`,
     type: "RUTIN",
     store: v.store,
-    sub: `${v.n} barang menipis — tawarkan restok`,
+    sub: `${v.n} barang menipis - tawarkan restok`,
     href: `/konter/${storeId}`,
     lat: v.lat,
     lng: v.lng,
@@ -600,7 +601,7 @@ export default async function BerandaPage() {
     href: `/konter/${log.prospect.storeId}`,
     title: `${log.prospect.product.name} @ ${log.prospect.store.name}`,
     subtitle: log.note,
-    by: log.sales?.name ?? "—",
+    by: log.sales?.name ?? "-",
     date: fmtDate(log.createdAt),
     stage: log.stage,
     result: log.result,
@@ -641,7 +642,7 @@ export default async function BerandaPage() {
                 </>
               ) : (
                 <>
-                  Kamu di level tertinggi —{" "}
+                  Kamu di level tertinggi -{" "}
                   <span className="text-brand">{result.levelName}</span>
                 </>
               )}
@@ -658,7 +659,7 @@ export default async function BerandaPage() {
                 Fokus hari ini
               </p>
               <p className="mt-1 text-sm text-neutral-100">
-                Strategi <b className="text-brand">{strategi.judul}</b> —{" "}
+                Strategi <b className="text-brand">{strategi.judul}</b> -{" "}
                 {strategi.note}
               </p>
             </div>
@@ -686,7 +687,7 @@ export default async function BerandaPage() {
                   {result.monthsUsed > 1
                     ? ` (rata ${rataLabel})`
                     : ` (${bulanIni})`}{" "}
-                  —{" "}
+                  -{" "}
                   <span className="font-semibold text-brand">
                     butuh {result.nextThreshold} buat naik
                   </span>
@@ -1007,7 +1008,7 @@ export default async function BerandaPage() {
                   <div className="mt-2 space-y-2.5 border-t border-neutral-200 pt-2.5">
                     <p className="text-[11px] font-semibold text-neutral-700">
                       Naik ke Lv. {l.level} butuh rata-rata skor{" "}
-                      {LEVEL_MIN[l.level]}/100 — genjot KPI ini:
+                      {LEVEL_MIN[l.level]}/100 - genjot KPI ini:
                     </p>
                     {KPI_COMPONENTS.map((c) => {
                       const target = scoreTargets[c.key] ?? 0;
@@ -1073,7 +1074,7 @@ export default async function BerandaPage() {
         <div className="mb-2 mt-1 flex items-center gap-2 text-xs font-semibold">
           {nextLevelInfo
             ? `Genjot KPI buat naik ke Lv. ${nextLevelInfo.level} ${nextLevelInfo.name}`
-            : "Semua target — pertahankan"}
+            : "Semua target - pertahankan"}
           <span className="rounded-full bg-brand/15 px-2 py-0.5 text-[10px] font-bold text-brand-dark">
             {msDoneCount}/{milestones.length} target
           </span>
@@ -1173,7 +1174,7 @@ export default async function BerandaPage() {
           )}
         </div>
         <p className="mb-3 text-xs text-neutral-400">
-          Antar restok, kunjungan rutin, dan target closing — sekali lihat
+          Antar restok, kunjungan rutin, dan target closing - sekali lihat
           sebelum berangkat
         </p>
 
@@ -1198,7 +1199,7 @@ export default async function BerandaPage() {
         {ruteStops.length === 0 ? (
           <div className="flex items-center justify-center gap-2 rounded-lg bg-neutral-50 py-6 text-sm text-neutral-400">
             <CheckCircle2 className="h-4 w-4 text-brand-dark" />
-            Tidak ada rute hari ini — semua beres.
+            Tidak ada rute hari ini - semua beres.
           </div>
         ) : (
           <Paginated
@@ -1301,7 +1302,7 @@ export default async function BerandaPage() {
               <div className="flex h-full flex-col">
                 <div className="mb-2 flex items-center gap-2 text-sm font-medium text-neutral-700">
                   <MapPin className="h-4 w-4" />
-                  Sebaran Konter — Karawang
+                  Sebaran Konter - Karawang
                 </div>
                 <TrackerMap
                   points={mapPoints}

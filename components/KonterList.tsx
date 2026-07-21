@@ -70,7 +70,7 @@ function StoreEditForm({
       </div>
       <input name="address" defaultValue={store.address ?? ""} placeholder="Alamat" className={inputCls} />
       <select name="salesId" defaultValue={store.salesId ?? ""} className={inputCls}>
-        <option value="">— Sales penanggung jawab —</option>
+        <option value="">- Sales penanggung jawab -</option>
         {salesOptions.map((s) => (
           <option key={s.id} value={s.id}>
             {s.name}
@@ -111,7 +111,7 @@ function KonterCard({
             {s.name}
           </Link>
           <p className="truncate text-xs text-neutral-500">
-            {s.area ?? "—"} · Sales: {s.salesName ?? "—"}
+            {s.area ?? "-"} · Sales: {s.salesName ?? "-"}
           </p>
           {s.ownerName && (
             <p className="truncate text-xs text-neutral-500">

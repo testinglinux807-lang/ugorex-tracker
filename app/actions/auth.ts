@@ -64,7 +64,7 @@ export async function requestResetOtp(_prev: unknown, formData: FormData) {
   if (!phone) return { error: "Isi nomor HP akunmu dulu." };
 
   if (!process.env.FONNTE_TOKEN) {
-    return { error: "Pengiriman WA belum aktif — hubungi admin untuk reset." };
+    return { error: "Pengiriman WA belum aktif - hubungi admin untuk reset." };
   }
 
   const user = await prisma.user.findUnique({ where: { phone } });

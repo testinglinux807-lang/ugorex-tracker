@@ -77,7 +77,7 @@ export const LEVELS: {
     level: 1,
     name: "Trainee",
     grade: "D",
-    benefit: "Akses dasar — katalog & harga reseller Ugorex.",
+    benefit: "Akses dasar - katalog & harga reseller Ugorex.",
   },
   {
     level: 2,
@@ -89,13 +89,13 @@ export const LEVELS: {
     level: 3,
     name: "Sales Expert",
     grade: "B",
-    benefit: "Sales andalan — prioritas restock produk fast-moving.",
+    benefit: "Sales andalan - prioritas restock produk fast-moving.",
   },
   {
     level: 4,
     name: "Top Performer",
     grade: "A",
-    benefit: "Top performer tim — akses produk baru duluan & bonus.",
+    benefit: "Top performer tim - akses produk baru duluan & bonus.",
   },
 ];
 

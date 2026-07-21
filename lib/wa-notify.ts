@@ -8,6 +8,7 @@ import {
   getGudangRadiusKm,
   assignForOrder,
 } from "./gudang-assign";
+import { periodLabel } from "./sales-score-history";
 
 // Notifikasi WhatsApp otomatis via gateway Fonnte (fonnte.com).
 // Isi FONNTE_TOKEN di .env untuk mengaktifkan; kosong = tidak kirim apa-apa.
@@ -187,13 +188,13 @@ export async function notifyStockEmpty(storeId: string, productIds: string[]) {
 
     const push = {
       title: `Stok habis - rolling restock: ${p.name}`,
-      body: `${store.name} — model laku, follow up owner untuk lanjut + rolling model baru`,
+      body: `${store.name} - model laku, follow up owner untuk lanjut + rolling model baru`,
       url: "/tugas",
     };
     const message = [
       `STOK HABIS - Rolling Restock`,
       ``,
-      `${p.name}${p.code ? ` (kode ${p.code})` : ""} di ${store.name} sisa 0 — model ini laku.`,
+      `${p.name}${p.code ? ` (kode ${p.code})` : ""} di ${store.name} sisa 0 - model ini laku.`,
       ``,
       `Follow up owner:`,
       `- Tawarkan lanjut model yang sama`,
@@ -295,7 +296,7 @@ export async function notifyCommissionPayout(
     ...(note ? [`Catatan: ${note}`] : []),
     ...(appUrl ? [``, `Riwayat: ${appUrl}/penghasilan`] : []),
     ``,
-    `— Ugorex`,
+    `- Ugorex`,
   ].join("\n");
 
   const jobs: Promise<unknown>[] = [
@@ -316,6 +317,106 @@ export async function notifyCommissionPayout(
     process.env.VAPID_PRIVATE_KEY
   ) {
     jobs.push(sendPushToUsers([sales.id], push));
+  }
+  await Promise.allSettled(jobs);
+}
+
+// Kabari sales bahwa bonus KPI bulan tertentu sudah dibayar admin (lonceng
+// in-app + WA + push, mengikuti channel yang aktif).
+export async function notifyKpiBonusPayout(
+  salesId: string,
+  amount: number,
+  period: string,
+) {
+  const sales = await prisma.user.findUnique({
+    where: { id: salesId },
+    select: { id: true, name: true, phone: true },
+  });
+  if (!sales) return;
+
+  const label = periodLabel(period);
+  const push = {
+    title: "Bonus KPI dicairkan",
+    body: `${rupiah(amount)} untuk periode ${label} sudah dibayarkan`,
+    url: "/beranda",
+  };
+
+  const message = [
+    `Halo ${sales.name}, bonus KPI kamu periode ${label} sudah dicairkan.`,
+    ``,
+    `Jumlah: ${rupiah(amount)}`,
+    ``,
+    `- Ugorex`,
+  ].join("\n");
+
+  const jobs: Promise<unknown>[] = [
+    prisma.notification.create({
+      data: {
+        userId: sales.id,
+        title: push.title,
+        body: push.body,
+        url: push.url,
+      },
+    }),
+  ];
+  if (process.env.FONNTE_TOKEN && sales.phone) {
+    jobs.push(sendWa(sales.phone, message));
+  }
+  if (
+    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY &&
+    process.env.VAPID_PRIVATE_KEY
+  ) {
+    jobs.push(sendPushToUsers([sales.id], push));
+  }
+  await Promise.allSettled(jobs);
+}
+
+// Kabari karyawan gudang bahwa gaji bulan tertentu sudah dicairkan admin
+// (lonceng in-app + WA + push, mengikuti channel yang aktif).
+export async function notifyGudangSalaryPayout(
+  userId: string,
+  amount: number,
+  period: string,
+) {
+  const emp = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, name: true, phone: true },
+  });
+  if (!emp) return;
+
+  const label = periodLabel(period);
+  const push = {
+    title: "Gaji dicairkan",
+    body: `${rupiah(amount)} untuk periode ${label} sudah dibayarkan`,
+    url: "/gudang",
+  };
+
+  const message = [
+    `Halo ${emp.name}, gajimu periode ${label} sudah dicairkan.`,
+    ``,
+    `Jumlah: ${rupiah(amount)}`,
+    ``,
+    `- Ugorex`,
+  ].join("\n");
+
+  const jobs: Promise<unknown>[] = [
+    prisma.notification.create({
+      data: {
+        userId: emp.id,
+        title: push.title,
+        body: push.body,
+        url: push.url,
+      },
+    }),
+  ];
+  if (process.env.FONNTE_TOKEN && emp.phone) {
+    jobs.push(sendWa(emp.phone, message));
+  }
+  if (
+    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY &&
+    process.env.VAPID_PRIVATE_KEY
+  ) {
+    jobs.push(sendPushToUsers([emp.id], push));
   }
   await Promise.allSettled(jobs);
 }
@@ -441,7 +542,7 @@ export async function notifyOrder(
       ? [
           `Order ${no} SIAP DIPICKUP`,
           ``,
-          `Barang sudah dipacking gudang — silakan pickup lalu antar ke toko.`,
+          `Barang sudah dipacking gudang - silakan pickup lalu antar ke toko.`,
           `Toko: ${order.store.name}${order.store.area ? ` (${order.store.area})` : ""}`,
           ...(order.pickupCode ? [`Kode jemput: ${order.pickupCode}`] : []),
           ``,
@@ -461,7 +562,7 @@ export async function notifyOrder(
           ``,
           `Total: ${rupiah(order.total)}`,
           ...(order.paymentStatus !== "PAID"
-            ? [``, `Order ini BELUM DIBAYAR — tagih/tandai lunas.`]
+            ? [``, `Order ini BELUM DIBAYAR - tagih/tandai lunas.`]
             : []),
           ...(appUrl ? [``, `Detail: ${appUrl}/order`] : []),
         ].join("\n")
@@ -479,7 +580,7 @@ export async function notifyOrder(
           ...(fullReturn ? [] : [`Sisa tagihan order: ${rupiah(order.total)}`]),
           `Barang retur otomatis balik ke stok pusat.`,
           ...(order.paymentStatus === "PAID"
-            ? [``, `Order ini sudah dibayar — pengembalian dananya diurus admin.`]
+            ? [``, `Order ini sudah dibayar - pengembalian dananya diurus admin.`]
             : []),
           ...(appUrl ? [``, `Detail: ${appUrl}/order`] : []),
         ].join("\n")
@@ -506,7 +607,7 @@ export async function notifyOrder(
           ...(order.paymentStatus === "PAID"
             ? [
                 ``,
-                `Order ini sudah terlanjur dibayar — pengembalian dana diurus admin.`,
+                `Order ini sudah terlanjur dibayar - pengembalian dana diurus admin.`,
               ]
             : []),
           ...(appUrl ? [``, `Detail: ${appUrl}/order`] : []),
@@ -556,7 +657,7 @@ export async function notifyOrder(
     kind === "ready"
       ? {
           title: `Order ${no} siap dipickup`,
-          body: `${order.store.name} — barang sudah dipacking gudang${order.pickupCode ? ` · kode jemput ${order.pickupCode}` : ""}`,
+          body: `${order.store.name} - barang sudah dipacking gudang${order.pickupCode ? ` · kode jemput ${order.pickupCode}` : ""}`,
           url: orderUrl,
         }
       : kind === "accepted"
@@ -570,31 +671,31 @@ export async function notifyOrder(
           title: fullReturn
             ? `Order ${no} dikembalikan toko`
             : `Order ${no} retur sebagian`,
-          body: `${order.store.name} — nilai retur ${rupiah(order.returnedTotal)}${order.returnReason ? ` · ${order.returnReason}` : ""}`,
+          body: `${order.store.name} - nilai retur ${rupiah(order.returnedTotal)}${order.returnReason ? ` · ${order.returnReason}` : ""}`,
           url: orderUrl,
         }
       : kind === "refunded"
       ? {
           title: `Dana order ${no} dikembalikan`,
-          body: `${rupiah(refundAmount)}${order.refundNote ? ` — ${order.refundNote}` : ""}`,
+          body: `${rupiah(refundAmount)}${order.refundNote ? ` - ${order.refundNote}` : ""}`,
           url: orderUrl,
         }
       : kind === "cancelled"
       ? {
           title: `Order ${no} dibatalkan`,
-          body: `${order.store.name} — ${order.cancelReason || `oleh ${order.cancelledBy ?? "-"}`}${order.paymentStatus === "PAID" ? " · sudah dibayar, refund diurus admin" : ""}`,
+          body: `${order.store.name} - ${order.cancelReason || `oleh ${order.cancelledBy ?? "-"}`}${order.paymentStatus === "PAID" ? " · sudah dibayar, refund diurus admin" : ""}`,
           url: orderUrl,
         }
       : kind === "shipped"
       ? {
           title: `Order ${no} sedang dikirim`,
-          body: `Barang restok Anda sedang dikirim, mohon ditunggu — ${order.items.length} barang`,
+          body: `Barang restok Anda sedang dikirim, mohon ditunggu - ${order.items.length} barang`,
           url: orderUrl,
         }
       : kind === "delivered"
       ? {
           title: `Order ${no} sudah sampai`,
-          body: `${order.deliveredBy ? `Diserahkan ${order.deliveredBy} — ` : ""}${order.items.length} barang diterima, lihat bukti fotonya`,
+          body: `${order.deliveredBy ? `Diserahkan ${order.deliveredBy} - ` : ""}${order.items.length} barang diterima, lihat bukti fotonya`,
           url: orderUrl,
         }
       : {
@@ -602,7 +703,7 @@ export async function notifyOrder(
             kind === "paid"
               ? `Order ${no} sudah dibayar`
               : `Order restok baru ${no}`,
-          body: `${order.store.name} — ${rupiah(order.total)}${methodLabel ? ` · ${methodLabel}` : ""} (${order.items.length} barang)`,
+          body: `${order.store.name} - ${rupiah(order.total)}${methodLabel ? ` · ${methodLabel}` : ""} (${order.items.length} barang)`,
           url: orderUrl,
         };
 

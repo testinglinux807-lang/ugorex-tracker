@@ -89,7 +89,7 @@ export default async function LacakPage({
   if (r.pickedUpAt) {
     events.push({
       icon: I.Truck,
-      title: "Kurir mengambil barang — dalam pengiriman",
+      title: "Kurir mengambil barang - dalam pengiriman",
       sub: r.pickedUpBy,
       at: r.pickedUpAt,
     });

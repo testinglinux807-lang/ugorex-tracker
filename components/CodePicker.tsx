@@ -71,7 +71,7 @@ export function CodePicker({
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center justify-between gap-2 rounded-lg border border-neutral-300 px-3 py-2 text-left text-sm text-neutral-400"
       >
-        <span>— Pilih kode barang —</span>
+        <span>- Pilih kode barang -</span>
         <ChevronDown
           className={`h-4 w-4 shrink-0 text-neutral-400 transition-transform ${
             open ? "rotate-180" : ""

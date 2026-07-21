@@ -132,7 +132,7 @@ export default async function ProspectsPage() {
       <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
         <div className="mb-3 flex items-center gap-2 text-sm font-medium text-neutral-700">
           <MapPin className="h-4 w-4" />
-          Sebaran Konter — Karawang
+          Sebaran Konter - Karawang
           <span className="font-normal text-neutral-400">
             ({points.length} titik)
           </span>

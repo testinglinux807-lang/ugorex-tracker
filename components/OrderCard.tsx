@@ -314,7 +314,7 @@ export function OrderCard({
               isAdmin && (
                 <p className="flex items-center gap-1 pl-6 text-neutral-400">
                   <MapPinOff className="h-3.5 w-3.5 shrink-0" />
-                  Belum ada gudang berlokasi — atur di Payroll.
+                  Belum ada gudang berlokasi - atur di Payroll.
                 </p>
               )
             )}
@@ -324,7 +324,7 @@ export function OrderCard({
           <div className="flex items-center gap-2 text-xs font-medium text-neutral-600">
             <PackageCheck className="h-4 w-4 shrink-0 text-brand-dark" />
             <span>
-              Barang siap — menunggu kurir pickup di gudang
+              Barang siap - menunggu kurir pickup di gudang
               {r.readyBy && (
                 <span className="block font-normal text-neutral-400">
                   Disiapkan {r.readyBy}
@@ -376,10 +376,10 @@ export function OrderCard({
             <p className="text-red-600">
               Nilai retur:{" "}
               <span className="font-semibold">{rupiah(r.returnedTotal)}</span>
-              {" — barang kembali ke stok pusat"}
+              {" - barang kembali ke stok pusat"}
             </p>
             <p className="text-red-400">
-              {r.returnedBy ?? "—"}
+              {r.returnedBy ?? "-"}
               {r.returnedAt
                 ? ` · ${fmtDate(r.returnedAt, {
                     day: "numeric",
@@ -399,7 +399,7 @@ export function OrderCard({
                     <p className="text-neutral-600">{r.refundNote}</p>
                   )}
                   <p className="text-neutral-400">
-                    {r.refundedBy ?? "—"} ·{" "}
+                    {r.refundedBy ?? "-"} ·{" "}
                     {fmtDate(r.refundedAt, {
                       day: "numeric",
                       month: "short",
@@ -409,7 +409,7 @@ export function OrderCard({
                 </div>
               ) : (
                 <p className="font-medium text-red-600">
-                  Order sudah terlanjur dibayar — menunggu pengembalian dana
+                  Order sudah terlanjur dibayar - menunggu pengembalian dana
                   retur dari admin.
                 </p>
               ))}
@@ -427,7 +427,7 @@ export function OrderCard({
               <p className="text-red-600">Alasan: {r.cancelReason}</p>
             )}
             <p className="text-red-400">
-              {r.cancelledBy ?? "—"}
+              {r.cancelledBy ?? "-"}
               {r.cancelledAt
                 ? ` · ${fmtDate(r.cancelledAt, {
                     day: "numeric",
@@ -447,7 +447,7 @@ export function OrderCard({
                     <p className="text-neutral-600">{r.refundNote}</p>
                   )}
                   <p className="text-neutral-400">
-                    {r.refundedBy ?? "—"} ·{" "}
+                    {r.refundedBy ?? "-"} ·{" "}
                     {fmtDate(r.refundedAt, {
                       day: "numeric",
                       month: "short",
@@ -457,7 +457,7 @@ export function OrderCard({
                 </div>
               ) : (
                 <p className="font-medium text-red-600">
-                  Order sudah terlanjur dibayar — menunggu pengembalian dana
+                  Order sudah terlanjur dibayar - menunggu pengembalian dana
                   dari admin.
                 </p>
               ))}
@@ -531,7 +531,7 @@ export function OrderCard({
               <div className="flex items-center justify-between gap-2 text-xs">
                 <span className="text-neutral-500">Kode jemput gudang</span>
                 <span className="shrink-0 font-semibold">
-                  {r.pickupCode ?? "—"}
+                  {r.pickupCode ?? "-"}
                 </span>
               </div>
             )}

@@ -53,7 +53,14 @@ export type SalesPayrollRow = {
   score: number | null; // skor grade rata-rata (rolling); null = belum ada
   kpiHit: boolean; // skor >= kpiMin
   bonus: number;
+  bonusPaid: boolean; // bonus KPI bulan ini sudah ditandai lunas
   total: number;
+  // Pencairan fee — status "cair/belum" KUMULATIF (semua waktu), sumber
+  // datanya sama dgn kartu "Belum dicairkan" di /sales/[id]. Beda basis dgn
+  // `komisi` (bulan ini) — ini fee per-order semua waktu − total pencairan.
+  feeOutstanding: number; // sisa belum dicairkan (0 = lunas)
+  feePaid: number; // total yang sudah dicairkan admin
+  bankAccount: string | null;
 };
 
 export function computeSalesPayroll(
@@ -65,6 +72,10 @@ export function computeSalesPayroll(
     omzet: number;
     pct: number;
     score: number | null;
+    feeOutstanding?: number;
+    feePaid?: number;
+    bonusPaid?: boolean;
+    bankAccount?: string | null;
   },
   cfg: PayrollConfig,
 ): SalesPayrollRow {
@@ -82,7 +93,11 @@ export function computeSalesPayroll(
     score: s.score,
     kpiHit,
     bonus,
+    bonusPaid: kpiHit && (s.bonusPaid ?? false),
     total: komisi + bonus,
+    feeOutstanding: Math.max(0, s.feeOutstanding ?? 0),
+    feePaid: s.feePaid ?? 0,
+    bankAccount: s.bankAccount ?? null,
   };
 }
 
@@ -94,10 +109,11 @@ export type GudangPayrollRow = {
   upahLembur: number;
   potongan: number;
   total: number;
+  salaryPaid: boolean; // gaji bulan ini sudah ditandai dicairkan admin
 };
 
 export function computeGudangPayroll(
-  e: { userId: string; name: string; basePay: number },
+  e: { userId: string; name: string; basePay: number; salaryPaid?: boolean },
   lemburJam: number,
   potonganLogs: { type: string; amount: number }[],
   cfg: PayrollConfig,
@@ -115,5 +131,6 @@ export function computeGudangPayroll(
     upahLembur,
     potongan,
     total: e.basePay + upahLembur - potongan,
+    salaryPaid: e.salaryPaid ?? false,
   };
 }

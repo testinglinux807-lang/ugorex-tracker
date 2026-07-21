@@ -249,7 +249,7 @@ export default async function KeuanganPage({
       <div>
         <h1 className="text-2xl font-bold">Keuangan</h1>
         <p className="text-sm text-neutral-500">
-          Buku kas — pemasukan dari order lunas tercatat otomatis; catat
+          Buku kas - pemasukan dari order lunas tercatat otomatis; catat
           manual pengeluaran (beli barang, ongkir, gaji) & pemasukan lain
         </p>
       </div>
@@ -285,7 +285,7 @@ export default async function KeuanganPage({
       <div className="rounded-2xl border border-neutral-200 bg-white p-4 sm:p-5">
         <h2 className="text-sm font-semibold">Duit Omzet (otomatis)</h2>
         <p className="mb-3 mt-0.5 text-xs text-neutral-400">
-          Omzet order lunas dipotong HPP &amp; komisi sales — dihitung
+          Omzet order lunas dipotong HPP &amp; komisi sales - dihitung
           langsung, bukan catatan buku kas.
         </p>
         <div className="overflow-x-auto">
@@ -353,7 +353,7 @@ export default async function KeuanganPage({
           </p>
           <p className="mt-0.5 text-xs text-neutral-400">
             Arus kas 12 bulan · laba rugi bulan ini &amp; lalu · neraca ·
-            seluruh buku kas — langsung terbuka rapi di Excel/Sheets.
+            seluruh buku kas - langsung terbuka rapi di Excel/Sheets.
           </p>
         </div>
         <a

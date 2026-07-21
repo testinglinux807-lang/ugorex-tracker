@@ -43,6 +43,10 @@ model User {
   // Gaji pokok bulanan (role GUDANG) — dipakai payroll. 0 = belum diatur.
   basePay Int @default(0)
 
+  // No. rekening bank (role SALES) — teks bebas, mis. "BCA 1234567890 a.n.
+  // Budi Santoso". Ditampilkan admin di Payroll biar gampang transfer.
+  bankAccount String?
+
   // Untuk OWNER: toko yang dimilikinya
   ownedStore   Store?   @relation("StoreOwnerUser")
 
@@ -79,6 +83,12 @@ model User {
   // Pencairan fee bagi hasil yang diterima sales ini (dicatat admin)
   commissionPayouts CommissionPayout[] @relation("CommissionPayoutSales")
 
+  // Bonus KPI bulanan yang sudah dibayar (status "lunas" per bulan)
+  kpiBonusPayouts KpiBonusPayout[] @relation("KpiBonusPayoutSales")
+
+  // Status gaji gudang yang sudah ditandai dicairkan (per bulan)
+  gudangSalaryPayouts GudangSalaryPayout[] @relation("GudangSalaryPayoutUser")
+
   // Catatan keuangan yang dibuat (admin)
   financeEntries FinanceEntry[] @relation("FinanceCreator")
 
@@ -105,6 +115,39 @@ model CommissionPayout {
   note        String?
   createdById String? // admin pencatat (snapshot id, tanpa relasi)
   createdAt   DateTime @default(now())
+}
+
+// Status pembayaran bonus KPI sales per bulan. Ada baris = bonus bulan itu
+// sudah "lunas" (dibayar admin). Tiap penandaan otomatis jadi pengeluaran
+// buku kas (FinanceEntry kategori "Bonus KPI Sales", sourceId = id baris →
+// terkunci, ikut terhapus kalau statusnya dibatalkan).
+model KpiBonusPayout {
+  id          String   @id @default(cuid())
+  salesId     String
+  sales       User     @relation("KpiBonusPayoutSales", fields: [salesId], references: [id], onDelete: Cascade)
+  period      String // "YYYY-MM" (WIB)
+  amount      Int
+  createdById String? // admin pencatat (snapshot id, tanpa relasi)
+  createdAt   DateTime @default(now())
+
+  @@unique([salesId, period])
+  @@index([salesId, period])
+}
+
+// Status pembayaran gaji gudang per bulan — murni PENANDA + pemicu
+// notifikasi ke karyawan. TIDAK dobel-catat ke buku kas (gaji gudang sudah
+// otomatis tersinkron via syncGudangSalary tiap payroll dibuka).
+model GudangSalaryPayout {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation("GudangSalaryPayoutUser", fields: [userId], references: [id], onDelete: Cascade)
+  period      String // "YYYY-MM" (WIB)
+  amount      Int
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, period])
+  @@index([userId, period])
 }
 
 // Undangan registrasi sales: admin buat link unik /daftar-sales/[token]

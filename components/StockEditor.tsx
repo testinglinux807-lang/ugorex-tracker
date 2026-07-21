@@ -189,7 +189,7 @@ export function StockEditor({ codes }: { codes: StockCode[] }) {
       {view.length === 0 ? (
         <p className="px-1 py-2 text-sm text-neutral-400">
           {onlyStocked && stockedCount === 0 && !q.trim()
-            ? "Belum ada barang di toko — order restok lewat menu Order."
+            ? "Belum ada barang di toko - order restok lewat menu Order."
             : "Kode tidak ditemukan."}
         </p>
       ) : (

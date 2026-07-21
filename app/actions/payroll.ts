@@ -3,10 +3,15 @@
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { LOG_TYPES } from "@/lib/payroll";
 import { PAYROLL_KEYS } from "@/lib/payroll-config";
 import { GUDANG_RADIUS_KEY } from "@/lib/gudang-assign";
+import {
+  notifyKpiBonusPayout,
+  notifyGudangSalaryPayout,
+} from "@/lib/wa-notify";
 
 async function requireAdmin() {
   const user = await getCurrentUser();
@@ -142,7 +147,7 @@ export async function startLembur() {
     where: { userId: user.id, endAt: null },
     select: { id: true },
   });
-  if (open) return { error: "Lembur sedang berjalan — selesaikan dulu." };
+  if (open) return { error: "Lembur sedang berjalan - selesaikan dulu." };
 
   await prisma.lemburSession.create({ data: { userId: user.id } });
   revalidatePath("/lembur");
@@ -218,6 +223,123 @@ export async function setPayrollConfig(formData: FormData) {
       });
     });
   if (ops.length > 0) await prisma.$transaction(ops);
+  revalidatePath("/payroll");
+  return { ok: true };
+}
+
+// ===== Status bayar Bonus KPI sales (per bulan) =====
+// Tandai bonus KPI seorang sales untuk suatu periode "lunas" — otomatis jadi
+// pengeluaran buku kas "Bonus KPI Sales" (terkunci, sourceId = id baris).
+// Idempoten: kalau sudah ditandai, tidak dobel.
+export async function markKpiBonusPaid(formData: FormData) {
+  const user = await requireAdmin();
+  if (!user) return { error: "Hanya admin." };
+
+  const salesId = String(formData.get("salesId") ?? "").trim();
+  const period = String(formData.get("period") ?? "").trim();
+  const amount = Math.round(Number(formData.get("amount") ?? 0));
+  if (!salesId || !/^\d{4}-\d{2}$/.test(period))
+    return { error: "Data tidak valid." };
+  if (!Number.isFinite(amount) || amount <= 0)
+    return { error: "Nominal bonus tidak valid." };
+
+  const target = await prisma.user.findUnique({ where: { id: salesId } });
+  if (!target || target.role !== "SALES")
+    return { error: "Akun sales tidak ditemukan." };
+
+  const existing = await prisma.kpiBonusPayout.findUnique({
+    where: { salesId_period: { salesId, period } },
+  });
+  if (existing) return { ok: true }; // sudah lunas
+
+  const payout = await prisma.kpiBonusPayout.create({
+    data: { salesId, period, amount, createdById: user.id },
+  });
+  await prisma.financeEntry.create({
+    data: {
+      type: "EXPENSE",
+      amount,
+      category: "Bonus KPI Sales",
+      note: `Bonus KPI ${target.name} - ${period}`,
+      date: payout.createdAt,
+      sourceId: payout.id,
+      createdById: user.id,
+    },
+  });
+
+  after(() => notifyKpiBonusPayout(salesId, amount, period));
+  revalidatePath("/payroll");
+  revalidatePath("/keuangan");
+  return { ok: true };
+}
+
+// Batalkan status "lunas" bonus KPI — entri buku kasnya ikut terhapus.
+export async function unmarkKpiBonusPaid(formData: FormData) {
+  const user = await requireAdmin();
+  if (!user) return { error: "Hanya admin." };
+
+  const salesId = String(formData.get("salesId") ?? "").trim();
+  const period = String(formData.get("period") ?? "").trim();
+  if (!salesId || !period) return { error: "Data tidak valid." };
+
+  const payout = await prisma.kpiBonusPayout.findUnique({
+    where: { salesId_period: { salesId, period } },
+  });
+  if (!payout) return { ok: true };
+
+  await prisma.$transaction([
+    prisma.financeEntry.deleteMany({ where: { sourceId: payout.id } }),
+    prisma.kpiBonusPayout.delete({ where: { id: payout.id } }),
+  ]);
+  revalidatePath("/payroll");
+  revalidatePath("/keuangan");
+  return { ok: true };
+}
+
+// ===== Status bayar gaji gudang (per bulan) =====
+// Penanda murni + pemicu notifikasi — TIDAK dobel-catat ke buku kas (gaji
+// gudang sudah otomatis tersinkron via syncGudangSalary tiap payroll
+// dibuka). Idempoten: kalau sudah ditandai, tidak dobel.
+export async function markGudangSalaryPaid(formData: FormData) {
+  const user = await requireAdmin();
+  if (!user) return { error: "Hanya admin." };
+
+  const userId = String(formData.get("userId") ?? "").trim();
+  const period = String(formData.get("period") ?? "").trim();
+  const amount = Math.round(Number(formData.get("amount") ?? 0));
+  if (!userId || !/^\d{4}-\d{2}$/.test(period))
+    return { error: "Data tidak valid." };
+  if (!Number.isFinite(amount) || amount <= 0)
+    return { error: "Nominal gaji tidak valid." };
+
+  const target = await prisma.user.findUnique({ where: { id: userId } });
+  if (!target || target.role !== "GUDANG")
+    return { error: "Karyawan gudang tidak ditemukan." };
+
+  const existing = await prisma.gudangSalaryPayout.findUnique({
+    where: { userId_period: { userId, period } },
+  });
+  if (existing) return { ok: true }; // sudah lunas
+
+  await prisma.gudangSalaryPayout.create({
+    data: { userId, period, amount, createdById: user.id },
+  });
+
+  after(() => notifyGudangSalaryPayout(userId, amount, period));
+  revalidatePath("/payroll");
+  return { ok: true };
+}
+
+// Batalkan status "dicairkan" gaji gudang bulan ini.
+export async function unmarkGudangSalaryPaid(formData: FormData) {
+  const user = await requireAdmin();
+  if (!user) return { error: "Hanya admin." };
+
+  const userId = String(formData.get("userId") ?? "").trim();
+  const period = String(formData.get("period") ?? "").trim();
+  if (!userId || !period) return { error: "Data tidak valid." };
+
+  await prisma.gudangSalaryPayout.deleteMany({ where: { userId, period } });
   revalidatePath("/payroll");
   return { ok: true };
 }

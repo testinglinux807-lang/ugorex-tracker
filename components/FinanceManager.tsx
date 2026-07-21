@@ -348,7 +348,7 @@ export function FinanceManager({
                               terkunci (mengikuti data ordernya) */}
                           {e.auto ? (
                             <span
-                              title="Tercatat otomatis dari order lunas — mengikuti data ordernya"
+                              title="Tercatat otomatis dari order lunas - mengikuti data ordernya"
                               className="rounded-full border border-neutral-200 px-2 py-0.5 text-[10px] font-medium text-neutral-400"
                             >
                               otomatis

@@ -132,6 +132,44 @@ export function BottomNav({
   );
 }
 
+// Nav horizontal atas (desktop) — dipakai role tanpa sidebar (mis. OWNER),
+// gaya tab garis-bawah kaya marketplace (Tokopedia/Shopee): baris tab, bukan
+// panel kiri permanen.
+export function TopNav({
+  role,
+  badges = {},
+}: {
+  role: string;
+  badges?: Record<string, number>;
+}) {
+  const pathname = usePathname();
+  const items = useItems(role);
+  const active = activeHref(pathname, items);
+  return (
+    <nav className="mb-4 hidden gap-1 overflow-x-auto border-b border-neutral-200 sm:flex">
+      {items.map((it) => {
+        const Icon = it.icon;
+        const on = it.href === active;
+        return (
+          <Link
+            key={it.href}
+            href={it.href}
+            className={`-mb-px flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors ${
+              on
+                ? "border-neutral-900 text-neutral-900"
+                : "border-transparent text-neutral-500 hover:text-neutral-800"
+            }`}
+          >
+            <Icon className="h-4 w-4" strokeWidth={2} />
+            {it.label}
+            {(badges[it.href] ?? 0) > 0 && <OrderBadge n={badges[it.href]} />}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
 export function SideNav({
   role,
   badges = {},

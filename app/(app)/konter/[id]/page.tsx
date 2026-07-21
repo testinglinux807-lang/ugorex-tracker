@@ -139,7 +139,7 @@ export default async function StoreDetailPage({
     href: `/prospects/${log.prospectId}`,
     title: log.prospect.product.name,
     subtitle: log.note,
-    by: log.sales?.name ?? "—",
+    by: log.sales?.name ?? "-",
     date: fmtDateTime(log.createdAt),
     stage: log.stage,
     result: log.result,
@@ -388,7 +388,7 @@ export default async function StoreDetailPage({
             <h1 className="text-2xl font-bold">{store.name}</h1>
             <p className="flex items-center gap-1 text-sm text-neutral-500">
               <MapPin className="h-3.5 w-3.5 shrink-0" />
-              {store.area ?? "—"}
+              {store.area ?? "-"}
             </p>
           </div>
           {store.ownerUser && (
@@ -400,19 +400,19 @@ export default async function StoreDetailPage({
         <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-4">
           <div>
             <dt className="text-neutral-400">Owner</dt>
-            <dd>{store.ownerName ?? "—"}</dd>
+            <dd>{store.ownerName ?? "-"}</dd>
           </div>
           <div>
             <dt className="text-neutral-400">Kontak</dt>
-            <dd>{store.ownerPhone ?? "—"}</dd>
+            <dd>{store.ownerPhone ?? "-"}</dd>
           </div>
           <div>
             <dt className="text-neutral-400">Sales</dt>
-            <dd>{store.sales?.name ?? "—"}</dd>
+            <dd>{store.sales?.name ?? "-"}</dd>
           </div>
           <div>
             <dt className="text-neutral-400">Alamat</dt>
-            <dd>{store.address ?? "—"}</dd>
+            <dd>{store.address ?? "-"}</dd>
           </div>
         </dl>
       </div>

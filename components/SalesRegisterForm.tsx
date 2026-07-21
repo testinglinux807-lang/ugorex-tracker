@@ -133,6 +133,20 @@ export function SalesRegisterForm({ token }: { token: string }) {
 
           <div>
             <label className="mb-1 block text-sm font-medium text-neutral-700">
+              No. Rekening
+            </label>
+            <input
+              name="bankAccount"
+              placeholder="mis. BCA 1234567890 a.n. Budi Santoso"
+              className={inputCls}
+            />
+            <p className="mt-1 text-xs text-neutral-400">
+              Buat transfer komisi - boleh diisi belakangan.
+            </p>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-neutral-700">
               Titik Rumah
             </label>
             <div className="flex gap-2">
@@ -164,7 +178,7 @@ export function SalesRegisterForm({ token }: { token: string }) {
             </button>
             <p className="mt-1 flex items-center gap-1 text-xs text-neutral-400">
               <MapPin className="h-3 w-3 shrink-0" /> Tekan tombolnya saat kamu
-              di rumah — jadi pusat wilayah kerjamu (radius 7 km) di peta.
+              di rumah - jadi pusat wilayah kerjamu (radius 7 km) di peta.
             </p>
             {locError && (
               <p className="mt-1 text-xs font-medium text-red-600">{locError}</p>

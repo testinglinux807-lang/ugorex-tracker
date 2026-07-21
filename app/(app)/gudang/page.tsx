@@ -80,7 +80,7 @@ export default async function GudangHome() {
         <div>
           <h1 className="text-2xl font-bold">Paket untuk Disiapkan</h1>
           <p className="text-sm text-neutral-500">
-            Halo {user.name.split(" ")[0]} — {mine.length} paket ditugaskan ke
+            Halo {user.name.split(" ")[0]} - {mine.length} paket ditugaskan ke
             kamu. Siapkan lalu cetak resinya.
           </p>
         </div>
@@ -106,7 +106,7 @@ export default async function GudangHome() {
       {!hasLoc && (
         <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
           <MapPinOff className="mt-0.5 h-4 w-4 shrink-0" />
-          Lokasi gudangmu belum diatur admin — paket belum bisa ditugaskan
+          Lokasi gudangmu belum diatur admin - paket belum bisa ditugaskan
           otomatis ke kamu.
         </div>
       )}

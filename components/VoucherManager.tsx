@@ -75,7 +75,7 @@ export function VoucherManager({ vouchers }: { vouchers: VoucherRow[] }) {
         )}
         {state?.ok && (
           <p className="rounded-lg border border-neutral-900 bg-neutral-900 px-3 py-2 text-sm text-white">
-            Voucher dibuat — bagikan kodenya ke owner.
+            Voucher dibuat - bagikan kodenya ke owner.
           </p>
         )}
 

@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { ROLE_LABEL, type Role } from "@/lib/constants";
-import { SideNav, MobileNav } from "@/components/Nav";
+import { SideNav, MobileNav, TopNav, BottomNav } from "@/components/Nav";
 import { LogoPush } from "@/components/LogoPush";
 import { NotifBell } from "@/components/NotifBell";
 import { UserMenu } from "@/components/UserMenu";
@@ -38,6 +38,9 @@ export default async function AppLayout({
     ]);
   }
   const navBadges = { "/order": orderBadge, "/tugas": tugasBadge };
+  // OWNER: nav cuma 4 item — gaya marketplace (tab atas desktop, bottom
+  // bar mobile) daripada sidebar/drawer yang kepenuhan buat menu sekecil itu.
+  const isOwner = user.role === "OWNER";
 
   // Riwayat notifikasi in-app untuk lonceng di header
   const notifs = await prisma.notification.findMany({
@@ -53,13 +56,23 @@ export default async function AppLayout({
           kadang pakai z-10 (mis. ring grade) — biar tak tembus ke drawer */}
       <header className="sticky top-0 z-30 flex items-center justify-between border-b border-neutral-200 bg-white px-4 py-3">
         <div className="flex min-w-0 items-center gap-2">
-          {/* Mobile: logo + judul = buka drawer menu */}
-          <MobileNav role={user.role} badges={navBadges} />
-          {/* Desktop: klik logo = aktifkan izin push di perangkat ini */}
-          <div className="hidden min-w-0 items-center gap-2 sm:flex">
+          {isOwner ? (
+            // Owner: logo statis (nav-nya di TopNav/BottomNav, bukan drawer)
             <LogoPush />
+          ) : (
+            <>
+              {/* Mobile: logo + judul = buka drawer menu */}
+              <MobileNav role={user.role} badges={navBadges} />
+              {/* Desktop: klik logo = aktifkan izin push di perangkat ini */}
+              <div className="hidden min-w-0 items-center gap-2 sm:flex">
+                <LogoPush />
+                <span className="truncate font-semibold">Ugorex Tracker</span>
+              </div>
+            </>
+          )}
+          {isOwner && (
             <span className="truncate font-semibold">Ugorex Tracker</span>
-          </div>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
           {/* Klik nama = dropdown akun (Keluar pindah ke sini) */}
@@ -84,9 +97,16 @@ export default async function AppLayout({
       </header>
 
       <div className="flex flex-1">
-        <SideNav role={user.role} badges={navBadges} />
-        <main className="w-full min-w-0 flex-1 p-4 sm:p-6">{children}</main>
+        {!isOwner && <SideNav role={user.role} badges={navBadges} />}
+        <main
+          className={`w-full min-w-0 flex-1 p-4 sm:p-6 ${isOwner ? "pb-20 sm:pb-6" : ""}`}
+        >
+          {isOwner && <TopNav role={user.role} />}
+          {children}
+        </main>
       </div>
+
+      {isOwner && <BottomNav role={user.role} />}
     </div>
   );
 }

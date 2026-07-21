@@ -141,13 +141,13 @@ export function SalesGrid({ rows }: { rows: SalesRowData[] }) {
               <div className="mt-3 rounded-xl bg-neutral-900 p-3 text-white">
                 <p className="text-xs text-neutral-400">Omzet</p>
                 <p className="text-xl font-bold text-brand">
-                  {r.revenue > 0 ? rupiahShort(r.revenue) : "—"}
+                  {r.revenue > 0 ? rupiahShort(r.revenue) : "-"}
                 </p>
                 {r.pct > 0 && (
                   <p className="mt-1 border-t border-white/10 pt-1 text-[11px] text-neutral-300">
                     Komisi {r.pct}% ·{" "}
                     <span className="font-semibold text-white">
-                      {r.commission > 0 ? rupiahShort(r.commission) : "—"}
+                      {r.commission > 0 ? rupiahShort(r.commission) : "-"}
                     </span>
                   </p>
                 )}
@@ -172,15 +172,15 @@ export function SalesGrid({ rows }: { rows: SalesRowData[] }) {
                 <Stat label="Seeding" value={r.kpi.seeding} />
                 <Stat
                   label="Konversi"
-                  value={r.kpi.konversi !== null ? `${r.kpi.konversi}%` : "—"}
+                  value={r.kpi.konversi !== null ? `${r.kpi.konversi}%` : "-"}
                 />
                 <Stat
                   label="Reorder"
-                  value={r.kpi.reorder !== null ? `${r.kpi.reorder} pcs` : "—"}
+                  value={r.kpi.reorder !== null ? `${r.kpi.reorder} pcs` : "-"}
                 />
                 <Stat
                   label="Harga/pcs"
-                  value={r.kpi.harga !== null ? rupiahShort(r.kpi.harga) : "—"}
+                  value={r.kpi.harga !== null ? rupiahShort(r.kpi.harga) : "-"}
                 />
               </div>
             </Link>

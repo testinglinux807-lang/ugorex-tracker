@@ -31,7 +31,7 @@ export function FeedbackForm() {
     <div className="space-y-3 rounded-2xl border border-neutral-200 bg-white p-5">
       <h2 className="font-semibold">Kirim Feedback</h2>
       <p className="text-xs text-neutral-400">
-        Keluhan, saran, atau request — semua dari satu pintu, langsung sampai
+        Keluhan, saran, atau request - semua dari satu pintu, langsung sampai
         ke sales &amp; admin.
       </p>
 

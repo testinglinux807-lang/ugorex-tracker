@@ -73,7 +73,7 @@ export default async function StokPage() {
     const g =
       codeMap.get(key) ??
       ({
-        code: p.code ?? "—",
+        code: p.code ?? "-",
         type: type || p.name,
         models: [],
         remaining: 0,
@@ -121,7 +121,7 @@ export default async function StokPage() {
           >
             Tiket Keluhan
           </Link>{" "}
-          — pengaduan diproses dalam 1–2 hari kerja.
+          - pengaduan diproses dalam 1–2 hari kerja.
         </p>
       </div>
 
@@ -145,7 +145,7 @@ export default async function StokPage() {
               Stok Menipis
             </span>
             <span className="block text-sm font-semibold">
-              {low > 0 ? `${low} barang — order restok` : "Aman — order restok"}
+              {low > 0 ? `${low} barang - order restok` : "Aman - order restok"}
             </span>
           </span>
           <ArrowRight className="h-4 w-4 shrink-0 text-neutral-400" />

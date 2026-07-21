@@ -48,3 +48,8 @@ export function wibMonthStart(now: Date = new Date()): Date {
   }).format(now); // "2026-07"
   return new Date(`${ym}-01T00:00:00+07:00`);
 }
+
+// Awal bulan (00:00 WIB) dari period "YYYY-MM" — kebalikan dari wibPeriod().
+export function periodMonthStart(period: string): Date {
+  return new Date(`${period}-01T00:00:00+07:00`);
+}

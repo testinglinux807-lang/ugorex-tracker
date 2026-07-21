@@ -148,7 +148,7 @@ export default async function ProspectDetailPage({
           )}
           <div>
             <dt className="text-neutral-400">Sales</dt>
-            <dd>{prospect.sales?.name ?? "—"}</dd>
+            <dd>{prospect.sales?.name ?? "-"}</dd>
           </div>
         </dl>
       </div>
@@ -304,7 +304,7 @@ export default async function ProspectDetailPage({
                 </div>
                 <p className="mt-1 text-sm">{log.note}</p>
                 <p className="mt-0.5 text-xs text-neutral-400">
-                  {log.sales?.name ?? "—"} ·{" "}
+                  {log.sales?.name ?? "-"} ·{" "}
                   {new Date(log.createdAt).toLocaleString("id-ID", {
                     day: "numeric",
                     month: "short",

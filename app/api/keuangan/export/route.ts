@@ -91,7 +91,7 @@ export async function GET() {
   ];
 
   for (const p of pnls) {
-    lines.push(row(`LABA RUGI — ${p.label}`), row("Pendapatan", "Jumlah"));
+    lines.push(row(`LABA RUGI - ${p.label}`), row("Pendapatan", "Jumlah"));
     if (p.income.length === 0) lines.push(row("(belum ada)", 0));
     for (const r of p.income) lines.push(row(r.category, r.amount));
     lines.push(row("Total Pendapatan", p.totalIncome), row("Beban", "Jumlah"));

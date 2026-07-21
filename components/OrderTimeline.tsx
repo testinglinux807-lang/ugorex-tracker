@@ -74,7 +74,7 @@ export function OrderTimeline({ events }: { events: TimelineEvent[] }) {
                 </p>
               )}
               <p className="mt-0.5 text-[11px] text-neutral-400">
-                {e.at ? fmtDateTime(e.at) : "—"}
+                {e.at ? fmtDateTime(e.at) : "-"}
               </p>
             </div>
           </li>

@@ -198,7 +198,7 @@ export function ProductRow({
               <label className="mb-1 block text-xs text-neutral-500">
                 Stok pusat
                 {codeCount > 1 &&
-                  ` — berlaku untuk semua barang berkode ${product.code}`}
+                  ` - berlaku untuk semua barang berkode ${product.code}`}
               </label>
               <input
                 name="centralStock"

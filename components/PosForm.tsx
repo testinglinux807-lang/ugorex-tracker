@@ -128,7 +128,7 @@ export function PosForm({
           onChange={addProduct}
         />
         <p className="mt-1 text-xs text-neutral-400">
-          Pilih barang lagi untuk menambah ke daftar — bisa beberapa barang
+          Pilih barang lagi untuk menambah ke daftar - bisa beberapa barang
           dalam satu transaksi.
         </p>
       </div>
@@ -247,7 +247,7 @@ export function PosForm({
         ) : cart.length === 0 ? (
           "Catat Penjualan"
         ) : (
-          `Catat Penjualan — ${rupiah(total)}`
+          `Catat Penjualan - ${rupiah(total)}`
         )}
       </button>
     </form>

@@ -178,7 +178,7 @@ function RestockForm({
         </label>
         <CodePicker codes={codes} onPick={addCode} />
         <p className="mt-1 text-xs text-neutral-400">
-          Belanja per kode barang — cari pakai kode atau tipe HP mana pun yang
+          Belanja per kode barang - cari pakai kode atau tipe HP mana pun yang
           cocok (mis. &quot;iPhone 17&quot;). Pilih lagi untuk menambah jumlah.
         </p>
       </div>
@@ -305,7 +305,7 @@ function RestockForm({
       >
         {chosen.length === 0
           ? "Checkout"
-          : `Checkout — ${rupiah(grandTotal)}`}
+          : `Checkout - ${rupiah(grandTotal)}`}
       </button>
 
       {/* Popup kwitansi: rincian order sebelum bayar */}
@@ -415,7 +415,7 @@ function RestockForm({
               />
             ) : (
               <p className="text-xs text-neutral-400">
-                Pembayaran online belum aktif — order dicatat sebagai cash.
+                Pembayaran online belum aktif - order dicatat sebagai cash.
               </p>
             )}
             {method === "CARD" && (
@@ -570,7 +570,7 @@ export function RestockCheckout({
       )}
       <h2 className="font-semibold">Order Restok</h2>
       <p className="text-xs text-neutral-400">
-        Belanja per kode barang dari stok pusat — tiap kode ada catatan tipe HP
+        Belanja per kode barang dari stok pusat - tiap kode ada catatan tipe HP
         yang cocok. Langsung checkout tanpa tunggu sales cek stok.
       </p>
       <RestockForm codes={codes} grosirTiers={grosirTiers} />

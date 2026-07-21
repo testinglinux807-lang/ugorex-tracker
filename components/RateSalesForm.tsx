@@ -66,7 +66,7 @@ export function RateSalesForm({
       )}
       {state?.ok && (
         <p className="text-xs font-medium text-neutral-600">
-          Rating tersimpan — makasih!
+          Rating tersimpan - makasih!
         </p>
       )}
 

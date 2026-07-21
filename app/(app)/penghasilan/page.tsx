@@ -125,7 +125,7 @@ export default async function PenghasilanPage() {
             <Percent className="h-3.5 w-3.5" /> Persen bagi hasil
           </p>
           <p className="mt-1 text-xl font-bold">
-            {pct > 0 ? `${pct}%` : "—"}
+            {pct > 0 ? `${pct}%` : "-"}
           </p>
         </div>
       </div>
@@ -133,7 +133,7 @@ export default async function PenghasilanPage() {
       {pct === 0 && (
         <p className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-700">
           <Info className="mt-0.5 h-4 w-4 shrink-0" />
-          Persen bagi hasilmu belum diatur admin — hubungi admin supaya fee
+          Persen bagi hasilmu belum diatur admin - hubungi admin supaya fee
           dari order konter-mu mulai dihitung.
         </p>
       )}

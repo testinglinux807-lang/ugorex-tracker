@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useActionState } from "react";
 import {
   Briefcase,
@@ -16,6 +17,8 @@ import {
   MapPin,
   Crosshair,
   ChevronDown,
+  History,
+  Landmark,
 } from "lucide-react";
 import { fmtDate } from "@/lib/date";
 import {
@@ -33,10 +36,15 @@ import {
   updateGudang,
   setGudangRadius,
   deleteLemburSession,
+  markKpiBonusPaid,
+  unmarkKpiBonusPaid,
+  markGudangSalaryPaid,
+  unmarkGudangSalaryPaid,
 } from "@/app/actions/payroll";
 import {
   createGudangAccount,
   deleteGudangAccount,
+  recordCommissionPayout,
 } from "@/app/actions/users";
 
 const rp = (n: number) => "Rp" + Math.round(n).toLocaleString("id-ID");
@@ -69,6 +77,8 @@ type LemburItem = {
 
 type Props = {
   monthLabel: string;
+  period: string;
+  isCurrentPeriod: boolean;
   today: string;
   sales: SalesPayrollRow[];
   gudang: GudangPayrollRow[];
@@ -127,6 +137,9 @@ export function PayrollTabs(props: Props) {
           komisi={salesKomisi}
           total={salesTotal}
           cfg={props.cfg}
+          period={props.period}
+          monthLabel={props.monthLabel}
+          isCurrentPeriod={props.isCurrentPeriod}
         />
       )}
       {tab === "gudang" && (
@@ -135,6 +148,8 @@ export function PayrollTabs(props: Props) {
           employees={props.employees}
           total={gudangTotal}
           monthLabel={props.monthLabel}
+          period={props.period}
+          isCurrentPeriod={props.isCurrentPeriod}
           tarif={props.cfg.lemburTarif}
           radiusKm={props.radiusKm}
         />
@@ -215,26 +230,107 @@ function Panel({
   );
 }
 
+// Peringatan saat melihat bulan lampau — pengaturan (komisi, tarif, akun)
+// selalu berlaku untuk SEKARANG, bukan bulan yang sedang dilihat.
+function HistoryBanner({ monthLabel }: { monthLabel: string }) {
+  return (
+    <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+      <History className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+      <span>
+        Melihat riwayat <b>{monthLabel}</b> - data di bawah dihitung ulang
+        dari kondisi bulan itu, tapi pengaturan (persen komisi, tarif lembur,
+        gaji pokok, akun) selalu memakai nilai <b>saat ini</b>, bukan yang
+        berlaku waktu itu.
+      </span>
+    </div>
+  );
+}
+
+type LunasFilter = "semua" | "lunas" | "belum";
+
+function LunasFilterTabs({
+  value,
+  onChange,
+  countLunas,
+  countBelum,
+}: {
+  value: LunasFilter;
+  onChange: (v: LunasFilter) => void;
+  countLunas: number;
+  countBelum: number;
+}) {
+  const opts: { key: LunasFilter; label: string }[] = [
+    { key: "semua", label: `Semua (${countLunas + countBelum})` },
+    { key: "belum", label: `Belum Lunas (${countBelum})` },
+    { key: "lunas", label: `Lunas (${countLunas})` },
+  ];
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {opts.map((o) => (
+        <button
+          key={o.key}
+          type="button"
+          onClick={() => onChange(o.key)}
+          className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+            value === o.key
+              ? "bg-neutral-900 text-white"
+              : "bg-neutral-100 text-neutral-500 hover:bg-neutral-200"
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ===== Sales (read-only) =====
 function SalesView({
   rows,
   komisi,
   total,
   cfg,
+  period,
+  monthLabel,
+  isCurrentPeriod,
 }: {
   rows: SalesPayrollRow[];
   komisi: number;
   total: number;
   cfg: PayrollConfig;
+  period: string;
+  monthLabel: string;
+  isCurrentPeriod: boolean;
 }) {
+  // Sisa gabungan (fee + bonus KPI belum dibayar) — sama dgn yang ditampilkan
+  // per baris di SalesPaymentStatus.
+  const outstanding = rows.reduce(
+    (a, s) => a + s.feeOutstanding + (s.kpiHit && !s.bonusPaid ? s.bonus : 0),
+    0,
+  );
+  const isLunas = (s: SalesPayrollRow) =>
+    s.feeOutstanding === 0 && (!s.kpiHit || s.bonusPaid);
+  const countLunas = rows.filter(isLunas).length;
+  const countBelum = rows.length - countLunas;
+  const [filter, setFilter] = useState<LunasFilter>("semua");
+  const shownRows = rows.filter((s) =>
+    filter === "semua" ? true : filter === "lunas" ? isLunas(s) : !isLunas(s),
+  );
   return (
     <div className="space-y-4">
+      {!isCurrentPeriod && <HistoryBanner monthLabel={monthLabel} />}
+      <LunasFilterTabs
+        value={filter}
+        onChange={setFilter}
+        countLunas={countLunas}
+        countBelum={countBelum}
+      />
       <Panel
         title="Payroll Sales"
         icon={Briefcase}
         note={
           <span className="inline-flex items-center gap-1">
-            <Lock className="h-3 w-3" /> nama · level · omzet · komisi · KPI —
+            <Lock className="h-3 w-3" /> nama · level · omzet · komisi · KPI -
             otomatis dari sistem
           </span>
         }
@@ -244,6 +340,7 @@ function SalesView({
             <thead>
               <tr className="border-b border-neutral-200 text-left text-xs text-neutral-500">
                 <th className="px-4 py-3 font-semibold">Nama Sales</th>
+                <th className="px-4 py-3 font-semibold">No. Rekening</th>
                 <th className="px-4 py-3 font-semibold">Level</th>
                 <th className="px-4 py-3 text-right font-semibold">
                   Omzet Reorder
@@ -254,19 +351,34 @@ function SalesView({
                 <th className="px-4 py-3 text-right font-semibold">
                   Total Gaji
                 </th>
+                <th className="px-4 py-3 font-semibold">
+                  Status Pembayaran
+                </th>
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 ? (
+              {shownRows.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-neutral-400">
-                    Belum ada sales.
+                  <td colSpan={9} className="px-4 py-8 text-center text-neutral-400">
+                    {rows.length === 0
+                      ? "Belum ada sales."
+                      : "Tidak ada yang cocok dengan filter."}
                   </td>
                 </tr>
               ) : (
-                rows.map((s) => (
+                shownRows.map((s) => (
                   <tr key={s.salesId} className="border-b border-neutral-100">
-                    <td className="px-4 py-3 font-medium">{s.name}</td>
+                    <td className="px-4 py-3 font-medium">
+                      <Link
+                        href={`/sales/${s.salesId}`}
+                        className="hover:text-brand-dark hover:underline"
+                      >
+                        {s.name}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3">
+                      <BankAccountInline bankAccount={s.bankAccount} />
+                    </td>
                     <td className="px-4 py-3 text-neutral-600">
                       Lv.{s.level} {s.levelName}
                     </td>
@@ -281,8 +393,8 @@ function SalesView({
                     </td>
                     <td className="px-4 py-3">
                       {s.kpiHit ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-brand/20 px-2 py-0.5 text-xs font-semibold text-brand-dark">
-                          <CheckCircle2 className="h-3 w-3" />+{rp(s.bonus)}
+                        <span className="inline-flex w-fit items-center rounded-full bg-brand/20 px-2 py-0.5 text-xs font-semibold text-brand-dark">
+                          +{rp(s.bonus)}
                         </span>
                       ) : (
                         <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-400">
@@ -293,26 +405,251 @@ function SalesView({
                     <td className="px-4 py-3 text-right tabular-nums font-semibold">
                       {rp(s.total)}
                     </td>
+                    <td className="px-4 py-3">
+                      <SalesPaymentStatus row={s} period={period} />
+                    </td>
                   </tr>
                 ))
               )}
             </tbody>
             <tfoot>
               <tr className="border-t border-neutral-200 font-semibold text-neutral-900">
-                <td colSpan={4} className="px-4 py-3">
+                <td colSpan={5} className="px-4 py-3">
                   TOTAL
                 </td>
                 <td className="px-4 py-3 text-right tabular-nums">{rp(komisi)}</td>
                 <td />
                 <td className="px-4 py-3 text-right tabular-nums">{rp(total)}</td>
+                <td className="px-4 py-3 tabular-nums">
+                  {outstanding > 0 ? (
+                    <span className="text-amber-700">sisa {rp(outstanding)}</span>
+                  ) : (
+                    <span className="text-neutral-400">lunas</span>
+                  )}
+                </td>
               </tr>
             </tfoot>
           </table>
+        </div>
+        <div className="flex flex-wrap items-start gap-1.5 border-t border-neutral-200 px-5 py-3 text-xs text-neutral-400">
+          <Wallet className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>
+            <b className="text-neutral-500">Fee</b> (kumulatif semua waktu,
+            boleh dicairkan sebagian) dan{" "}
+            <b className="text-neutral-500">Bonus</b> (tetap, per bulan) di
+            kolom Status Pembayaran statusnya{" "}
+            <b className="text-neutral-500">terpisah</b> - mekanisme
+            pencairannya beda. Kolom{" "}
+            <b className="text-neutral-500">Komisi</b> = hitungan bulan ini.
+          </span>
         </div>
       </Panel>
 
       <ConfigForm cfg={cfg} />
     </div>
+  );
+}
+
+// No. rekening sales — read-only di tabel Payroll (biar admin gampang lihat
+// buat transfer). Edit-nya di halaman detail sales (klik ikon pensil).
+function BankAccountInline({ bankAccount }: { bankAccount: string | null }) {
+  if (!bankAccount) {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-neutral-400">
+        <Landmark className="h-3 w-3" /> belum diisi
+      </span>
+    );
+  }
+  return <span className="text-xs text-neutral-600">{bankAccount}</span>;
+}
+
+// Badge status fee affiliator + tombol "Cairkan" (collapsed) atau form
+// jumlah+catatan (expanded).
+function FeePayoutInline({
+  salesId,
+  outstanding,
+  paid,
+}: {
+  salesId: string;
+  outstanding: number;
+  paid: number;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const boundAction = recordCommissionPayout.bind(null, salesId);
+  const [state, action, pending] = useActionState(
+    async (_p: unknown, fd: FormData) => (await boundAction(fd)) ?? null,
+    null,
+  );
+
+  const badge =
+    outstanding > 0 ? (
+      <span className="inline-flex w-fit items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
+        <Wallet className="h-3 w-3" /> sisa {rp(outstanding)}
+      </span>
+    ) : paid > 0 ? (
+      <span className="inline-flex w-fit items-center gap-1 rounded-full bg-brand/20 px-2 py-0.5 text-xs font-semibold text-brand-dark">
+        <CheckCircle2 className="h-3 w-3" /> lunas
+      </span>
+    ) : (
+      <span className="inline-flex w-fit items-center gap-1 rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-400">
+        belum ada
+      </span>
+    );
+
+  if (!expanded) {
+    return (
+      <div className="flex flex-wrap items-center gap-1.5">
+        {badge}
+        {outstanding > 0 && (
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            className="rounded-md border border-neutral-300 px-2 py-0.5 text-[11px] font-medium text-neutral-600 hover:bg-neutral-100"
+          >
+            Cairkan
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      {badge}
+      <form action={action} className="flex flex-wrap items-center gap-1.5">
+        <input
+          name="amount"
+          type="number"
+          min={1}
+          required
+          defaultValue={outstanding}
+          className="w-24 rounded-md border border-neutral-300 px-2 py-1 text-xs outline-none focus:border-neutral-900"
+        />
+        <input
+          name="note"
+          placeholder="catatan (opsional)"
+          className="w-32 rounded-md border border-neutral-300 px-2 py-1 text-xs outline-none focus:border-neutral-900"
+        />
+        <button
+          disabled={pending}
+          className="rounded-md bg-neutral-900 px-2 py-1 text-[11px] font-semibold text-white hover:bg-neutral-800 disabled:opacity-50"
+        >
+          {pending ? "…" : "Catat"}
+        </button>
+        <button
+          type="button"
+          onClick={() => setExpanded(false)}
+          className="text-[11px] text-neutral-400 hover:text-neutral-700"
+        >
+          batal
+        </button>
+      </form>
+      {state && "error" in state && state.error && (
+        <span className="text-[11px] text-red-600">{state.error}</span>
+      )}
+    </div>
+  );
+}
+
+// Status pembayaran sales — dua baris rapi (label tetap 40px biar sejajar):
+// Fee affiliator (kumulatif, boleh dicairkan sebagian) dan Bonus KPI (tetap,
+// per bulan). Mekanismenya beda jadi tetap dipisah, tapi label & spacing-nya
+// dirapikan biar gampang dibaca sekilas.
+function SalesPaymentStatus({
+  row: s,
+  period,
+}: {
+  row: SalesPayrollRow;
+  period: string;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5 text-xs">
+      <div className="flex items-start gap-2">
+        <span className="w-10 shrink-0 pt-0.5 text-[11px] font-medium text-neutral-400">
+          Fee
+        </span>
+        <div className="flex flex-col gap-0.5">
+          <FeePayoutInline
+            key={`${s.salesId}-${s.feeOutstanding}-${s.feePaid}`}
+            salesId={s.salesId}
+            outstanding={s.feeOutstanding}
+            paid={s.feePaid}
+          />
+          <span className="tabular-nums text-[11px] text-neutral-400">
+            total {rp(s.feePaid + s.feeOutstanding)} · cair {rp(s.feePaid)}
+          </span>
+        </div>
+      </div>
+      {s.kpiHit && (
+        <div className="flex items-start gap-2 border-t border-neutral-100 pt-1.5">
+          <span className="w-10 shrink-0 pt-0.5 text-[11px] font-medium text-neutral-400">
+            Bonus
+          </span>
+          <KpiBonusStatus
+            salesId={s.salesId}
+            period={period}
+            amount={s.bonus}
+            paid={s.bonusPaid}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Status bayar bonus KPI (per sales, per bulan). Belum → tombol "Tandai
+// dibayar" (masuk buku kas). Sudah → label "dibayar" + "batal".
+function KpiBonusStatus({
+  salesId,
+  period,
+  amount,
+  paid,
+}: {
+  salesId: string;
+  period: string;
+  amount: number;
+  paid: boolean;
+}) {
+  const [, markAction, markPending] = useActionState(
+    async (_p: unknown, fd: FormData) => (await markKpiBonusPaid(fd)) ?? null,
+    null,
+  );
+  const [, unmarkAction, unmarkPending] = useActionState(
+    async (_p: unknown, fd: FormData) => (await unmarkKpiBonusPaid(fd)) ?? null,
+    null,
+  );
+
+  if (paid) {
+    return (
+      <form action={unmarkAction} className="flex items-center gap-1.5">
+        <input type="hidden" name="salesId" value={salesId} />
+        <input type="hidden" name="period" value={period} />
+        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-brand-dark">
+          <CheckCircle2 className="h-3 w-3" /> dibayar
+        </span>
+        <button
+          disabled={unmarkPending}
+          className="text-[11px] text-neutral-400 underline hover:text-red-600 disabled:opacity-50"
+          title="Batalkan status lunas - entri buku kas ikut terhapus"
+        >
+          batal
+        </button>
+      </form>
+    );
+  }
+  return (
+    <form action={markAction}>
+      <input type="hidden" name="salesId" value={salesId} />
+      <input type="hidden" name="period" value={period} />
+      <input type="hidden" name="amount" value={amount} />
+      <button
+        disabled={markPending}
+        className="inline-flex w-fit items-center gap-1 rounded-md border border-neutral-300 px-2 py-0.5 text-[11px] font-medium text-neutral-600 hover:bg-neutral-100 disabled:opacity-50"
+        title="Tandai bonus KPI dibayar - otomatis masuk buku kas"
+      >
+        {markPending ? "…" : "Tandai dibayar"}
+      </button>
+    </form>
   );
 }
 
@@ -381,6 +718,8 @@ function GudangView({
   employees,
   total,
   monthLabel,
+  period,
+  isCurrentPeriod,
   tarif,
   radiusKm,
 }: {
@@ -388,11 +727,26 @@ function GudangView({
   employees: Employee[];
   total: number;
   monthLabel: string;
+  period: string;
+  isCurrentPeriod: boolean;
   tarif: number;
   radiusKm: number;
 }) {
+  const countLunas = rows.filter((g) => g.salaryPaid).length;
+  const countBelum = rows.length - countLunas;
+  const [filter, setFilter] = useState<LunasFilter>("semua");
+  const shownRows = rows.filter((g) =>
+    filter === "semua" ? true : filter === "lunas" ? g.salaryPaid : !g.salaryPaid,
+  );
   return (
     <div className="space-y-4">
+      {!isCurrentPeriod && <HistoryBanner monthLabel={monthLabel} />}
+      <LunasFilterTabs
+        value={filter}
+        onChange={setFilter}
+        countLunas={countLunas}
+        countBelum={countBelum}
+      />
       <Panel
         title="Payroll Gudang"
         icon={Package}
@@ -404,7 +758,7 @@ function GudangView({
         }
       >
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px] text-sm">
+          <table className="w-full min-w-[720px] text-sm">
             <thead>
               <tr className="border-b border-neutral-200 text-left text-xs text-neutral-500">
                 <th className="px-4 py-3 font-semibold">Nama</th>
@@ -413,17 +767,20 @@ function GudangView({
                 <th className="px-4 py-3 text-right font-semibold">Upah Lembur</th>
                 <th className="px-4 py-3 text-right font-semibold">Potongan</th>
                 <th className="px-4 py-3 text-right font-semibold">Total Gaji</th>
+                <th className="px-4 py-3 font-semibold">Status Gaji</th>
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 ? (
+              {shownRows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-neutral-400">
-                    Belum ada karyawan gudang — tambah akun di bawah.
+                  <td colSpan={7} className="px-4 py-8 text-center text-neutral-400">
+                    {rows.length === 0
+                      ? "Belum ada karyawan gudang - tambah akun di bawah."
+                      : "Tidak ada yang cocok dengan filter."}
                   </td>
                 </tr>
               ) : (
-                rows.map((g) => (
+                shownRows.map((g) => (
                   <tr key={g.userId} className="border-b border-neutral-100">
                     <td className="px-4 py-3 font-medium">{g.name}</td>
                     <td className="px-4 py-3 text-right tabular-nums">
@@ -441,6 +798,14 @@ function GudangView({
                     <td className="px-4 py-3 text-right tabular-nums font-semibold">
                       {rp(g.total)}
                     </td>
+                    <td className="px-4 py-3">
+                      <GudangSalaryStatus
+                        userId={g.userId}
+                        period={period}
+                        amount={g.total}
+                        paid={g.salaryPaid}
+                      />
+                    </td>
                   </tr>
                 ))
               )}
@@ -451,6 +816,13 @@ function GudangView({
                   TOTAL
                 </td>
                 <td className="px-4 py-3 text-right tabular-nums">{rp(total)}</td>
+                <td className="px-4 py-3 tabular-nums">
+                  {countBelum > 0 ? (
+                    <span className="text-amber-700">{countBelum} belum</span>
+                  ) : (
+                    <span className="text-neutral-400">semua lunas</span>
+                  )}
+                </td>
               </tr>
             </tfoot>
           </table>
@@ -458,12 +830,69 @@ function GudangView({
         <div className="flex flex-wrap items-center gap-1.5 border-t border-neutral-200 px-5 py-3 text-xs text-neutral-400">
           <Wallet className="h-3.5 w-3.5" />
           Total gaji gudang otomatis tercatat ke Keuangan (kategori “Gaji
-          Gudang”) — ikut update tiap ada lembur/potongan.
+          Gudang”) - ikut update tiap ada lembur/potongan. “Status Gaji” cuma
+          penanda + kirim notif ke karyawan, tidak dobel-catat ke buku kas.
         </div>
       </Panel>
 
       <GudangManager employees={employees} radiusKm={radiusKm} tarif={tarif} />
     </div>
+  );
+}
+
+// Status gaji gudang per bulan — murni penanda + pemicu notifikasi (TIDAK
+// dobel-catat ke buku kas, karena gaji gudang sudah otomatis tersinkron).
+function GudangSalaryStatus({
+  userId,
+  period,
+  amount,
+  paid,
+}: {
+  userId: string;
+  period: string;
+  amount: number;
+  paid: boolean;
+}) {
+  const [, markAction, markPending] = useActionState(
+    async (_p: unknown, fd: FormData) => (await markGudangSalaryPaid(fd)) ?? null,
+    null,
+  );
+  const [, unmarkAction, unmarkPending] = useActionState(
+    async (_p: unknown, fd: FormData) => (await unmarkGudangSalaryPaid(fd)) ?? null,
+    null,
+  );
+
+  if (paid) {
+    return (
+      <form action={unmarkAction} className="flex items-center gap-1.5">
+        <input type="hidden" name="userId" value={userId} />
+        <input type="hidden" name="period" value={period} />
+        <span className="inline-flex items-center gap-1 text-xs font-semibold text-brand-dark">
+          <CheckCircle2 className="h-3 w-3" /> dicairkan
+        </span>
+        <button
+          disabled={unmarkPending}
+          className="text-[11px] text-neutral-400 underline hover:text-red-600 disabled:opacity-50"
+          title="Batalkan status dicairkan"
+        >
+          batal
+        </button>
+      </form>
+    );
+  }
+  return (
+    <form action={markAction}>
+      <input type="hidden" name="userId" value={userId} />
+      <input type="hidden" name="period" value={period} />
+      <input type="hidden" name="amount" value={amount} />
+      <button
+        disabled={markPending}
+        className="inline-flex w-fit items-center gap-1 rounded-md border border-neutral-300 px-2 py-0.5 text-xs font-medium text-neutral-600 hover:bg-neutral-100 disabled:opacity-50"
+        title="Tandai gaji dicairkan - karyawan dapat notifikasi"
+      >
+        {markPending ? "…" : "Tandai dicairkan"}
+      </button>
+    </form>
   );
 }
 
@@ -979,7 +1408,7 @@ function LogView({
                       −{rp(l.amount)}
                     </td>
                     <td className="px-4 py-3 text-neutral-500">
-                      {l.note || "—"}
+                      {l.note || "-"}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <form

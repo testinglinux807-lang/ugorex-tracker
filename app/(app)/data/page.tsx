@@ -141,7 +141,7 @@ export default async function DataPage() {
               />
             </div>
             <p className="text-[11px] text-neutral-400">
-              Barang dengan kode yang sama berbagi satu stok pusat — kalau
+              Barang dengan kode yang sama berbagi satu stok pusat - kalau
               kodenya sudah dipakai barang lain, stok mengikuti stok kode itu.
             </p>
             <input
@@ -172,7 +172,7 @@ export default async function DataPage() {
               <Count n={vouchers.length} />
             </div>
             <p className="mb-3 text-xs text-neutral-400">
-              Kode diskon untuk owner — bisa dipakai saat order restok dan
+              Kode diskon untuk owner - bisa dipakai saat order restok dan
               catat penjualan di POS.
             </p>
             <VoucherManager
@@ -296,7 +296,7 @@ export default async function DataPage() {
             <input name="lng" placeholder="Longitude (mis. 107.3376)" className={inputCls} />
             {isAdmin && (
               <select name="salesId" className={`${inputCls} sm:col-span-2`} defaultValue="">
-                <option value="">— Sales penanggung jawab —</option>
+                <option value="">- Sales penanggung jawab -</option>
                 {salesList.map((sl) => (
                   <option key={sl.id} value={sl.id}>
                     {sl.name}

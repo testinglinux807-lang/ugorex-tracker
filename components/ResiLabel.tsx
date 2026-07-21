@@ -138,7 +138,7 @@ export function ResiLabel({ order: req }: { order: ResiOrder }) {
       <div className="flex items-stretch gap-3 border-b-2 border-neutral-900 p-3">
         <div className="flex shrink-0 flex-col items-center justify-center border-2 border-dashed border-neutral-900 px-4 py-2">
           <span className="text-3xl font-black tracking-wide">
-            {req.pickupCode ?? "—"}
+            {req.pickupCode ?? "-"}
           </span>
           <span className="mt-0.5 text-[10px] font-bold uppercase tracking-wide text-neutral-900">
             Kode Penjemputan
@@ -182,12 +182,12 @@ export function ResiLabel({ order: req }: { order: ResiOrder }) {
       {/* Wilayah + metode bayar + status */}
       <div className="flex items-stretch gap-2 border-b-2 border-neutral-900 p-2 text-xs font-bold">
         <span className="flex-1 border border-neutral-900 px-2 py-1.5 text-center uppercase">
-          {req.store.area || "—"}
+          {req.store.area || "-"}
         </span>
         <span className="flex-1 border border-neutral-900 px-2 py-1.5 text-center">
           {req.paymentMethod
             ? (PAYMENT_METHOD_LABEL[req.paymentMethod] ?? req.paymentMethod)
-            : "—"}
+            : "-"}
           {isCod ? " (COD)" : ""}
         </span>
         <span
@@ -235,7 +235,7 @@ export function ResiLabel({ order: req }: { order: ResiOrder }) {
               >
                 <td className="px-2 py-1.5">{i + 1}</td>
                 <td className="px-1 py-1.5 font-mono font-bold">
-                  {it.product.code ?? "—"}
+                  {it.product.code ?? "-"}
                 </td>
                 <td className="px-1 py-1.5 leading-snug">
                   {it.product.name}
@@ -271,7 +271,7 @@ export function ResiLabel({ order: req }: { order: ResiOrder }) {
                     >
                       <span className="min-w-0">
                         <span className="font-mono font-bold">
-                          {hi * mid + i + 1}. {it.product.code ?? "—"}
+                          {hi * mid + i + 1}. {it.product.code ?? "-"}
                         </span>{" "}
                         {it.product.name}
                         {it.price > 0 && (

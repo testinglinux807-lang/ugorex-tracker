@@ -280,7 +280,7 @@ export default async function TugasPage() {
                   `"${t.title}"`,
                   ...(t.dueDate ? [`Tenggat: ${fmtDate(t.dueDate)}`] : []),
                   ``,
-                  `Mohon dikerjakan ya — cek di menu Tugas → Dari Admin.`,
+                  `Mohon dikerjakan ya - cek di menu Tugas → Dari Admin.`,
                 ].join("\n"),
               );
               return wa ? (
@@ -365,6 +365,7 @@ export default async function TugasPage() {
       where: {
         items: { some: {} },
         paymentStatus: "PAID",
+        status: { not: "CANCELLED" },
         createdAt: { gte: monthStart },
       },
       select: { storeId: true, total: true },
@@ -423,7 +424,7 @@ export default async function TugasPage() {
         </h2>
         <p className="mb-3 text-xs text-neutral-400">
           Gabungan omzet, konter loyal, keaktifan, KPI tugas, dan rating owner
-          — klik nama untuk detailnya.
+          - klik nama untuk detailnya.
         </p>
         {gradeBoard.length === 0 ? (
           <p className="text-sm text-neutral-400">Belum ada akun sales.</p>
@@ -535,7 +536,7 @@ export default async function TugasPage() {
         <h1 className="text-2xl font-bold">Tugas</h1>
         <p className="text-sm text-neutral-500">
           {totalTugas > 0
-            ? `${totalTugas} tugas menunggu — ${isAdmin ? "semua toko" : "dari toko yang kamu pegang"}`
+            ? `${totalTugas} tugas menunggu - ${isAdmin ? "semua toko" : "dari toko yang kamu pegang"}`
             : "Tidak ada tugas menunggu"}
         </p>
       </div>
@@ -646,7 +647,7 @@ export default async function TugasPage() {
                     <>
                       <StateHeader
                         icon={PackageCheck}
-                        title="Di Jalan — Tunggu Report"
+                        title="Di Jalan - Tunggu Report"
                         n={diJalan.length}
                       />
                       <Paginated
@@ -728,7 +729,7 @@ export default async function TugasPage() {
                         >
                           <Link href="/request" className="min-w-0 flex-1 hover:underline">
                             <span className="block truncate text-sm font-medium">
-                              {r.subject} — {r.store.name}
+                              {r.subject} - {r.store.name}
                             </span>
                             <span className="block truncate text-xs text-neutral-400">
                               {r.message.slice(0, 60)} · {fmtDate(r.createdAt)}
@@ -781,7 +782,7 @@ export default async function TugasPage() {
                       >
                         <span className="min-w-0">
                           <span className="block truncate text-sm font-medium">
-                            {t.subject} — {t.store.name}
+                            {t.subject} - {t.store.name}
                           </span>
                           <span className="block truncate text-xs text-neutral-400">
                             Status {t.status} · {fmtDate(t.createdAt)}

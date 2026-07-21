@@ -27,8 +27,8 @@ function ResetPanel({ onBack }: { onBack: () => void }) {
         <h2 className="font-semibold">Lupa Password</h2>
         <p className="mt-0.5 text-xs text-neutral-400">
           {sent
-            ? "Kode 6 digit sudah dikirim via WhatsApp — masukkan kode & password barumu."
-            : "Masukkan nomor HP akunmu — kode verifikasi dikirim via WhatsApp."}
+            ? "Kode 6 digit sudah dikirim via WhatsApp - masukkan kode & password barumu."
+            : "Masukkan nomor HP akunmu - kode verifikasi dikirim via WhatsApp."}
         </p>
       </div>
 

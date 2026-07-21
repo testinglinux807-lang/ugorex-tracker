@@ -16,7 +16,7 @@ export function KecamatanRanking({ ranking }: { ranking: KecStat[] }) {
     <div className="rounded-xl border border-neutral-200 bg-white p-5">
       <div className="mb-1 flex items-center gap-2">
         <Trophy className="h-4 w-4" />
-        <h2 className="font-semibold">Ranking Kecamatan — Paling Potensial</h2>
+        <h2 className="font-semibold">Ranking Kecamatan - Paling Potensial</h2>
       </div>
       <p className="mb-2 text-xs text-neutral-400">
         Diurut dari rasio konter tertarik tertinggi · format{" "}

@@ -180,7 +180,7 @@ export default async function DashboardPage() {
       storeId: p.storeId,
       product: p.product.name,
       store: p.store.name,
-      area: p.store.area ?? "—",
+      area: p.store.area ?? "-",
       result: (last?.result ?? "NEUTRAL") as Result,
     });
   }
@@ -236,7 +236,7 @@ export default async function DashboardPage() {
     href: `/prospects/${log.prospectId}`,
     title: `${log.prospect.product.name} @ ${log.prospect.store.name}`,
     subtitle: log.note,
-    by: log.sales?.name ?? "—",
+    by: log.sales?.name ?? "-",
     date: fmtDate(log.createdAt),
     stage: log.stage,
     result: log.result,
@@ -375,7 +375,7 @@ export default async function DashboardPage() {
               <div className="flex h-full flex-col">
                 <div className="mb-2 flex items-center gap-2 text-sm font-medium text-neutral-700">
                   <MapPin className="h-4 w-4" />
-                  Sebaran Konter — Karawang
+                  Sebaran Konter - Karawang
                 </div>
                 <TrackerMap points={points} homePoints={salesHomes} />
               </div>

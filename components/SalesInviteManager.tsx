@@ -50,7 +50,7 @@ export function SalesInviteManager({
       <form action={formAction} className="flex flex-col gap-2 sm:flex-row">
         <input
           name="note"
-          placeholder="Catatan (mis. buat Andi) — opsional"
+          placeholder="Catatan (mis. buat Andi) - opsional"
           className={inputCls}
         />
         <button

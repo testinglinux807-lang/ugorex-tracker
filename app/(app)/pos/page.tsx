@@ -127,7 +127,7 @@ export default async function PosPage() {
           <h2 className="font-semibold">Nilai Sales Kamu</h2>
           <p className="mb-3 text-xs text-neutral-400">
             Gimana pelayanan {mySales.name} selama ini? Rating & keteranganmu
-            membantu kami menjaga kualitas layanan — bisa diubah kapan saja.
+            membantu kami menjaga kualitas layanan - bisa diubah kapan saja.
           </p>
           <div className="max-w-md">
             <RateSalesForm

@@ -22,12 +22,12 @@ type TabKey = (typeof TABS)[number]["key"];
 
 const NOTES: Record<TabKey, string> = {
   labaRugi:
-    "Dihitung dari buku kas per kategori — catat beban dengan kategori baku " +
+    "Dihitung dari buku kas per kategori - catat beban dengan kategori baku " +
     "(Beli barang, Iklan, Pajak, dll.) supaya masuk baris yang tepat. " +
     "Modal masuk tidak dihitung pendapatan.",
   neraca:
     "Kas, Modal, dan Laba Ditahan kumulatif akurat per akhir bulan. Piutang " +
-    "& Persediaan hanya snapshot hari ini (kolom bulan berjalan) — karena " +
+    "& Persediaan hanya snapshot hari ini (kolom bulan berjalan) - karena " +
     "itu Total Aset bulan ini bisa lebih besar dari Ekuitas.",
   arusKas:
     "Metode langsung dari buku kas: penerimaan & pengeluaran nyata per " +
@@ -36,7 +36,7 @@ const NOTES: Record<TabKey, string> = {
 
 // Sel angka: singkat di layar, lengkap saat hover; negatif merah.
 function Cell({ v }: { v: number | null }) {
-  if (v === null) return <span className="text-neutral-300">—</span>;
+  if (v === null) return <span className="text-neutral-300">-</span>;
   const neg = v < 0;
   return (
     <span title={rupiah(v)} className={neg ? "text-red-600" : undefined}>

@@ -29,7 +29,7 @@ export const GRADE_MIN: Record<Grade, number> = {
 };
 
 export const GRADE_DESC: Record<Grade, string> = {
-  "S+": "Luar biasa — unggul di hampir semua komponen",
+  "S+": "Luar biasa - unggul di hampir semua komponen",
   S: "Sangat baik",
   A: "Baik",
   B: "Cukup",

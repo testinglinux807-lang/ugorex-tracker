@@ -39,7 +39,7 @@ const fmtDate = (iso: string | null) =>
         month: "short",
         year: "numeric",
       })
-    : "—";
+    : "-";
 
 export function FunnelAnalysis({ stores }: { stores: StoreFunnel[] }) {
   const [q, setQ] = useState("");
@@ -86,7 +86,7 @@ export function FunnelAnalysis({ stores }: { stores: StoreFunnel[] }) {
         <div className="min-w-0">
           <p className="truncate font-semibold">{s.name}</p>
           <p className="truncate text-sm text-neutral-500">
-            {s.area ?? "—"}
+            {s.area ?? "-"}
             {s.sales ? ` · ${s.sales}` : ""}
           </p>
         </div>

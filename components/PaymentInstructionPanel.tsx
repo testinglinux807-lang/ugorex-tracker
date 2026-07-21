@@ -236,7 +236,7 @@ export function PaymentInstructionPanel({
             <p className="text-center text-xs text-neutral-400">
               {verifying
                 ? "Pembayaran diterima, memproses…"
-                : "Menunggu pembayaran — halaman ini update otomatis begitu lunas."}
+                : "Menunggu pembayaran - halaman ini update otomatis begitu lunas."}
             </p>
           </>
         )}

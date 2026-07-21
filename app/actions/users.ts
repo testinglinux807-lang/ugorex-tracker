@@ -99,6 +99,7 @@ export async function createSalesAccount(formData: FormData) {
       role: "SALES",
       createdById: user.id,
       nik: nikRes.nik,
+      bankAccount: String(formData.get("bankAccount") ?? "").trim() || null,
       ...parseHomePoint(formData),
     },
   });
@@ -239,6 +240,7 @@ export async function registerSalesViaInvite(
         role: "SALES",
         createdById: invite.createdById,
         nik: nikRes.nik,
+        bankAccount: String(formData.get("bankAccount") ?? "").trim() || null,
         ...parseHomePoint(formData),
       },
     });
@@ -327,6 +329,27 @@ export async function setSalesCommission(userId: string, formData: FormData) {
   return { ok: true };
 }
 
+// Admin mencatat no. rekening sales (teks bebas, mis. "BCA 123 a.n. Budi") —
+// diedit langsung dari tabel Payroll biar gampang dipakai transfer.
+export async function setSalesBankAccount(formData: FormData) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (user.role !== "ADMIN") return { error: "Hanya admin." };
+
+  const userId = String(formData.get("salesId") ?? "").trim();
+  const target = await prisma.user.findUnique({ where: { id: userId } });
+  if (!target || target.role !== "SALES") {
+    return { error: "Akun sales tidak ditemukan." };
+  }
+
+  const bankAccount = String(formData.get("bankAccount") ?? "").trim() || null;
+  await prisma.user.update({ where: { id: userId }, data: { bankAccount } });
+  revalidatePath("/payroll");
+  revalidatePath("/sales");
+  revalidatePath(`/sales/${userId}`);
+  return { ok: true };
+}
+
 // Admin mengangkat/mencabut Sales Captain (level 5, rahasia): kepala sales
 // untuk satu wilayah — form di halaman detail /sales/[id]. Terbatas: satu
 // wilayah hanya boleh punya satu captain. Kirim wilayah kosong = mencabut.
@@ -396,7 +419,7 @@ export async function recordCommissionPayout(
       type: "EXPENSE",
       amount,
       category: "Komisi sales",
-      note: `Pencairan fee ${target.name}${note ? ` — ${note}` : ""}`,
+      note: `Pencairan fee ${target.name}${note ? ` - ${note}` : ""}`,
       date: payout.createdAt,
       sourceId: payout.id,
       createdById: user.id,
@@ -409,6 +432,7 @@ export async function recordCommissionPayout(
   revalidatePath("/keuangan");
   revalidatePath("/penghasilan");
   revalidatePath("/beranda");
+  revalidatePath("/payroll");
   return { ok: true };
 }
 
@@ -431,6 +455,7 @@ export async function deleteCommissionPayout(id: string) {
   revalidatePath("/keuangan");
   revalidatePath("/penghasilan");
   revalidatePath("/beranda");
+  revalidatePath("/payroll");
   return { ok: true };
 }
 

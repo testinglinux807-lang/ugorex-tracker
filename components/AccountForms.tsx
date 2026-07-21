@@ -90,6 +90,11 @@ export function CreateSalesForm() {
         maxLength={16}
         className={`${inputCls} sm:col-span-3`}
       />
+      <input
+        name="bankAccount"
+        placeholder="No. rekening (mis. BCA 1234567890 a.n. Budi, opsional)"
+        className={`${inputCls} sm:col-span-3`}
+      />
 
       {/* Titik rumah sales — pusat radius kerja 7 km di peta berandanya */}
       <input

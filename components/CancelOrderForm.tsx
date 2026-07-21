@@ -40,7 +40,7 @@ export function CancelOrderForm({
         </p>
         {warnPaid && (
           <p className="text-[11px] text-red-600">
-            Order ini SUDAH DIBAYAR — pengembalian dananya harus diurus manual
+            Order ini SUDAH DIBAYAR - pengembalian dananya harus diurus manual
             (dashboard Midtrans / kesepakatan dengan owner).
           </p>
         )}

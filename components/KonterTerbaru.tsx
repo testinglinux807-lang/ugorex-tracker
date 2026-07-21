@@ -74,7 +74,7 @@ export function KonterTerbaru({ stores }: { stores: KonterTerbaruItem[] }) {
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{s.name}</p>
                   <p className="truncate text-xs text-neutral-400">
-                    {s.area ?? "—"}
+                    {s.area ?? "-"}
                   </p>
                   <p className="truncate text-[11px] text-neutral-400">
                     {fmtDateTime(s.createdAt)} WIB

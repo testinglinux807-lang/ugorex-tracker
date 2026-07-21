@@ -88,7 +88,7 @@ export function KpiTargetForm({ targets }: { targets: KpiTargets }) {
         {state && "ok" in state && state.ok && (
           <p className="mt-3 flex items-center gap-1.5 text-sm font-medium text-brand-dark">
             <CheckCircle2 className="h-4 w-4" />
-            Target tersimpan — skor &amp; level sales dihitung ulang.
+            Target tersimpan - skor &amp; level sales dihitung ulang.
           </p>
         )}
         {state && "error" in state && state.error && (

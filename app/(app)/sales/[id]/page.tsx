@@ -9,9 +9,9 @@ import { STAGES, type Stage } from "@/lib/constants";
 import { StarRating } from "@/components/StarRating";
 import { PeriodeFilter } from "@/components/PeriodeFilter";
 import { CommissionForm } from "@/components/CommissionForm";
+import { BankAccountForm } from "@/components/BankAccountForm";
 import { CaptainForm } from "@/components/CaptainForm";
 import { DeleteWithConfirm } from "@/components/DataActions";
-import { PayoutForm } from "@/components/PayoutForm";
 import {
   deleteSalesAccount,
   deleteCommissionPayout,
@@ -139,6 +139,7 @@ export default async function SalesDetailPage({
       where: {
         items: { some: {} },
         paymentStatus: "PAID",
+        status: { not: "CANCELLED" },
         createdAt: { gte: prevMonthStart },
         store: { salesId: id },
       },
@@ -393,7 +394,7 @@ export default async function SalesDetailPage({
         />
         <Kpi
           label={`Komisi ${sales.commissionPct > 0 ? `${sales.commissionPct}%` : ""}`}
-          value={sales.commissionPct > 0 ? rupiahShort(commission) : "—"}
+          value={sales.commissionPct > 0 ? rupiahShort(commission) : "-"}
           accent={commission > 0}
         />
         <Kpi label="Konter" value={konter.length} />
@@ -415,23 +416,23 @@ export default async function SalesDetailPage({
           />
           <Kpi
             label="Konversi Konter Aktif"
-            value={kpiNow.konversi !== null ? `${kpiNow.konversi}%` : "—"}
+            value={kpiNow.konversi !== null ? `${kpiNow.konversi}%` : "-"}
             hint={`${kpiNow.aktif} konter reorder · bulan lalu ${
-              kpiPrev.konversi !== null ? `${kpiPrev.konversi}%` : "—"
+              kpiPrev.konversi !== null ? `${kpiPrev.konversi}%` : "-"
             }`}
           />
           <Kpi
             label="Reorder / Konter Aktif"
-            value={kpiNow.reorder !== null ? `${kpiNow.reorder} pcs` : "—"}
+            value={kpiNow.reorder !== null ? `${kpiNow.reorder} pcs` : "-"}
             hint={`Bulan lalu ${
-              kpiPrev.reorder !== null ? `${kpiPrev.reorder} pcs` : "—"
+              kpiPrev.reorder !== null ? `${kpiPrev.reorder} pcs` : "-"
             }`}
           />
           <Kpi
             label="Harga Jual Rata-rata"
-            value={kpiNow.harga !== null ? rupiahShort(kpiNow.harga) : "—"}
+            value={kpiNow.harga !== null ? rupiahShort(kpiNow.harga) : "-"}
             hint={`per pcs · bulan lalu ${
-              kpiPrev.harga !== null ? rupiahShort(kpiPrev.harga) : "—"
+              kpiPrev.harga !== null ? rupiahShort(kpiPrev.harga) : "-"
             }`}
           />
         </div>
@@ -442,8 +443,8 @@ export default async function SalesDetailPage({
         <h2 className="mb-1 font-semibold">Komisi Affiliator</h2>
         <p className="mb-3 text-xs text-neutral-400">
           Persen dari omzet restok (order lunas) konter yang dipegang{" "}
-          {sales.name} — yang dihitung uang toko belanja barang kita, bukan
-          penjualan POS. Nilainya mengikuti filter periode di atas — cocok
+          {sales.name} - yang dihitung uang toko belanja barang kita, bukan
+          penjualan POS. Nilainya mengikuti filter periode di atas - cocok
           untuk rekap pembayaran komisi mingguan/bulanan.
         </p>
         <div className="max-w-xs">
@@ -451,48 +452,42 @@ export default async function SalesDetailPage({
         </div>
       </section>
 
-      {/* Pencairan fee bagi hasil (admin) — saldo belum dicairkan reset ke 0
-          setelah dibayar penuh; tiap pencairan otomatis masuk buku kas */}
-      <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-        <h2 className="mb-1 font-semibold">Pencairan Fee</h2>
+      {/* No. rekening (admin) — ditampilkan read-only di tabel Payroll,
+          diedit dari sini */}
+      <section
+        id="rekening"
+        className="scroll-mt-20 rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm"
+      >
+        <h2 className="mb-1 font-semibold">No. Rekening</h2>
         <p className="mb-3 text-xs text-neutral-400">
-          Saldo belum dicairkan = total fee semua waktu − total pencairan.
-          Tiap pencairan otomatis tercatat sebagai pengeluaran buku kas
-          (kategori &ldquo;Komisi sales&rdquo;) dan {sales.name} dapat
-          notifikasi.
+          Dipakai admin waktu transfer komisi - muncul di tabel Payroll.
+        </p>
+        <div className="max-w-md">
+          <BankAccountForm salesId={id} currentBankAccount={sales.bankAccount} />
+        </div>
+      </section>
+
+      {/* Riwayat pencairan fee — pencatatan pencairan baru sekarang lewat
+          halaman Payroll (langsung dari tabel Sales), di sini cuma histori */}
+      <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+        <h2 className="mb-1 font-semibold">Riwayat Pencairan Fee</h2>
+        <p className="mb-3 text-xs text-neutral-400">
+          Total fee {rupiah(feeAllTime)} · sudah dicairkan {rupiah(paidOutTotal)}{" "}
+          · belum dicairkan{" "}
+          <span
+            className={feeOutstanding < 0 ? "text-red-600" : "text-neutral-600"}
+          >
+            {rupiah(feeOutstanding)}
+          </span>
+          . Untuk mencatat pencairan baru, ke halaman{" "}
+          <Link href="/payroll" className="underline hover:text-neutral-700">
+            Payroll
+          </Link>
+          .
         </p>
 
-        <div className="mb-4 grid grid-cols-3 gap-2">
-          <div className="rounded-xl bg-neutral-50 p-3">
-            <p className="text-xs text-neutral-500">Total fee</p>
-            <p className="mt-0.5 truncate text-sm font-bold">
-              {rupiah(feeAllTime)}
-            </p>
-          </div>
-          <div className="rounded-xl bg-neutral-50 p-3">
-            <p className="text-xs text-neutral-500">Sudah dicairkan</p>
-            <p className="mt-0.5 truncate text-sm font-bold">
-              {rupiah(paidOutTotal)}
-            </p>
-          </div>
-          <div className="rounded-xl bg-neutral-900 p-3">
-            <p className="text-xs text-neutral-400">Belum dicairkan</p>
-            <p
-              className={`mt-0.5 truncate text-sm font-bold ${
-                feeOutstanding < 0 ? "text-red-400" : "text-brand"
-              }`}
-            >
-              {rupiah(feeOutstanding)}
-            </p>
-          </div>
-        </div>
-
-        <div className="max-w-md">
-          <PayoutForm salesId={id} suggested={feeOutstanding} />
-        </div>
-
-        {payouts.length > 0 && (
-          <ul className="mt-4 divide-y divide-neutral-100 border-t border-neutral-100">
+        {payouts.length > 0 ? (
+          <ul className="divide-y divide-neutral-100 border-t border-neutral-100">
             {payouts.map((p) => (
               <li key={p.id} className="flex items-center gap-3 py-2.5">
                 <div className="min-w-0 flex-1">
@@ -510,6 +505,10 @@ export default async function SalesDetailPage({
               </li>
             ))}
           </ul>
+        ) : (
+          <p className="border-t border-neutral-100 pt-3 text-sm text-neutral-400">
+            Belum ada pencairan.
+          </p>
         )}
       </section>
 
@@ -517,7 +516,7 @@ export default async function SalesDetailPage({
       <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
         <h2 className="mb-1 font-semibold">Sales Captain</h2>
         <p className="mb-3 text-xs text-neutral-400">
-          Level 5 (rahasia) — angkat {sales.name} jadi kepala sales untuk satu
+          Level 5 (rahasia) - angkat {sales.name} jadi kepala sales untuk satu
           wilayah. Satu wilayah hanya boleh punya satu captain; kosongkan lalu
           simpan untuk mencabut. Level ini tidak pernah ditampilkan sebagai
           jenjang berikutnya ke sales.
@@ -570,7 +569,7 @@ export default async function SalesDetailPage({
           className="space-y-2"
           empty={
             <p className="text-sm text-neutral-400">
-              Belum ada rating — owner konter bisa memberi rating dari
+              Belum ada rating - owner konter bisa memberi rating dari
               halaman POS tokonya.
             </p>
           }
@@ -630,7 +629,7 @@ export default async function SalesDetailPage({
                     <p className="truncate text-sm font-medium">{k.name}</p>
                     <p className="flex items-center gap-1 truncate text-xs text-neutral-400">
                       <MapPin className="h-3 w-3 shrink-0" />
-                      {k.area ?? "—"}
+                      {k.area ?? "-"}
                     </p>
                   </div>
                   {k.furthest ? (

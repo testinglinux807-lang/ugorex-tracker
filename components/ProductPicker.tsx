@@ -87,7 +87,7 @@ export function ProductPicker({
         const mold = moldOf(items[0]?.search);
         out.push({
           kind: "sep",
-          label: `${key}${mold ? ` · mold ${mold}` : ""} — ${items.length} model`,
+          label: `${key}${mold ? ` · mold ${mold}` : ""} - ${items.length} model`,
         });
         for (const p of items) out.push({ kind: "item", p });
       }
@@ -108,7 +108,7 @@ export function ProductPicker({
     );
     const out: Row[] = direct.map((p) => ({ kind: "item", p }));
     if (mates.length > 0) {
-      out.push({ kind: "sep", label: "Satu kode — cocok juga untuk model ini:" });
+      out.push({ kind: "sep", label: "Satu kode - cocok juga untuk model ini:" });
       for (const p of mates) out.push({ kind: "item", p });
     }
     return out;
@@ -132,8 +132,8 @@ export function ProductPicker({
       >
         <span className={`truncate ${picked ? "" : "text-neutral-400"}`}>
           {picked
-            ? `${picked.name} — ${rupiah(picked.price)}`
-            : "— Pilih barang —"}
+            ? `${picked.name} - ${rupiah(picked.price)}`
+            : "- Pilih barang -"}
         </span>
         <ChevronDown
           className={`h-4 w-4 shrink-0 text-neutral-400 transition-transform ${
@@ -209,7 +209,7 @@ export function ProductPicker({
             )}
             {rows.length > MAX_ROWS && (
               <li className="px-3 py-2 text-xs text-neutral-400">
-                +{rows.length - MAX_ROWS} baris lagi — ketik untuk
+                +{rows.length - MAX_ROWS} baris lagi - ketik untuk
                 mempersempit.
               </li>
             )}

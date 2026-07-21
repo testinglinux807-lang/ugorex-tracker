@@ -46,7 +46,7 @@ export function VoucherInput({
           <span className="flex min-w-0 items-center gap-1.5 text-xs font-semibold text-neutral-800">
             <TicketPercent className="h-3.5 w-3.5 shrink-0" />
             <span className="truncate">
-              {applied.code} — diskon {voucherLabel(applied)}
+              {applied.code} - diskon {voucherLabel(applied)}
             </span>
           </span>
           <button

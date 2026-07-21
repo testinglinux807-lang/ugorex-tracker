@@ -425,7 +425,7 @@ export default function MapInner({
                   {h.name ? `Rumah ${h.name}` : "Rumah kamu"}
                 </p>
                 <p className="text-neutral-600">
-                  Lingkaran = radius kerja {WORK_RADIUS_M / 1000} km — konter
+                  Lingkaran = radius kerja {WORK_RADIUS_M / 1000} km - konter
                   di dalamnya paling gampang dijangkau.
                 </p>
               </div>

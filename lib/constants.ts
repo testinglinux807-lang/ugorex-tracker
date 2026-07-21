@@ -26,7 +26,7 @@ export const STAGE_DESC: Record<Stage, string> = {
   CONSIDERATION: "Toko tertarik & mempertimbangkan ambil barang",
   CONVERSION: "Toko sudah order / mulai jualan barang",
   LOYALTY: "Toko repeat order & loyal",
-  STAR_SELLER: "Konter andalan — penjualan tinggi & konsisten",
+  STAR_SELLER: "Konter andalan - penjualan tinggi & konsisten",
 };
 
 // Warna tiap tahap — gradien hijau (sehue brand lime), makin gelap = makin maju

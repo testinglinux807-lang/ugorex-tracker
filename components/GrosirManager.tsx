@@ -32,7 +32,7 @@ export function GrosirManager({ tiers }: { tiers: GrosirTierRow[] }) {
   return (
     <div className="space-y-4">
       <p className="text-xs text-neutral-400">
-        Berlaku otomatis di order restok owner — tanpa kode. Contoh: minimal
+        Berlaku otomatis di order restok owner - tanpa kode. Contoh: minimal
         100 pcs diskon 10%. Kalau owner juga pakai voucher, voucher dihitung
         dari sisa setelah potongan grosir.
       </p>
@@ -65,7 +65,7 @@ export function GrosirManager({ tiers }: { tiers: GrosirTierRow[] }) {
         )}
         {state?.ok && (
           <p className="rounded-lg border border-neutral-900 bg-neutral-900 px-3 py-2 text-sm text-white">
-            Tier grosir dibuat — langsung berlaku di checkout order.
+            Tier grosir dibuat - langsung berlaku di checkout order.
           </p>
         )}
 

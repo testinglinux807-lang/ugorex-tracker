@@ -77,6 +77,7 @@ export default async function SalesPage({
       where: {
         items: { some: {} },
         paymentStatus: "PAID",
+        status: { not: "CANCELLED" },
         createdAt: { gte: monthStart },
       },
       select: {

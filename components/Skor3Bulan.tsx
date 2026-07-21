@@ -29,7 +29,7 @@ export function Skor3Bulan({
         <h2 className="text-base font-semibold">Skor 3 Bulan</h2>
       </div>
       <p className="mt-2 text-sm text-neutral-500">
-        Level baca <b className="text-neutral-700">rata-rata 3 bulan</b> — 1
+        Level baca <b className="text-neutral-700">rata-rata 3 bulan</b> - 1
         bulan sepi nggak langsung nurunin level &amp; komisi.
       </p>
 
@@ -96,12 +96,12 @@ export function Skor3Bulan({
               {nextLevelName ? ` ke ${nextLevelName}` : " level"}.
             </>
           ) : (
-            " — kamu di level puncak."
+            " - kamu di level puncak."
           )}
         </p>
         <p className="flex items-start gap-1 text-xs text-neutral-400">
           <TrendingDown className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          Turun level cuma kalau jeblok 2 bulan berturut — ada masa tenggang.
+          Turun level cuma kalau jeblok 2 bulan berturut - ada masa tenggang.
         </p>
       </div>
     </section>
