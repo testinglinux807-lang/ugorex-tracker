@@ -18,16 +18,22 @@ export default async function AppLayout({
 
   // Badge nav: order menunggu diproses (PENDING=packing gudang, READY=
   // menunggu kurir) + tugas yang belum selesai (sales: tugas dari admin
-  // untuk dirinya; admin: semua tugas belum kelar).
+  // untuk dirinya; admin: semua tugas belum kelar) + keluhan terbuka (tab
+  // Keluhan di dalam Tugas, ikut ditambahkan ke badge /tugas) + request
+  // (saran/request barang) menunggu.
   let orderBadge = 0;
   let tugasBadge = 0;
+  let ticketBadge = 0;
+  let requestBadge = 0;
   if (user.role !== "OWNER") {
-    [orderBadge, tugasBadge] = await Promise.all([
+    const storeScope =
+      user.role === "SALES" ? { salesId: user.id } : undefined;
+    [orderBadge, tugasBadge, ticketBadge, requestBadge] = await Promise.all([
       prisma.request.count({
         where: {
           status: { in: ["PENDING", "READY"] },
           items: { some: {} },
-          ...(user.role === "SALES" ? { store: { salesId: user.id } } : {}),
+          ...(storeScope ? { store: storeScope } : {}),
         },
       }),
       prisma.task.count({
@@ -36,9 +42,26 @@ export default async function AppLayout({
           ...(user.role === "SALES" ? { assignedToId: user.id } : {}),
         },
       }),
+      prisma.ticket.count({
+        where: {
+          status: { not: "CLOSED" },
+          ...(storeScope ? { store: storeScope } : {}),
+        },
+      }),
+      prisma.request.count({
+        where: {
+          status: "PENDING",
+          items: { none: {} },
+          ...(storeScope ? { store: storeScope } : {}),
+        },
+      }),
     ]);
   }
-  const navBadges = { "/order": orderBadge, "/tugas": tugasBadge };
+  const navBadges = {
+    "/order": orderBadge,
+    "/tugas": tugasBadge + ticketBadge,
+    "/request": requestBadge,
+  };
   // OWNER: nav cuma 4 item — gaya marketplace (tab atas desktop, bottom
   // bar mobile) daripada sidebar/drawer yang kepenuhan buat menu sekecil itu.
   const isOwner = user.role === "OWNER";
