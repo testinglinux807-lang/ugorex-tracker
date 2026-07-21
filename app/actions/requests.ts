@@ -8,6 +8,7 @@ import { notifyOrder, notifyRequestReply } from "@/lib/wa-notify";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+import { publishRealtime } from "@/lib/realtime";
 import {
   chargeCard,
   chargeGopay,
@@ -323,6 +324,7 @@ export async function createRestockRequest(formData: FormData) {
   revalidatePath("/dashboard");
   revalidatePath("/order");
   revalidatePath("/", "layout");
+  publishRealtime("order");
   return {
     ok: true,
     requestId: orderId,
@@ -1285,7 +1287,10 @@ export async function sweepExpiredOrders() {
       after(() => notifyOrder(req.id, "cancelled"));
     }
   }
-  if (candidates.length > 0) revalidatePath("/order");
+  if (candidates.length > 0) {
+    revalidatePath("/order");
+    publishRealtime("order");
+  }
 }
 
 // Admin/sales membuka label resi order. Nomor resi + kode penjemputan
@@ -1533,4 +1538,5 @@ function revalidateOrderPaths(storeId: string) {
   revalidatePath("/pos");
   revalidatePath(`/konter/${storeId}`);
   revalidatePath("/", "layout");
+  publishRealtime("order");
 }

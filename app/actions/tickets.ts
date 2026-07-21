@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+import { publishRealtime } from "@/lib/realtime";
 
 // Owner membuat tiket keluhan
 export async function createTicket(formData: FormData) {
@@ -28,6 +29,7 @@ export async function createTicket(formData: FormData) {
     },
   });
   revalidatePath("/tiket");
+  publishRealtime("tiket");
   return { ok: true };
 }
 
@@ -73,6 +75,7 @@ export async function createFeedback(formData: FormData) {
   revalidatePath("/feedback");
   revalidatePath("/tiket");
   revalidatePath("/dashboard");
+  publishRealtime("feedback");
   return { ok: true };
 }
 
@@ -90,4 +93,5 @@ export async function updateTicketStatus(id: string, status: string) {
 
   await prisma.ticket.update({ where: { id }, data: { status } });
   revalidatePath("/tiket");
+  publishRealtime("tiket");
 }

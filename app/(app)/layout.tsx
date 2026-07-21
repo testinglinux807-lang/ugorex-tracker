@@ -6,6 +6,7 @@ import { SideNav, MobileNav, TopNav, BottomNav } from "@/components/Nav";
 import { LogoPush } from "@/components/LogoPush";
 import { NotifBell } from "@/components/NotifBell";
 import { UserMenu } from "@/components/UserMenu";
+import { RealtimeRefresh } from "@/components/RealtimeRefresh";
 
 export default async function AppLayout({
   children,
@@ -51,6 +52,10 @@ export default async function AppLayout({
 
   return (
     <div className="flex flex-1 flex-col overflow-x-hidden">
+      {/* Dengar perubahan data real-time (SSE) — auto router.refresh() di
+          semua halaman & role, admin/siapa pun tidak perlu refresh manual */}
+      <RealtimeRefresh />
+
       {/* Header */}
       {/* z-30: header + drawer (di dalamnya) harus di ATAS konten yang
           kadang pakai z-10 (mis. ring grade) — biar tak tembus ke drawer */}
