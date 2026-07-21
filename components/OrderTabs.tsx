@@ -35,7 +35,7 @@ export function OrderTabs({
     <div>
       {/* Tab gaya garis-bawah, sama seperti tab lain. Satu panel aktif tampil
           penuh, tak lagi dua kolom di desktop. */}
-      <div className="-mx-1 mb-4 flex gap-1 overflow-x-auto border-b border-neutral-200 px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="-mx-1 mb-4 flex justify-center gap-1 overflow-x-auto border-b border-neutral-200 px-1 sm:justify-start [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <button
           type="button"
           onClick={() => setTab("checkout")}

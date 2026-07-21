@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
@@ -9,6 +8,7 @@ import {
   TIMELINE_ICONS,
   type TimelineEvent,
 } from "@/components/OrderTimeline";
+import { LoadingLink } from "@/components/LoadingLink";
 import { ArrowLeft, Store } from "lucide-react";
 
 const rupiah = (n: number) =>
@@ -137,13 +137,14 @@ export default async function LacakPage({
 
   return (
     <div className="space-y-4">
-      <Link
+      <LoadingLink
         href="/order"
+        loadingText="Membuka Order…"
+        icon={<ArrowLeft className="h-4 w-4" />}
         className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-600 hover:text-neutral-900"
       >
-        <ArrowLeft className="h-4 w-4" />
         Kembali ke Order
-      </Link>
+      </LoadingLink>
 
       {/* Desktop: ringkasan (sticky) di kiri, timeline di kanan — full width,
           tidak menyempit di tengah. Mobile: bertumpuk. */}
@@ -173,12 +174,6 @@ export default async function LacakPage({
             </span>
             <span className="font-bold">{rupiah(r.total)}</span>
           </div>
-          <Link
-            href={`/order?focus=${r.id}`}
-            className="mt-3 block w-full rounded-lg border border-neutral-300 py-1.5 text-center text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
-          >
-            Rincian Pesanan
-          </Link>
         </div>
 
         {/* Timeline lacak */}

@@ -18,6 +18,7 @@ import {
   ListTodo,
   ShoppingBag,
   Users,
+  User,
   Wallet,
   Coins,
   X,
@@ -58,6 +59,7 @@ const NAV: Record<string, Item[]> = {
     // Komplain + Request dilebur jadi satu pintu Feedback (kategori:
     // keluhan / saran / request barang)
     { href: "/feedback", label: "Feedback", icon: MessagesSquare },
+    { href: "/profil", label: "Profil", icon: User },
   ],
 
   GUDANG: [{ href: "/gudang", label: "Paket", icon: ShoppingBag }],

@@ -4,7 +4,6 @@ import { getCurrentUser } from "@/lib/auth";
 import { PosForm } from "@/components/PosForm";
 import { TransaksiList } from "@/components/TransaksiList";
 import { PosSummary } from "@/components/PosSummary";
-import { RateSalesForm } from "@/components/RateSalesForm";
 import { wibDayStart } from "@/lib/date";
 
 export default async function PosPage() {
@@ -24,38 +23,28 @@ export default async function PosPage() {
   const startOfDay = wibDayStart();
   // Hitung agregat (terjual per barang, total hari ini) di database — jangan
   // menarik seluruh riwayat transaksi tiap render; tabel Sale terus tumbuh.
-  const [products, recent, sold, todayAgg, prospects, mySales, myRating] =
-    await Promise.all([
-      prisma.product.findMany({
-        // description (daftar HP kompatibel) berat & tak dipakai di POS
-        select: { id: true, name: true, code: true, price: true },
-        orderBy: { name: "asc" },
-      }),
-      prisma.sale.findMany({
-        where: { storeId },
-        orderBy: { createdAt: "desc" },
-        take: 20,
-      }),
-      prisma.sale.groupBy({
-        by: ["productId"],
-        where: { storeId },
-        _sum: { qty: true },
-      }),
-      prisma.sale.aggregate({
-        where: { storeId, createdAt: { gte: startOfDay } },
-        _sum: { total: true, qty: true },
-      }),
-      prisma.prospect.findMany({ where: { storeId } }),
-      // Sales pemegang konter + rating yang pernah diberikan owner ini —
-      // untuk form "Nilai Sales Kamu" di bawah
-      user.ownedStore.salesId
-        ? prisma.user.findUnique({
-            where: { id: user.ownedStore.salesId },
-            select: { name: true },
-          })
-        : null,
-      prisma.salesRating.findUnique({ where: { storeId } }),
-    ]);
+  const [products, recent, sold, todayAgg, prospects] = await Promise.all([
+    prisma.product.findMany({
+      // description (daftar HP kompatibel) berat & tak dipakai di POS
+      select: { id: true, name: true, code: true, price: true },
+      orderBy: { name: "asc" },
+    }),
+    prisma.sale.findMany({
+      where: { storeId },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    }),
+    prisma.sale.groupBy({
+      by: ["productId"],
+      where: { storeId },
+      _sum: { qty: true },
+    }),
+    prisma.sale.aggregate({
+      where: { storeId, createdAt: { gte: startOfDay } },
+      _sum: { total: true, qty: true },
+    }),
+    prisma.prospect.findMany({ where: { storeId } }),
+  ]);
 
   // Sisa stok per barang = stok dikasih sales - total terjual
   const stockByProduct = new Map<string, number>();
@@ -120,24 +109,6 @@ export default async function PosPage() {
           />
         </div>
       </div>
-
-      {/* Rating sales pemegang konter — tampil di Performa Sales (admin) */}
-      {mySales && (
-        <div className="rounded-2xl border border-neutral-200 bg-white p-5">
-          <h2 className="font-semibold">Nilai Sales Kamu</h2>
-          <p className="mb-3 text-xs text-neutral-400">
-            Gimana pelayanan {mySales.name} selama ini? Rating & keteranganmu
-            membantu kami menjaga kualitas layanan - bisa diubah kapan saja.
-          </p>
-          <div className="max-w-md">
-            <RateSalesForm
-              salesName={mySales.name}
-              currentStars={myRating?.stars ?? null}
-              currentNote={myRating?.note ?? null}
-            />
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -3,10 +3,12 @@
 import bcrypt from "bcryptjs";
 import { randomInt } from "crypto";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { sendWa } from "@/lib/wa-notify";
 import { waNumber } from "@/lib/wa";
+import { parseNik, parseHomePoint } from "@/lib/user-fields";
 
 // Menu akun di header — SEMUA role (klik nama → Ganti Password / Ganti No
 // HP). Ganti password cukup verifikasi password lama; ganti no HP wajib OTP
@@ -158,4 +160,80 @@ export async function confirmPhoneOtp(formData: FormData) {
   });
 
   return { ok: true, phone: user.pendingPhone };
+}
+
+// Data tambahan di halaman /profil (self-service): no. rekening + titik
+// rumah/gudang buat SALES & GUDANG, plus NIK khusus SALES. Beda dari
+// updateSalesAccount/updateGudang (admin) - ini selalu ke akun sendiri, tidak
+// bisa ganti nama/no HP/gaji/komisi.
+export async function updateOwnDetails(formData: FormData) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (user.role !== "SALES" && user.role !== "GUDANG") {
+    return { error: "Tidak berlaku untuk akun ini." };
+  }
+
+  const bankAccount =
+    String(formData.get("bankAccount") ?? "").trim() || null;
+
+  let nik: string | null | undefined;
+  if (user.role === "SALES") {
+    const nikRes = await parseNik(formData, user.id);
+    if (nikRes.error) return { error: nikRes.error };
+    nik = nikRes.nik;
+  }
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      bankAccount,
+      ...(nik !== undefined ? { nik } : {}),
+      ...parseHomePoint(formData),
+    },
+  });
+
+  revalidatePath("/profil");
+  revalidatePath("/payroll");
+  revalidatePath("/data");
+  revalidatePath("/beranda");
+  revalidatePath("/gudang");
+  return { ok: true };
+}
+
+// Data toko di /profil (self-service, khusus OWNER): nama, alamat, titik
+// lokasi peta, nama & no HP pemilik. Wilayah/area TETAP admin-only (dipakai
+// buat laporan/analitik per wilayah - lihat updateStore di
+// actions/tracker.ts) supaya pengelompokan wilayah tidak berantakan.
+export async function updateOwnStore(formData: FormData) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (user.role !== "OWNER" || !user.ownedStore) {
+    return { error: "Tidak berlaku untuk akun ini." };
+  }
+
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) return { error: "Nama toko wajib diisi." };
+  const address = String(formData.get("address") ?? "").trim() || null;
+  const ownerName = String(formData.get("ownerName") ?? "").trim() || null;
+  const ownerPhone = String(formData.get("ownerPhone") ?? "").trim() || null;
+
+  const latRaw = String(formData.get("lat") ?? "").trim();
+  const lngRaw = String(formData.get("lng") ?? "").trim();
+  const lat = latRaw ? Number.parseFloat(latRaw.replace(",", ".")) : NaN;
+  const lng = lngRaw ? Number.parseFloat(lngRaw.replace(",", ".")) : NaN;
+  const coord =
+    Number.isNaN(lat) || Number.isNaN(lng)
+      ? { lat: null, lng: null }
+      : { lat, lng };
+
+  await prisma.store.update({
+    where: { id: user.ownedStore.id },
+    data: { name, address, ownerName, ownerPhone, ...coord },
+  });
+
+  revalidatePath("/profil");
+  revalidatePath("/data");
+  revalidatePath("/prospects");
+  revalidatePath(`/konter/${user.ownedStore.id}`);
+  return { ok: true };
 }

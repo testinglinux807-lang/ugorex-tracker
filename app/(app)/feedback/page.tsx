@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { FeedbackForm } from "@/components/FeedbackForm";
 import { FeedbackTabs } from "@/components/FeedbackTabs";
+import { RateSalesForm } from "@/components/RateSalesForm";
 import {
   ShoppingBag,
   ArrowRight,
@@ -28,7 +29,7 @@ export default async function FeedbackPage() {
   }
 
   const storeId = user.ownedStore.id;
-  const [tickets, requests] = await Promise.all([
+  const [tickets, requests, mySales, myRating] = await Promise.all([
     prisma.ticket.findMany({
       where: { storeId },
       orderBy: { createdAt: "desc" },
@@ -37,6 +38,15 @@ export default async function FeedbackPage() {
       where: { storeId, items: { none: {} } },
       orderBy: { createdAt: "desc" },
     }),
+    // Sales pemegang konter + rating yang pernah diberikan owner ini —
+    // untuk form "Nilai Sales Kamu" di tab Kirim Feedback
+    user.ownedStore.salesId
+      ? prisma.user.findUnique({
+          where: { id: user.ownedStore.salesId },
+          select: { name: true },
+        })
+      : null,
+    prisma.salesRating.findUnique({ where: { storeId } }),
   ]);
 
   // Gabungkan tiket + request jadi satu riwayat, terbaru duluan
@@ -126,6 +136,25 @@ export default async function FeedbackPage() {
       <FeedbackTabs
         riwayatCount={items.length}
         form={<FeedbackForm />}
+        rating={
+          mySales ? (
+            <div className="rounded-2xl border border-neutral-200 bg-white p-5">
+              <h2 className="font-semibold">Nilai Sales Kamu</h2>
+              <p className="mb-3 text-xs text-neutral-400">
+                Gimana pelayanan {mySales.name} selama ini? Rating &
+                keteranganmu membantu kami menjaga kualitas layanan - bisa
+                diubah kapan saja.
+              </p>
+              <div className="max-w-md">
+                <RateSalesForm
+                  salesName={mySales.name}
+                  currentStars={myRating?.stars ?? null}
+                  currentNote={myRating?.note ?? null}
+                />
+              </div>
+            </div>
+          ) : undefined
+        }
         riwayat={
           // Tanpa panel pembungkus — kartu langsung di halaman (sama seperti
           // tab Riwayat di /order), hindari kotak-dalam-kotak.

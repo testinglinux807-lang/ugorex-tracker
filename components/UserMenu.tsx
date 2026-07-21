@@ -1,31 +1,24 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { logout } from "@/app/actions/auth";
-import { ChevronDown, LogOut, KeyRound, Smartphone } from "lucide-react";
+import { ChevronDown, LogOut, User } from "lucide-react";
 import { SubmitButton } from "@/components/SubmitButton";
-import {
-  ChangePasswordModal,
-  ChangePhoneModal,
-} from "@/components/AccountSettings";
 
-// Menu user di header: klik nama → dropdown berisi info akun + tombol
-// Keluar (menggantikan tombol "Keluar" yang selalu tampil dan makan
-// tempat di header mobile). Untuk admin ada juga Ganti Password &
-// Ganti No HP (OTP via WA) — lihat components/AccountSettings.tsx.
+// Menu user di header: klik nama → dropdown berisi info akun, link ke
+// Profil Saya (ganti password/no HP/data lain ada di sana - lihat
+// app/(app)/profil), dan tombol Keluar.
 export function UserMenu({
   name,
   role,
   phone,
-  canManageAccount = false,
 }: {
   name: string;
   role: string;
   phone?: string;
-  canManageAccount?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const [modal, setModal] = useState<"password" | "phone" | null>(null);
 
   const itemCls =
     "flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm font-medium text-neutral-700 hover:bg-neutral-50";
@@ -67,32 +60,16 @@ export function UserMenu({
                 {phone ? ` · ${phone}` : ""}
               </p>
             </div>
-            {canManageAccount && (
-              <div className="border-b border-neutral-100">
-                <button
-                  type="button"
-                  className={itemCls}
-                  onClick={() => {
-                    setOpen(false);
-                    setModal("password");
-                  }}
-                >
-                  <KeyRound className="h-4 w-4" />
-                  Ganti Password
-                </button>
-                <button
-                  type="button"
-                  className={itemCls}
-                  onClick={() => {
-                    setOpen(false);
-                    setModal("phone");
-                  }}
-                >
-                  <Smartphone className="h-4 w-4" />
-                  Ganti No HP
-                </button>
-              </div>
-            )}
+            <div className="border-b border-neutral-100">
+              <Link
+                href="/profil"
+                onClick={() => setOpen(false)}
+                className={itemCls}
+              >
+                <User className="h-4 w-4" />
+                Profil Saya
+              </Link>
+            </div>
             <form action={logout}>
               <SubmitButton
                 pendingText="Keluar…"
@@ -104,16 +81,6 @@ export function UserMenu({
             </form>
           </div>
         </>
-      )}
-
-      {modal === "password" && (
-        <ChangePasswordModal onClose={() => setModal(null)} />
-      )}
-      {modal === "phone" && (
-        <ChangePhoneModal
-          currentPhone={phone ?? "-"}
-          onClose={() => setModal(null)}
-        />
       )}
     </div>
   );

@@ -1,5 +1,4 @@
 import type { Prisma } from "@prisma/client";
-import Link from "next/link";
 import { waLink } from "@/lib/wa";
 import {
   acceptOrder,
@@ -15,6 +14,7 @@ import { CancelOrderForm } from "@/components/CancelOrderForm";
 import { RefundOrderForm } from "@/components/RefundOrderForm";
 import { DeliveryReportForm } from "@/components/DeliveryReportForm";
 import { ReturnOrderForm } from "@/components/ReturnOrderForm";
+import { LoadingLink } from "@/components/LoadingLink";
 import { PAYMENT_METHOD_LABEL } from "@/lib/payment-fee";
 import { fmtDate, fmtDateTime } from "@/lib/date";
 import {
@@ -175,6 +175,21 @@ export function OrderCard({
   );
   const shown = r.items.slice(0, 2);
   const rest = r.items.slice(2);
+
+  // Detail paket - timeline status lengkap (gudang→pickup→kirim→terima/
+  // retur). Gudang tak perlu (tugasnya selesai di packing), jadi
+  // disembunyikan lewat canTrack. Ikut baris tombol Aksi: baris sendiri
+  // (col-span-2) di HP, sebaris dgn tombol lain (col-span-1) di desktop.
+  const detailPaketBtn = canTrack ? (
+    <LoadingLink
+      href={`/order/${r.id}/lacak`}
+      loadingText="Membuka detail paket…"
+      icon={<Truck className="h-3.5 w-3.5" />}
+      className="col-span-2 inline-flex items-center justify-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:border-neutral-900 hover:bg-neutral-50 disabled:opacity-60 sm:col-span-1"
+    >
+      Detail Paket
+    </LoadingLink>
+  ) : null;
 
   const cancelled = r.status === "CANCELLED";
   const returned = r.status === "RETURNED"; // toko tolak SEMUA barang
@@ -585,17 +600,6 @@ export function OrderCard({
             {r.items.reduce((a, it) => a + it.qty, 0)} pcs
             {r.createdBy?.name ? ` · oleh ${r.createdBy.name}` : ""}
           </p>
-          {/* Lacak paket — timeline status. Gudang tak perlu (tugasnya
-              selesai di packing), jadi disembunyikan lewat canTrack. */}
-          {canTrack && (
-            <Link
-              href={`/order/${r.id}/lacak`}
-              className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-neutral-700 hover:underline"
-            >
-              <Truck className="h-3.5 w-3.5" />
-              Lacak paket
-            </Link>
-          )}
         </div>
         {showPrice ? (
           <>
@@ -640,7 +644,7 @@ export function OrderCard({
       {/* Aksi owner: terima/kembalikan pesanan saat kurir datang, bayar
           order belum lunas, chat sales, batalkan order belum diproses */}
       {!canRespond &&
-        (waSales || ownerCanPay || ownerCanCancel || ownerCanReceive) && (
+        (waSales || ownerCanPay || ownerCanCancel || ownerCanReceive || canTrack) && (
         <div className="grid grid-cols-2 gap-2 border-t border-neutral-200 px-4 py-2.5 sm:grid-cols-4">
           {/* Serah terima: konfirmasi terima (stok masuk toko) ATAU tolak
               semua/sebagian barang (alur retur) */}
@@ -691,6 +695,7 @@ export function OrderCard({
             </div>
           )}
           {ownerCanCancel && <CancelOrderForm requestId={r.id} />}
+          {detailPaketBtn}
         </div>
       )}
 
@@ -838,6 +843,7 @@ export function OrderCard({
                 }
               />
             )}
+          {detailPaketBtn}
         </div>
       )}
     </div>

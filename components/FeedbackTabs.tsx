@@ -1,20 +1,26 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { MessageSquarePlus, Inbox } from "lucide-react";
+import { MessageSquarePlus, Inbox, Star } from "lucide-react";
 
-// Halaman Feedback owner: form kirim & riwayat dipisah tab (gaya sama
-// dengan OrderTabs) biar tidak jadi satu scroll panjang di HP.
+type Tab = "form" | "rating" | "riwayat";
+
+// Halaman Feedback owner: form kirim, nilai sales & riwayat dipisah tab
+// (gaya sama dengan OrderTabs) biar tidak jadi satu scroll panjang di HP.
+// Tab "Nilai Sales" opsional — cuma tampil kalau konternya punya sales
+// pemegang.
 export function FeedbackTabs({
   form,
+  rating,
   riwayat,
   riwayatCount,
 }: {
   form: ReactNode;
+  rating?: ReactNode;
   riwayat: ReactNode;
   riwayatCount: number;
 }) {
-  const [tab, setTab] = useState<"form" | "riwayat">("form");
+  const [tab, setTab] = useState<Tab>("form");
 
   const tabCls = (active: boolean) =>
     `-mb-px inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
@@ -34,6 +40,16 @@ export function FeedbackTabs({
           <MessageSquarePlus className="h-4 w-4" />
           Kirim Feedback
         </button>
+        {rating && (
+          <button
+            type="button"
+            onClick={() => setTab("rating")}
+            className={tabCls(tab === "rating")}
+          >
+            <Star className="h-4 w-4" />
+            Nilai Sales
+          </button>
+        )}
         <button
           type="button"
           onClick={() => setTab("riwayat")}
@@ -53,7 +69,7 @@ export function FeedbackTabs({
         </button>
       </div>
 
-      {tab === "form" ? form : riwayat}
+      {tab === "form" ? form : tab === "rating" ? rating : riwayat}
     </div>
   );
 }
