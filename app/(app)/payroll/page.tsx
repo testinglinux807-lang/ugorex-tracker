@@ -153,6 +153,26 @@ export default async function PayrollPage({
   });
   const gudangSalaryPaidSet = new Set(gudangSalaryPaidRows.map((r) => r.userId));
 
+  // Yang BENERAN sudah tercatat di buku kas bulan ini (bukan proyeksi) —
+  // tiap kategori diisi otomatis: fee via recordCommissionPayout, bonus via
+  // markKpiBonusPaid, gaji gudang via syncGudangSalary (lib/finance-sync.ts).
+  const recordedRows = await prisma.financeEntry.groupBy({
+    by: ["category"],
+    where: {
+      category: { in: ["Komisi sales", "Bonus KPI Sales", "Gaji Gudang"] },
+      date: { gte: monthStart, lt: nextMonth },
+    },
+    _sum: { amount: true },
+  });
+  const recordedByCategory = new Map(
+    recordedRows.map((r) => [r.category, r._sum.amount ?? 0]),
+  );
+  const recorded = {
+    fee: recordedByCategory.get("Komisi sales") ?? 0,
+    bonus: recordedByCategory.get("Bonus KPI Sales") ?? 0,
+    gudangSalary: recordedByCategory.get("Gaji Gudang") ?? 0,
+  };
+
   // Peta storeId → salesId (buat membebankan fee order ke sales-nya)
   const storeToSales = new Map<string, string>();
   for (const s of stores) if (s.salesId) storeToSales.set(s.id, s.salesId);
@@ -305,6 +325,7 @@ export default async function PayrollPage({
         lembur={lembur}
         cfg={cfg}
         radiusKm={gudangRadius}
+        recorded={recorded}
       />
     </div>
   );

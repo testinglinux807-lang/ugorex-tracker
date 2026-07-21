@@ -69,6 +69,8 @@ type LemburItem = {
   hours: number;
 };
 
+type RecordedTotals = { fee: number; bonus: number; gudangSalary: number };
+
 type Props = {
   monthLabel: string;
   period: string;
@@ -81,6 +83,7 @@ type Props = {
   lembur: LemburItem[];
   cfg: PayrollConfig;
   radiusKm: number;
+  recorded: RecordedTotals;
 };
 
 type Tab = "sales" | "gudang" | "log" | "rekap";
@@ -162,6 +165,7 @@ export function PayrollTabs(props: Props) {
           gudangTotal={gudangTotal}
           grand={grand}
           monthLabel={props.monthLabel}
+          recorded={props.recorded}
         />
       )}
     </div>
@@ -1280,24 +1284,76 @@ function RekapView({
   gudangTotal,
   grand,
   monthLabel,
+  recorded,
 }: {
   salesTotal: number;
   gudangTotal: number;
   grand: number;
   monthLabel: string;
+  recorded: RecordedTotals;
 }) {
+  const recordedTotal = recorded.fee + recorded.bonus + recorded.gudangSalary;
   return (
-    <div className="grid gap-4 sm:grid-cols-3">
-      <RkCard label="Tim Sales" value={salesTotal} icon={Briefcase} />
-      <RkCard label="Tim Gudang" value={gudangTotal} icon={Package} />
-      <div className="rounded-2xl border border-neutral-900 bg-neutral-900 p-5 text-white">
-        <p className="text-sm font-medium text-neutral-400">
-          Total Pengeluaran Gaji · {monthLabel}
+    <div className="space-y-4">
+      <div>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-400">
+          Proyeksi gaji bulan ini (dihitung dari data, belum tentu sudah cair)
         </p>
-        <p className="mt-1.5 tabular-nums text-2xl font-semibold text-brand">
-          {rp(grand)}
-        </p>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <RkCard label="Tim Sales" value={salesTotal} icon={Briefcase} />
+          <RkCard label="Tim Gudang" value={gudangTotal} icon={Package} />
+          <div className="rounded-2xl border border-neutral-900 bg-neutral-900 p-5 text-white">
+            <p className="text-sm font-medium text-neutral-400">
+              Total Pengeluaran Gaji · {monthLabel}
+            </p>
+            <p className="mt-1.5 tabular-nums text-2xl font-semibold text-brand">
+              {rp(grand)}
+            </p>
+          </div>
+        </div>
       </div>
+
+      <Panel
+        title="Tercatat di Buku Kas"
+        icon={Wallet}
+        note={
+          <Link
+            href="/keuangan?jenis=keluar"
+            className="inline-flex items-center gap-1 text-xs text-neutral-500 underline hover:text-neutral-800"
+          >
+            Lihat di Keuangan
+          </Link>
+        }
+      >
+        <div className="divide-y divide-neutral-100 px-5">
+          <RecordedRow label="Fee affiliator dicairkan" value={recorded.fee} />
+          <RecordedRow label="Bonus KPI dibayar" value={recorded.bonus} />
+          <RecordedRow label="Gaji gudang" value={recorded.gudangSalary} />
+        </div>
+        <div className="flex items-center justify-between border-t border-neutral-200 px-5 py-3">
+          <span className="text-sm font-semibold">Total tercatat</span>
+          <span className="tabular-nums text-sm font-semibold">
+            {rp(recordedTotal)}
+          </span>
+        </div>
+        <p className="border-t border-neutral-200 px-5 py-3 text-xs text-neutral-400">
+          Ini angka yang BENERAN sudah otomatis masuk buku kas ({monthLabel})
+          — beda dari proyeksi di atas. Fee kecatat pas admin klik “Catat” di
+          tab Sales, Bonus KPI pas “Tandai dibayar”, Gaji Gudang otomatis
+          tiap ada lembur/potongan (tidak perlu diklik apa-apa).
+        </p>
+      </Panel>
+    </div>
+  );
+}
+
+function RecordedRow({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="flex items-center justify-between py-2.5 text-sm">
+      <span className="text-neutral-600">{label}</span>
+      <span className="tabular-nums font-medium">
+        {value > 0 ? rp(value) : <span className="text-neutral-300">Rp0</span>}
+      </span>
     </div>
   );
 }
