@@ -8,7 +8,7 @@ import { PendingLabel } from "@/components/SubmitButton";
 import { CodePicker, type RestockCode } from "@/components/CodePicker";
 import { VoucherInput, type AppliedVoucher } from "@/components/VoucherInput";
 import {
-  voucherDiscount,
+  applyVouchers,
   grosirTierFor,
   grosirDiscount,
 } from "@/lib/voucher-calc";
@@ -83,7 +83,7 @@ function RestockForm({
   const byCode = new Map(codes.map((c) => [c.code, c]));
   const [qtys, setQtys] = useState<Record<string, number>>({});
   const [showReceipt, setShowReceipt] = useState(false);
-  const [voucher, setVoucher] = useState<AppliedVoucher | null>(null);
+  const [vouchers, setVouchers] = useState<AppliedVoucher[]>([]);
   const [method, setMethod] = useState<PaymentMethod>("CASH");
   const [card, setCard] = useState<CardFields>(EMPTY_CARD);
   const [cardBusy, setCardBusy] = useState(false);
@@ -99,7 +99,7 @@ function RestockForm({
     if (state?.ok) {
       setShowReceipt(false);
       setQtys({});
-      setVoucher(null);
+      setVouchers([]);
       setCard(EMPTY_CARD);
       setPaymentInfo({
         requestId: state.requestId,
@@ -143,17 +143,32 @@ function RestockForm({
     const c = byCode.get(code);
     return a + (c ? c.price * n : 0);
   }, 0);
-  // Diskon grosir otomatis dari total qty; voucher dihitung dari sisanya —
-  // urutan yang sama dengan perhitungan final di server.
+  // Diskon grosir otomatis dari total qty; voucher (bisa lebih dari 1,
+  // maks 3 - satu per jenis) dihitung dari sisanya — urutan yang sama
+  // dengan perhitungan final di server (lib/voucher-calc.ts applyVouchers).
   const totalQty = chosen.reduce((a, [, n]) => a + n, 0);
   const grosirTier = grosirTierFor(grosirTiers, totalQty);
   const grosir = grosirTier ? grosirDiscount(grosirTier, cartSubtotal) : 0;
-  const discount = voucher
-    ? voucherDiscount(voucher, cartSubtotal - grosir)
-    : 0;
+  const cartItems = chosen.map(([code, n]) => {
+    const c = byCode.get(code);
+    return {
+      productId: c?.repId ?? "",
+      qty: n,
+      price: c?.price ?? 0,
+      code,
+    };
+  });
+  const voucherResult = applyVouchers(vouchers, cartItems);
+  const discount = voucherResult.total;
   const cartTotal = cartSubtotal - grosir - discount;
   const fee = method === "CASH" ? 0 : paymentFee(method, cartTotal);
   const grandTotal = cartTotal + fee;
+
+  // Potongan voucher milik 1 baris keranjang (buat coret harga normal →
+  // harga setelah voucher), langsung dari peta per-baris applyVouchers.
+  function lineDiscount(code: string): number {
+    return voucherResult.perLine.get(code) ?? 0;
+  }
 
   // Jumlah order dibatasi stok pusat (dibagi sekode)
   function setQty(code: string, n: number) {
@@ -166,6 +181,31 @@ function RestockForm({
     const c = byCode.get(code);
     if (!c || c.central <= 0) return; // stok pusat habis
     setQty(code, (qtys[code] ?? 0) + 1);
+  }
+
+  // Voucher terikat 1 produk (Gratis / diskon khusus) → produknya langsung
+  // ditambahkan ke keranjang otomatis, tidak perlu dicari manual dulu.
+  const [voucherNote, setVoucherNote] = useState<string | null>(null);
+  function updateVouchers(list: AppliedVoucher[]) {
+    const added = list.filter(
+      (v) => !vouchers.some((old) => old.code === v.code),
+    );
+    setVouchers(list);
+    setVoucherNote(null);
+    for (const v of added) {
+      if (v.productCode && (qtys[v.productCode] ?? 0) === 0) {
+        const c = byCode.get(v.productCode);
+        if (!c || c.central <= 0) {
+          setVoucherNote(
+            `Voucher ${v.code} berlaku untuk ${
+              v.productName ?? "produk itu"
+            }, tapi stok pusatnya lagi kosong.`,
+          );
+        } else {
+          addCode(v.productCode);
+        }
+      }
+    }
   }
 
   return (
@@ -181,6 +221,18 @@ function RestockForm({
           Belanja per kode barang - cari pakai kode atau tipe HP mana pun yang
           cocok (mis. &quot;iPhone 17&quot;). Pilih lagi untuk menambah jumlah.
         </p>
+      </div>
+
+      {/* Voucher toko (opsional, dibuat admin) — bisa langsung dipakai
+          sebelum belanja apa pun; kalau vouchernya terikat 1 produk, produk
+          itu otomatis masuk keranjang. */}
+      <div>
+        <VoucherInput applied={vouchers} onApplied={updateVouchers} />
+        {voucherNote && (
+          <p className="mt-1 text-xs font-medium text-amber-600">
+            {voucherNote}
+          </p>
+        )}
       </div>
 
       {/* Keranjang gaya nota: baris teks tipis, hemat tempat */}
@@ -262,7 +314,7 @@ function RestockForm({
         )}
         {discount > 0 && (
           <div className="flex items-baseline justify-between text-sm text-neutral-500">
-            <span>Diskon ({voucher!.code})</span>
+            <span>Diskon ({vouchers.map((v) => v.code).join(", ")})</span>
             <span>−{rupiah(discount)}</span>
           </div>
         )}
@@ -279,11 +331,6 @@ function RestockForm({
           <span className="text-lg font-bold">{rupiah(grandTotal)}</span>
         </div>
       </div>
-
-      {/* Voucher toko (opsional, dibuat admin) */}
-      {chosen.length > 0 && (
-        <VoucherInput applied={voucher} onApplied={setVoucher} />
-      )}
 
       <input
         name="note"
@@ -341,6 +388,9 @@ function RestockForm({
               {chosen.map(([code, n]) => {
                 const c = byCode.get(code);
                 if (!c) return null;
+                const lineTotal = c.price * n;
+                const off = lineDiscount(code);
+                const final = lineTotal - off;
                 return (
                   <div key={code} className="flex items-center gap-2">
                     <div className="min-w-0 flex-1">
@@ -357,9 +407,26 @@ function RestockForm({
                         <span>
                           {n} × {rupiah(c.price)}
                         </span>
-                        <span className="text-neutral-800">
-                          {rupiah(c.price * n)}
-                        </span>
+                        {off > 0 ? (
+                          <span className="flex items-center gap-1.5">
+                            <span className="text-neutral-400 line-through">
+                              {rupiah(lineTotal)}
+                            </span>
+                            <span
+                              className={
+                                final === 0
+                                  ? "font-semibold text-brand-dark"
+                                  : "text-neutral-800"
+                              }
+                            >
+                              {final === 0 ? "Gratis" : rupiah(final)}
+                            </span>
+                          </span>
+                        ) : (
+                          <span className="text-neutral-800">
+                            {rupiah(lineTotal)}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -386,7 +453,7 @@ function RestockForm({
                 )}
                 {discount > 0 && (
                   <div className="flex items-center justify-between">
-                    <span>Diskon ({voucher!.code})</span>
+                    <span>Diskon ({vouchers.map((v) => v.code).join(", ")})</span>
                     <span>−{rupiah(discount)}</span>
                   </div>
                 )}

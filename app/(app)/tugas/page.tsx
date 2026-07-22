@@ -372,10 +372,21 @@ export default async function TugasPage() {
     }),
     prisma.stageLog.findMany({
       where: { createdAt: { gte: monthStart } },
-      select: { salesId: true, createdAt: true },
+      select: {
+        createdAt: true,
+        prospect: { select: { store: { select: { salesId: true } } } },
+      },
     }),
   ]);
-  const activeDaysMap = activeDaysBySalesFrom(kpiLogsMonth);
+  // Hari aktif di-scope via prospect->store->salesId (KONTER YANG DIPEGANG
+  // SEKARANG), BUKAN stageLog.salesId langsung — field itu opsional & log
+  // yang null salesId-nya ke-drop, jadi bisa undercount vs halaman lain.
+  const activeDaysMap = activeDaysBySalesFrom(
+    kpiLogsMonth.map((l) => ({
+      salesId: l.prospect.store.salesId,
+      createdAt: l.createdAt,
+    })),
+  );
 
   // Rumus KPI dari SATU sumber (lib/sales-kpi-values.ts)
   const gradeFor = (salesId: string) => {

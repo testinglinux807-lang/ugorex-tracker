@@ -7,7 +7,10 @@ export async function findUsableVoucher(codeRaw: string) {
   const code = codeRaw.trim().toUpperCase();
   if (!code) return { error: "Masukkan kode voucher." };
 
-  const voucher = await prisma.voucher.findUnique({ where: { code } });
+  const voucher = await prisma.voucher.findUnique({
+    where: { code },
+    include: { product: { select: { name: true, code: true } } },
+  });
   if (!voucher || !voucher.active) {
     return { error: "Kode voucher tidak ditemukan atau sudah nonaktif." };
   }

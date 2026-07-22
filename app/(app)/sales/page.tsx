@@ -13,15 +13,10 @@ import {
 import { salesKpi } from "@/lib/sales-kpi";
 import { wibMonthStart } from "@/lib/date";
 import { parsePeriode, periodeStart, PERIODE_LABEL } from "@/lib/periode";
-import { CreateSalesForm } from "@/components/AccountForms";
-import {
-  SalesInviteManager,
-  type SalesInviteItem,
-} from "@/components/SalesInviteManager";
 import { KpiTargetForm } from "@/components/KpiTargetForm";
 import { getScoreTargets } from "@/lib/kpi-config";
 import { getPriorScoresBatch, wibPeriod } from "@/lib/sales-score-history";
-import { UserPlus, Users } from "lucide-react";
+import { Users } from "lucide-react";
 
 // Konter dianggap "terbengkalai" kalau > 30 hari tak ada aktivitas funnel.
 const NEGLECT_DAYS = 30;
@@ -111,11 +106,6 @@ export default async function SalesPage({
     }),
   ]);
 
-  // Link undangan registrasi sales (10 terbaru) — panel Tambah Sales
-  const inviteRows = await prisma.salesInvite.findMany({
-    orderBy: { createdAt: "desc" },
-    take: 10,
-  });
   const kpiTargets = await getScoreTargets();
   // Skor 2 bulan sebelumnya tiap sales — untuk rata-rata rolling 3 bulan
   const period = wibPeriod();
@@ -123,22 +113,6 @@ export default async function SalesPage({
     salesUsers.map((u) => u.id),
     period,
   );
-  const appUrl = process.env.APP_URL ?? "http://localhost:3000";
-  const now = new Date();
-  const invites: SalesInviteItem[] = inviteRows.map((inv) => ({
-    id: inv.id,
-    url: `${appUrl}/daftar-sales/${inv.token}`,
-    note: inv.note,
-    status: inv.usedAt
-      ? "TERPAKAI"
-      : inv.expiresAt < now
-        ? "KEDALUWARSA"
-        : "AKTIF",
-    expiresAtLabel: inv.expiresAt.toLocaleDateString("id-ID", {
-      day: "numeric",
-      month: "short",
-    }),
-  }));
 
   const kpiOrderRows = kpiOrders.map((o) => ({
     storeId: o.storeId,
@@ -205,12 +179,23 @@ export default async function SalesPage({
   );
 
   // ===== Bahan level MILESTONE per sales — rumus KPI dari SATU sumber
-  // (lib/sales-kpi-values.ts), sama persis dgn beranda & detail sales. =====
+  // (lib/sales-kpi-values.ts), sama persis dgn beranda & detail sales.
+  // Hari aktif di-scope via prospect->store->salesId (KONTER YANG DIPEGANG
+  // SEKARANG), BUKAN stageLog.salesId langsung — field itu opsional & log
+  // yang null salesId-nya ke-drop, jadi bisa undercount vs halaman lain. =====
   const kpiLogRows = await prisma.stageLog.findMany({
     where: { createdAt: { gte: monthStart } },
-    select: { salesId: true, createdAt: true },
+    select: {
+      createdAt: true,
+      prospect: { select: { store: { select: { salesId: true } } } },
+    },
   });
-  const activeDaysMap = activeDaysBySalesFrom(kpiLogRows);
+  const activeDaysMap = activeDaysBySalesFrom(
+    kpiLogRows.map((l) => ({
+      salesId: l.prospect.store.salesId,
+      createdAt: l.createdAt,
+    })),
+  );
 
   const rows = salesUsers
     .map((u) => {
@@ -300,25 +285,6 @@ export default async function SalesPage({
       <KpiTargetForm targets={kpiTargets} />
 
       <PeriodeFilter current={periode} basePath="/sales" />
-
-      {/* Tambah akun sales — form yang sama juga ada di Data → Akun Sales */}
-      <details className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-        <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold [&::-webkit-details-marker]:hidden">
-          <UserPlus className="h-4 w-4 text-neutral-500" />
-          Tambah Sales
-        </summary>
-        <div className="mt-3 max-w-xl">
-          <CreateSalesForm />
-        </div>
-        {/* Atau: kasih link registrasi — calon sales isi datanya sendiri
-            dari HP (nama, no HP, password, NIK, GPS titik rumah) */}
-        <div className="mt-4 max-w-xl border-t border-neutral-100 pt-4">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-400">
-            Atau kirim link registrasi (sekali pakai, 7 hari)
-          </p>
-          <SalesInviteManager invites={invites} />
-        </div>
-      </details>
 
       {salesUsers.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-neutral-300 p-10 text-center text-sm text-neutral-500">

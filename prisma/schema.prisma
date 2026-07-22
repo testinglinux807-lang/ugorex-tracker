@@ -187,8 +187,14 @@ model GudangInvite {
 model Voucher {
   id        String    @id @default(cuid())
   code      String    @unique // disimpan UPPERCASE
-  type      String    @default("PERCENT") // PERCENT (persen) | FIXED (Rupiah)
-  value     Int // persen 1-100 atau potongan Rupiah
+  type      String    @default("PERCENT") // PERCENT (persen) | FIXED (Rupiah) | FREE (gratis 1 produk)
+  value     Int // persen 1-100 atau potongan Rupiah; diabaikan (0) untuk FREE
+  // Produk yang di-scope (opsional untuk PERCENT/FIXED, wajib untuk FREE).
+  // productId cuma referensi tampilan admin - pencocokan saat redeem pakai
+  // Product.code (barang sekode berbagi harga/stok & "produk perwakilan"
+  // beda-beda per toko, lihat app/(app)/order/page.tsx repId), bukan id ini.
+  productId String?
+  product   Product?  @relation(fields: [productId], references: [id])
   maxUses   Int? // batas total pemakaian; null = tanpa batas
   usedCount Int       @default(0)
   expiresAt DateTime? // null = tanpa kadaluarsa
@@ -343,6 +349,7 @@ model Product {
   prospects   Prospect[]
   transactions Sale[]
   requestItems RequestItem[]
+  vouchers    Voucher[]
 }
 
 // Satu barang di satu konter = satu "prospek" yang ditrack lewat funnel
@@ -489,7 +496,7 @@ model Request {
   total          Int     @default(0) // total belanja produk SETELAH diskon (belum termasuk fee)
   discount       Int     @default(0) // potongan voucher (Rupiah)
   grosirDiscount Int     @default(0) // potongan diskon grosir (Rupiah) — lihat GrosirTier
-  voucherCode    String? // kode voucher yang dipakai
+  voucherCodes   String[] @default([]) // kode voucher yang dipakai (maks 3, 1 per jenis)
   paymentStatus String  @default("UNPAID") // UNPAID | PAID
 
   // Metode & instruksi pembayaran (charge Core API, bukan Snap — instruksi

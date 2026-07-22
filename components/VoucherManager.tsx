@@ -1,13 +1,14 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import {
   createVoucher,
   toggleVoucher,
   deleteVoucher,
 } from "@/app/actions/vouchers";
 import { voucherLabel } from "@/lib/voucher-calc";
-import { Trash2 } from "lucide-react";
+import { CodePicker, type RestockCode } from "@/components/CodePicker";
+import { Trash2, X } from "lucide-react";
 import { SubmitButton, PendingLabel } from "@/components/SubmitButton";
 
 const inputCls = "w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm";
@@ -17,42 +18,95 @@ export type VoucherRow = {
   code: string;
   type: string;
   value: number;
+  productId: string | null;
+  productName: string | null;
   maxUses: number | null;
   usedCount: number;
   expiresAt: string | null; // ISO
   active: boolean;
 };
 
-// Kelola voucher toko (admin, menu Data): buat kode diskon yang bisa
-// dipakai owner saat order restok & catat penjualan di POS.
-export function VoucherManager({ vouchers }: { vouchers: VoucherRow[] }) {
+// Kelola voucher toko (admin, menu Data): buat kode diskon (atau gratis 1
+// produk tertentu) yang bisa dipakai owner saat order restok & catat
+// penjualan di POS. Dropdown produk PERSIS sama dengan yang owner pakai
+// belanja restok (CodePicker) — per kode mold + stok pusat asli, biar admin
+// gak bikin voucher buat kode yang stoknya kosong.
+export function VoucherManager({
+  vouchers,
+  codes,
+}: {
+  vouchers: VoucherRow[];
+  codes: RestockCode[];
+}) {
   const [state, formAction, pending] = useActionState(
     async (_prev: unknown, fd: FormData) => (await createVoucher(fd)) ?? null,
     null,
   );
+  const [type, setType] = useState("PERCENT");
+  const [pickedCode, setPickedCode] = useState<string | null>(null);
+  const byCode = new Map(codes.map((c) => [c.code, c]));
+  const picked = pickedCode ? byCode.get(pickedCode) : null;
 
   return (
     <div className="space-y-4">
       <form action={formAction} className="space-y-2">
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <input
             name="code"
             required
             placeholder="Kode, mis. HEMAT10"
             className={`${inputCls} uppercase`}
           />
-          <select name="type" className={inputCls} defaultValue="PERCENT">
+          <select
+            name="type"
+            className={inputCls}
+            value={type}
+            onChange={(e) => setType(e.target.value)}
+          >
             <option value="PERCENT">Diskon persen (%)</option>
             <option value="FIXED">Potongan Rupiah</option>
+            <option value="FREE">Gratis 1 produk</option>
           </select>
-          <input
-            name="value"
-            type="number"
-            min={1}
-            required
-            placeholder="Nilai (10 = 10% / Rp10)"
-            className={inputCls}
-          />
+          {type !== "FREE" && (
+            <input
+              name="value"
+              type="number"
+              min={1}
+              required
+              placeholder="Nilai (10 = 10% / Rp10)"
+              className={inputCls}
+            />
+          )}
+          <div className="sm:col-span-2">
+            <input type="hidden" name="productId" value={picked?.repId ?? ""} />
+            {picked ? (
+              <div className="flex items-center justify-between gap-2 rounded-lg border border-neutral-300 px-3 py-2">
+                <span className="flex min-w-0 items-center gap-1.5 text-sm">
+                  <span className="shrink-0 rounded bg-neutral-900 px-1 py-0.5 text-[10px] font-bold text-white">
+                    {picked.code}
+                  </span>
+                  <span className="truncate">{picked.type}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPickedCode(null)}
+                  className="shrink-0 text-neutral-400 hover:text-neutral-700"
+                  aria-label="Lepas pilihan produk"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ) : (
+              <CodePicker codes={codes} onPick={setPickedCode} />
+            )}
+            <p className="mt-1 text-xs text-neutral-400">
+              {type === "FREE"
+                ? "Wajib pilih kode barang yang digratiskan."
+                : picked
+                  ? "Diskon cuma berlaku ke kode barang ini."
+                  : "Kosongkan = diskon berlaku ke semua produk."}
+            </p>
+          </div>
           <input
             name="maxUses"
             type="number"
@@ -60,7 +114,7 @@ export function VoucherManager({ vouchers }: { vouchers: VoucherRow[] }) {
             placeholder="Kuota (kosong = bebas)"
             className={inputCls}
           />
-          <div className="col-span-2">
+          <div>
             <label className="mb-1 block text-xs text-neutral-500">
               Kadaluarsa (opsional)
             </label>
@@ -106,7 +160,9 @@ export function VoucherManager({ vouchers }: { vouchers: VoucherRow[] }) {
                     {v.code}
                   </p>
                   <p className="text-xs text-neutral-400">
-                    Diskon {voucherLabel(v)} · dipakai {v.usedCount}
+                    {v.type === "FREE" ? "Gratis" : `Diskon ${voucherLabel(v)}`}
+                    {v.productName ? ` · khusus ${v.productName}` : ""} ·
+                    dipakai {v.usedCount}
                     {v.maxUses != null ? `/${v.maxUses}` : "×"}
                     {v.expiresAt
                       ? ` · s.d. ${new Date(v.expiresAt).toLocaleDateString(

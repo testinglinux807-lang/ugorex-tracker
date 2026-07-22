@@ -24,6 +24,7 @@ export async function createVoucher(formData: FormData) {
     .replace(/\s+/g, "");
   const type = String(formData.get("type") ?? "PERCENT");
   const value = parseInt(String(formData.get("value") ?? "0"), 10) || 0;
+  const productIdRaw = String(formData.get("productId") ?? "").trim();
   const maxUsesRaw = String(formData.get("maxUses") ?? "").trim();
   const maxUses = maxUsesRaw ? parseInt(maxUsesRaw, 10) || 0 : null;
   const expiresRaw = String(formData.get("expiresAt") ?? "").trim();
@@ -31,15 +32,28 @@ export async function createVoucher(formData: FormData) {
   if (!/^[A-Z0-9-]{3,20}$/.test(code)) {
     return { error: "Kode 3-20 karakter, huruf/angka/strip tanpa spasi." };
   }
-  if (!["PERCENT", "FIXED"].includes(type)) return { error: "Jenis tidak valid." };
+  if (!["PERCENT", "FIXED", "FREE"].includes(type)) {
+    return { error: "Jenis tidak valid." };
+  }
   if (type === "PERCENT" && (value < 1 || value > 100)) {
     return { error: "Persen diskon harus 1-100." };
   }
   if (type === "FIXED" && value < 1) {
     return { error: "Potongan Rupiah harus lebih dari 0." };
   }
+  if (type === "FREE" && !productIdRaw) {
+    return { error: "Voucher gratis wajib pilih produknya." };
+  }
   if (maxUses != null && maxUses < 1) {
     return { error: "Batas pemakaian minimal 1 (atau kosongkan)." };
+  }
+  let productId: string | null = null;
+  if (productIdRaw) {
+    const product = await prisma.product.findUnique({
+      where: { id: productIdRaw },
+    });
+    if (!product) return { error: "Produk yang dipilih tidak valid." };
+    productId = product.id;
   }
   // Kadaluarsa dihitung sampai akhir hari yang dipilih
   let expiresAt: Date | null = null;
@@ -54,7 +68,14 @@ export async function createVoucher(formData: FormData) {
   if (dup) return { error: `Kode ${code} sudah dipakai voucher lain.` };
 
   await prisma.voucher.create({
-    data: { code, type, value, maxUses, expiresAt },
+    data: {
+      code,
+      type,
+      value: type === "FREE" ? 0 : value,
+      productId,
+      maxUses,
+      expiresAt,
+    },
   });
   revalidatePath("/data");
   return { ok: true };
@@ -139,5 +160,8 @@ export async function checkVoucher(code: string) {
     code: v.code,
     type: v.type,
     value: v.value,
+    productId: v.productId,
+    productCode: v.product?.code ?? null,
+    productName: v.product?.name ?? null,
   };
 }

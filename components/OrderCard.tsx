@@ -130,6 +130,7 @@ export function OrderCard({
   canRespond,
   isAdmin = false,
   isGudang = false,
+  isSales = false,
   canTrack = true,
   showPrice = true,
   assignedGudangName = null,
@@ -146,6 +147,9 @@ export function OrderCard({
   isAdmin?: boolean;
   // GUDANG: cukup Cetak Resi + Siap Dipickup; tak ikut urusan owner/harga
   isGudang?: boolean;
+  // SALES: kode voucher toko disembunyikan (cuma admin & owner tokonya
+  // sendiri yang boleh tau kode persisnya) — tampil "diskon dari toko pusat"
+  isSales?: boolean;
   // Boleh buka timeline "Lacak paket" (gudang tidak — cukup sampai packing)
   canTrack?: boolean;
   // Boleh lihat harga/total order. Gudang = false (cuma perlu barang & qty);
@@ -614,6 +618,17 @@ export function OrderCard({
                 <span className="text-base font-bold">{rupiah(r.total)}</span>
               </span>
             </div>
+            {(r.voucherCodes.length > 0 || r.grosirDiscount > 0) && (
+              <p className="mt-0.5 text-[11px] text-neutral-400">
+                {r.voucherCodes.length > 0
+                  ? isSales || isGudang
+                    ? "Diskon dari toko pusat"
+                    : `Voucher ${r.voucherCodes.join(", ")}`
+                  : ""}
+                {r.voucherCodes.length > 0 && r.grosirDiscount > 0 ? " + " : ""}
+                {r.grosirDiscount > 0 ? "diskon grosir" : ""}
+              </p>
+            )}
             {r.paymentFee > 0 && (
               <>
                 <div className="mt-0.5 flex items-baseline justify-between gap-2 text-xs text-neutral-500">

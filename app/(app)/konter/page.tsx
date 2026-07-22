@@ -18,6 +18,7 @@ import {
   MessageCircle,
   Search,
   Trophy,
+  Package,
   Users,
   X,
 } from "lucide-react";
@@ -42,7 +43,7 @@ export default async function KonterPage({
 
   const scope = user.role === "SALES" ? { salesId: user.id } : {};
 
-  const [stores, products, sales, salesUsers] = await Promise.all([
+  const [stores, products, sales, restokRows, salesUsers] = await Promise.all([
     prisma.store.findMany({
       where: scope,
       include: {
@@ -69,6 +70,18 @@ export default async function KonterPage({
       where: user.role === "SALES" ? { store: { salesId: user.id } } : {},
       _sum: { qty: true, total: true },
     }),
+    // Restock: total order LUNAS konter ke kita (order restok, bukan POS) —
+    // dipakai buat kartu konter di samping angka penjualan toko.
+    prisma.request.groupBy({
+      by: ["storeId"],
+      where: {
+        items: { some: {} },
+        paymentStatus: "PAID",
+        status: { not: "CANCELLED" },
+        ...(user.role === "SALES" ? { store: { salesId: user.id } } : {}),
+      },
+      _sum: { total: true },
+    }),
     // Pilihan sales untuk form "Atur Sales" di kartu (admin saja)
     user.role === "ADMIN"
       ? prisma.user.findMany({
@@ -91,6 +104,12 @@ export default async function KonterPage({
   [...revenueByStore.entries()]
     .sort((a, b) => b[1] - a[1])
     .forEach(([storeId], i) => rankByStore.set(storeId, i + 1));
+
+  // Restock: total order lunas konter ke kita, per konter
+  const restockByStore = new Map<string, number>();
+  for (const r of restokRows) {
+    restockByStore.set(r.storeId, r._sum.total ?? 0);
+  }
 
   // Filter pencarian (nama konter / area)
   const shown = q
@@ -240,6 +259,7 @@ export default async function KonterPage({
                 : null;
             const revenue = revenueByStore.get(s.id) ?? 0;
             const rank = rankByStore.get(s.id);
+            const restock = restockByStore.get(s.id) ?? 0;
             return {
               visited: isVisited,
               low: waRestok !== null,
@@ -263,17 +283,36 @@ export default async function KonterPage({
                     {rank && rank <= 3 ? (
                       <p className="mt-1 flex items-center gap-1 text-xs font-semibold text-neutral-900">
                         <Trophy className="h-3.5 w-3.5 shrink-0 text-brand-dark" />
-                        Top {rank} Terlaris · {rupiah(revenue)}
+                        Top {rank} Terlaris · {rupiah(revenue)}{" "}
+                        <span className="font-normal text-neutral-400">
+                          (penjualan toko)
+                        </span>
                       </p>
                     ) : revenue > 0 ? (
                       <p className="mt-1 text-xs text-neutral-500">
-                        Terjual {rupiah(revenue)}
+                        Terjual {rupiah(revenue)}{" "}
+                        <span className="text-neutral-400">
+                          (penjualan toko)
+                        </span>
                       </p>
                     ) : (
                       <p className="mt-1 text-xs text-neutral-400">
-                        Belum ada penjualan
+                        Belum ada penjualan toko
                       </p>
                     )}
+                    <p className="mt-0.5 flex items-center gap-1 text-xs text-neutral-500">
+                      <Package className="h-3 w-3 shrink-0 text-neutral-400" />
+                      {restock > 0 ? (
+                        <>
+                          Restock {rupiah(restock)}{" "}
+                          <span className="text-neutral-400">ke kita</span>
+                        </>
+                      ) : (
+                        <span className="text-neutral-400">
+                          Belum pernah restock
+                        </span>
+                      )}
+                    </p>
                   </div>
                   {isVisited ? (
                     <span className="flex shrink-0 items-center gap-1 rounded-full border border-neutral-900 bg-neutral-900 px-2 py-0.5 text-xs text-white">

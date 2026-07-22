@@ -271,11 +271,21 @@ export default async function SalesDetailPage({
   const scoreTargets = await getScoreTargets();
   const period = wibPeriod();
   const priorScores = await getPriorScores(id, period);
-  const kpiLogRows = await prisma.stageLog.findMany({
-    where: { salesId: id, createdAt: { gte: monthStart } },
-    select: { salesId: true, createdAt: true },
+  // Hari aktif via prospect->store->salesId (KONTER YANG DIPEGANG SEKARANG) +
+  // lib/sales-kpi-values.ts activeDaysBySalesFrom - SATU algoritma yang sama
+  // dipakai beranda, profil, leaderboard /sales, & /tugas biar skor/level
+  // sales tidak beda antar halaman.
+  const activeLogRows = await prisma.stageLog.findMany({
+    where: {
+      prospect: { store: { salesId: id } },
+      createdAt: { gte: monthStart },
+    },
+    select: { createdAt: true },
   });
-  const activeDays = activeDaysBySalesFrom(kpiLogRows).get(id) ?? 0;
+  const activeDays =
+    activeDaysBySalesFrom(
+      activeLogRows.map((l) => ({ salesId: id, createdAt: l.createdAt })),
+    ).get(id) ?? 0;
   const kpiValues = computeSalesKpiValues({
     stores,
     ordersMonth: kpiOrders.filter((o) => o.createdAt >= monthStart),

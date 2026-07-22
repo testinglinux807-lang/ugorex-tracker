@@ -6,7 +6,7 @@ import { SuccessPopup } from "@/components/SuccessPopup";
 import { ProductPicker } from "@/components/ProductPicker";
 import { PendingLabel } from "@/components/SubmitButton";
 import { VoucherInput, type AppliedVoucher } from "@/components/VoucherInput";
-import { voucherDiscount } from "@/lib/voucher-calc";
+import { applyVouchers } from "@/lib/voucher-calc";
 import { X } from "lucide-react";
 
 const rupiah = (n: number) =>
@@ -34,7 +34,7 @@ export function PosForm({
 }) {
   const [pickerId, setPickerId] = useState("");
   const [cart, setCart] = useState<CartLine[]>([]);
-  const [voucher, setVoucher] = useState<AppliedVoucher | null>(null);
+  const [vouchers, setVouchers] = useState<AppliedVoucher[]>([]);
 
   const [state, formAction, pending] = useActionState(
     async (_prev: unknown, fd: FormData) => (await createSale(fd)) ?? null,
@@ -48,7 +48,7 @@ export function PosForm({
     if (state?.ok) {
       setPopup(rupiah(lastTotal.current));
       setCart([]);
-      setVoucher(null);
+      setVouchers([]);
       const t = setTimeout(() => setPopup(null), 2200);
       return () => clearTimeout(t);
     }
@@ -98,7 +98,10 @@ export function PosForm({
   }
 
   const subtotal = cart.reduce((a, l) => a + l.qty * l.price, 0);
-  const discount = voucher ? voucherDiscount(voucher, subtotal) : 0;
+  const discount = applyVouchers(
+    vouchers,
+    cart.map((l) => ({ ...l, code: prodOf(l.productId)?.code ?? null })),
+  ).total;
   const total = subtotal - discount;
   const invalid = cart.some((l) => l.price <= 0);
 
@@ -201,9 +204,7 @@ export function PosForm({
       )}
 
       {/* Voucher toko (opsional, dibuat admin) */}
-      {cart.length > 0 && (
-        <VoucherInput applied={voucher} onApplied={setVoucher} />
-      )}
+      <VoucherInput applied={vouchers} onApplied={setVouchers} />
 
       {/* Total otomatis, gaya nota */}
       <div className="space-y-0.5 px-0.5">
@@ -214,7 +215,7 @@ export function PosForm({
               <span>{rupiah(subtotal)}</span>
             </div>
             <div className="flex items-baseline justify-between text-sm text-neutral-500">
-              <span>Diskon ({voucher!.code})</span>
+              <span>Diskon ({vouchers.map((v) => v.code).join(", ")})</span>
               <span>−{rupiah(discount)}</span>
             </div>
           </>

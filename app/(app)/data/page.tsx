@@ -10,11 +10,16 @@ import { ProductTable } from "@/components/ProductTable";
 import { SubmitButton } from "@/components/SubmitButton";
 import { DataTabs } from "@/components/DataTabs";
 import { VoucherManager } from "@/components/VoucherManager";
+import type { RestockCode } from "@/components/CodePicker";
 import { GrosirManager } from "@/components/GrosirManager";
 import {
   GudangInviteManager,
   type GudangInviteItem,
 } from "@/components/GudangInviteManager";
+import {
+  SalesInviteManager,
+  type SalesInviteItem,
+} from "@/components/SalesInviteManager";
 import {
   Package,
   Percent,
@@ -52,6 +57,7 @@ export default async function DataPage() {
     grosirTiers,
     gudangList,
     gudangInviteRows,
+    salesInviteRows,
   ] = await Promise.all([
     prisma.product.findMany({ orderBy: { name: "asc" } }),
     prisma.store.findMany({
@@ -64,7 +70,10 @@ export default async function DataPage() {
       orderBy: { name: "asc" },
     }),
     isAdmin
-      ? prisma.voucher.findMany({ orderBy: { createdAt: "desc" } })
+      ? prisma.voucher.findMany({
+          orderBy: { createdAt: "desc" },
+          include: { product: { select: { name: true } } },
+        })
       : Promise.resolve([]),
     isAdmin
       ? prisma.grosirTier.findMany({ orderBy: { minQty: "asc" } })
@@ -77,6 +86,12 @@ export default async function DataPage() {
       : Promise.resolve([]),
     isAdmin
       ? prisma.gudangInvite.findMany({
+          orderBy: { createdAt: "desc" },
+          take: 10,
+        })
+      : Promise.resolve([]),
+    isAdmin
+      ? prisma.salesInvite.findMany({
           orderBy: { createdAt: "desc" },
           take: 10,
         })
@@ -99,6 +114,61 @@ export default async function DataPage() {
       month: "short",
     }),
   }));
+  const salesInvites: SalesInviteItem[] = salesInviteRows.map((inv) => ({
+    id: inv.id,
+    url: `${appUrl}/daftar-sales/${inv.token}`,
+    note: inv.note,
+    status: inv.usedAt
+      ? "TERPAKAI"
+      : inv.expiresAt < now
+        ? "KEDALUWARSA"
+        : "AKTIF",
+    expiresAtLabel: inv.expiresAt.toLocaleDateString("id-ID", {
+      day: "numeric",
+      month: "short",
+    }),
+  }));
+
+  // Pilihan produk buat voucher (menu Voucher Toko) — dropdown SAMA persis
+  // dengan yang dipakai owner belanja restok (CodePicker): dedup per KODE
+  // mold + tampilkan stok pusat asli, biar admin lihat stoknya benar-benar
+  // ada sebelum bikin voucher gratis/diskon buat kode itu.
+  const voucherCodes: RestockCode[] = (() => {
+    const splitName = (name: string) => {
+      const m = name.match(/^\s*(Antigores\s+\S+)\s+(.+)$/i);
+      return m
+        ? { type: m[1].trim(), model: m[2].trim() }
+        : { type: "", model: name.trim() };
+    };
+    type CodeGroup = {
+      code: string;
+      repId: string;
+      type: string;
+      models: string[];
+      price: number;
+      central: number;
+    };
+    const codeMap = new Map<string, CodeGroup>();
+    for (const p of products) {
+      const key = p.code ?? `__${p.id}`;
+      const { type, model } = splitName(p.name);
+      const g =
+        codeMap.get(key) ??
+        ({
+          code: p.code ?? "-",
+          repId: p.id,
+          type: type || p.name,
+          models: [],
+          price: p.price,
+          central: p.centralStock,
+        } satisfies CodeGroup);
+      g.models.push(model);
+      g.price = Math.max(g.price, p.price);
+      g.central = Math.max(g.central, p.centralStock);
+      codeMap.set(key, g);
+    }
+    return [...codeMap.values()].sort((a, b) => a.code.localeCompare(b.code));
+  })();
 
   return (
     <div className="space-y-6">
@@ -229,11 +299,14 @@ export default async function DataPage() {
                 code: v.code,
                 type: v.type,
                 value: v.value,
+                productId: v.productId,
+                productName: v.product?.name ?? null,
                 maxUses: v.maxUses,
                 usedCount: v.usedCount,
                 expiresAt: v.expiresAt ? v.expiresAt.toISOString() : null,
                 active: v.active,
               }))}
+              codes={voucherCodes}
             />
           </section>
                   ),
@@ -296,6 +369,12 @@ export default async function DataPage() {
                 Tambah Sales
               </p>
               <CreateSalesForm />
+            </div>
+            <div className="mt-4 border-t border-neutral-100 pt-4">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-400">
+                Atau kirim link registrasi (sekali pakai, 7 hari)
+              </p>
+              <SalesInviteManager invites={salesInvites} />
             </div>
           </section>
                   ),

@@ -4,7 +4,10 @@ import { getCurrentUser } from "@/lib/auth";
 import { ROLE_LABEL, type Role } from "@/lib/constants";
 import { wibMonthStart } from "@/lib/date";
 import { computeLevel } from "@/lib/sales-kpi-grade";
-import { computeSalesKpiValues } from "@/lib/sales-kpi-values";
+import {
+  computeSalesKpiValues,
+  activeDaysBySalesFrom,
+} from "@/lib/sales-kpi-values";
 import { getScoreTargets } from "@/lib/kpi-config";
 import {
   getPriorScoreRows,
@@ -82,10 +85,13 @@ export default async function ProfilPage() {
         getPriorScoreRows(user.id, period),
       ]);
 
-    const wibDay = (d: Date) =>
-      new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(d);
-    const activeDays = new Set(activeLogRows.map((l) => wibDay(l.createdAt)))
-      .size;
+    // Hari aktif — via lib/sales-kpi-values.ts activeDaysBySalesFrom, SATU
+    // algoritma yang sama dipakai beranda, leaderboard /sales, detail
+    // /sales/[id], & /tugas biar skor/level sales tidak beda antar halaman.
+    const activeDays =
+      activeDaysBySalesFrom(
+        activeLogRows.map((l) => ({ salesId: user.id, createdAt: l.createdAt })),
+      ).get(user.id) ?? 0;
 
     const kpiValues = computeSalesKpiValues({
       stores,

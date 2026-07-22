@@ -20,7 +20,10 @@ import {
   LEVEL_MIN,
   KPI_COMPONENTS,
 } from "@/lib/sales-kpi-grade";
-import { computeSalesKpiValues } from "@/lib/sales-kpi-values";
+import {
+  computeSalesKpiValues,
+  activeDaysBySalesFrom,
+} from "@/lib/sales-kpi-values";
 import { getScoreTargets } from "@/lib/kpi-config";
 import {
   getPriorScoreRows,
@@ -41,11 +44,13 @@ import {
   PlusCircle,
   Navigation,
   Route,
+  Repeat,
+  Flag,
   CheckCircle2,
   TrendingUp,
   Lock,
   Sparkles,
-  Target,
+  type LucideIcon,
 } from "lucide-react";
 
 // Konter dianggap "terbengkalai" kalau > 30 hari tak ada aktivitas funnel —
@@ -299,10 +304,17 @@ export default async function BerandaPage() {
   // (lib/sales-kpi-grade.ts). Grade = rata-rata skor 3 bulan (rolling). =====
   const scoreTargets = await getScoreTargets();
   const period = wibPeriod();
-  const priorRows = await getPriorScoreRows(user.id, period);
+  // Ambil 5 bulan prior (bukan cuma 2) buat bar "Skor 3 Bulan" bisa digeser
+  // lihat riwayat lebih jauh - computeLevel tetap aman krn dia sendiri cuma
+  // makan [score, ...priorScores].slice(0, 3), jadi rumus level TIDAK
+  // berubah walau priorScores yang dikirim lebih banyak dari 2.
+  const priorRows = await getPriorScoreRows(user.id, period, 5);
   const priorScores = priorRows.map((r) => r.score);
 
-  // Hari aktif bulan ini (WIB) = jumlah hari sales mencatat kunjungan/update
+  // Hari aktif bulan ini (WIB) — via lib/sales-kpi-values.ts
+  // activeDaysBySalesFrom, SATU algoritma yang sama dipakai profil, leaderboard
+  // /sales, detail /sales/[id], & /tugas biar skor/level sales tidak beda
+  // antar halaman.
   const activeLogRows = await prisma.stageLog.findMany({
     where: {
       prospect: { store: { salesId: user.id } },
@@ -310,9 +322,10 @@ export default async function BerandaPage() {
     },
     select: { createdAt: true },
   });
-  const wibDay = (d: Date) =>
-    new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(d);
-  const activeDays = new Set(activeLogRows.map((l) => wibDay(l.createdAt))).size;
+  const activeDays =
+    activeDaysBySalesFrom(
+      activeLogRows.map((l) => ({ salesId: user.id, createdAt: l.createdAt })),
+    ).get(user.id) ?? 0;
 
   // KPI operasional bulan ini (seeding & konversi) — lib/sales-kpi.ts
   const kpiNow = salesKpi(
@@ -355,8 +368,6 @@ export default async function BerandaPage() {
       .map((r) => ({ label: periodMonthShort(r.period), score: r.score })),
     { label: periodMonthShort(period), score: result.score, current: true },
   ];
-  const skorAvg =
-    skorBars.reduce((a, b) => a + b.score, 0) / skorBars.length;
 
   // Peta level → grade minimum (untuk penjelasan level terkunci)
   const LEVEL_BENEFIT: Record<number, string> = {
@@ -521,10 +532,12 @@ export default async function BerandaPage() {
     }));
   const ruteStops = [...ruteRestok, ...ruteRutin, ...ruteClosing];
 
-  const STOP_BADGE: Record<RuteStop["type"], { label: string; cls: string }> = {
-    RESTOK: { label: "Restok", cls: "border-amber-300 bg-amber-50 text-amber-700" },
-    RUTIN: { label: "Rutin", cls: "border-sky-300 bg-sky-50 text-sky-700" },
-    CLOSING: { label: "Closing", cls: "border-green-300 bg-green-50 text-green-700" },
+  // Satu gaya badge monokrom buat ketiga tipe - beda tipe dibedakan lewat
+  // ikon, bukan warna, biar tidak riuh tapi tetap bisa dibedakan sekilas.
+  const STOP_BADGE: Record<RuteStop["type"], { label: string; icon: LucideIcon }> = {
+    RESTOK: { label: "Restok", icon: Truck },
+    RUTIN: { label: "Rutin", icon: Repeat },
+    CLOSING: { label: "Closing", icon: Flag },
   };
 
   // Map points
@@ -749,144 +762,10 @@ export default async function BerandaPage() {
         </div>
       </section>
 
-      {/* ===== Skor 3 Bulan — bar rolling + ambang naik level ===== */}
-      {!result.captain && (
-        <Skor3Bulan
-          bars={skorBars}
-          avg={skorAvg}
-          threshold={result.nextThreshold}
-          nextLevelName={result.nextLevelName}
-        />
-      )}
-
-      {/* ===== Today's Focus (lime) — aksi hari ini ===== */}
-      <section className="rounded-2xl bg-gradient-to-br from-brand to-brand-dark p-5 text-neutral-900">
-        <h2 className="flex items-center gap-1.5 text-base font-extrabold">
-          <Target className="h-4 w-4" /> Fokus Hari Ini
-        </h2>
-        <p className="text-xs text-neutral-800/70">
-          Kerjakan ini biar skor & level cepat naik
-        </p>
-        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div className="rounded-xl border border-neutral-900/10 bg-white/55 p-3.5">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-800/60">
-              Target hari ini
-            </p>
-            <p className="mt-1 text-xl font-extrabold">
-              {targetHarian} <span className="text-sm font-semibold">konter</span>
-            </p>
-            <p className="mt-1 text-xs text-neutral-800/70">
-              {belumReorder} konter belum reorder bulan ini
-            </p>
-          </div>
-          <div className="rounded-xl border border-neutral-900/10 bg-white/55 p-3.5">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-800/60">
-              Strategi
-            </p>
-            <p className="mt-1 text-base font-extrabold leading-tight">
-              {strategi.judul}
-            </p>
-            <p className="mt-1 text-xs text-neutral-800/70">{strategi.note}</p>
-          </div>
-          <Link
-            href="/konter"
-            className="rounded-xl border border-neutral-900/10 bg-neutral-900 p-3.5 text-white transition hover:opacity-90"
-          >
-            <p className="text-[10px] font-bold uppercase tracking-wider text-brand">
-              KPI paling perlu digenjot
-            </p>
-            <p className="mt-1 text-base font-extrabold leading-tight">
-              {nextMsKey
-                ? result.milestones.find((m) => m.key === nextMsKey)?.label
-                : "Semua KPI capai target"}
-            </p>
-            <p className="mt-1 text-xs text-neutral-400">Buka konter saya →</p>
-          </Link>
-        </div>
-      </section>
-
-      {/* ===== KPI Bulan Ini = matrix utama (status vs target admin) ===== */}
-      <section>
-        <div className="mb-2 flex items-baseline justify-between gap-2">
-          <p className="text-xs font-bold uppercase tracking-wider text-neutral-400">
-            Performa Bulan Ini
-          </p>
-          <p className="text-[11px] text-neutral-500">
-            {bulanIni} ·{" "}
-            <span className="font-semibold text-brand-dark">
-              skor {result.score}/100
-            </span>
-          </p>
-        </div>
-        {/* Hanya 4 KPI operasional di sini (Konsistensi cuma di Rincian skor
-            bawah) — target = bulan ideal (skor 100%) */}
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {result.milestones
-            .filter((p) => p.key !== "konsistensi")
-            .map((p) => {
-            // Status dari progres ke target: ≥100 Excellent, ≥60 On Track, else Behind
-            const st =
-              p.pct >= 100
-                ? {
-                    label: "Excellent",
-                    badge: "bg-brand/15 text-brand-dark",
-                    bar: "bg-brand-dark",
-                    accent: "bg-brand-dark",
-                  }
-                : p.pct >= 60
-                  ? {
-                      label: "On Track",
-                      badge: "bg-green-100 text-green-700",
-                      bar: "bg-green-500",
-                      accent: "bg-green-500",
-                    }
-                  : {
-                      label: "Behind",
-                      badge: "bg-red-100 text-red-600",
-                      bar: "bg-red-500",
-                      accent: "bg-red-400",
-                    };
-            return (
-              <div
-                key={p.key}
-                className="relative overflow-hidden rounded-2xl border border-neutral-200 bg-white p-3.5 shadow-sm"
-              >
-                <span
-                  className={`absolute left-0 top-4 bottom-4 w-1 rounded-r ${st.accent}`}
-                />
-                <div className="flex items-start justify-between gap-1">
-                  <p className="text-[11px] leading-tight text-neutral-500">
-                    {p.label}
-                  </p>
-                  <span
-                    className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold ${st.badge}`}
-                  >
-                    {st.label}
-                  </span>
-                </div>
-                <p className="mt-1 truncate text-xl font-bold">
-                  {fmtKpi(p.value, p.unit)}
-                </p>
-                <p className="text-[11px] text-neutral-400">
-                  target {fmtKpi(p.target, p.unit)}
-                </p>
-                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-neutral-100">
-                  <div
-                    className={`h-full rounded-full ${st.bar}`}
-                    style={{ width: `${p.pct}%` }}
-                  />
-                </div>
-                <p className="mt-1 font-mono text-[10px] text-neutral-400">
-                  {p.pct}% ke target
-                </p>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
       {/* ===== Ringkasan: 6 kartu seragam (omzet, penghasilan, konter,
-          prospek, konversi, stok) — 3 kolom di desktop, 2 di HP ===== */}
+          prospek, konversi, stok) — 3 kolom di desktop, 2 di HP. Ditaruh
+          duluan biar sales langsung nangkep angka intinya sebelum masuk ke
+          detail skor/level di bawah. ===== */}
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-3">
         <div className="rounded-2xl border border-neutral-200 bg-white p-4 text-neutral-900">
           <p className="text-xs text-neutral-500">Omzet</p>
@@ -931,11 +810,7 @@ export default async function BerandaPage() {
           className="rounded-2xl border border-neutral-200 bg-white p-4 text-neutral-900 transition hover:ring-2 hover:ring-brand"
         >
           <p className="text-xs text-neutral-500">Stok Menipis</p>
-          <p
-            className={`mt-1 text-2xl font-bold ${
-              lowStock > 0 ? "text-amber-600" : ""
-            }`}
-          >
+          <p className="mt-1 text-2xl font-bold">
             {lowStock}
             <span className="ml-1 text-sm font-medium text-neutral-400">
               unit
@@ -947,225 +822,332 @@ export default async function BerandaPage() {
         </Link>
       </section>
 
-      {/* ===== Cara naik level: tangga level (terkunci bisa diklik) +
-          ambang grade + progres komponen KPI vs target admin ===== */}
-      <section className="rounded-2xl border border-neutral-200 bg-white p-5">
-        <div className="mb-1 flex items-center gap-2">
-          <TrendingUp className="h-4 w-4 text-neutral-500" />
-          <h2 className="font-semibold">Cara Naik Level</h2>
-        </div>
-        <p className="mb-3 text-xs text-neutral-400">
-          Kamu naik ke sebuah level kalau MEMENUHI SEMUA target level itu
-          (di-set admin per level). Ketuk level terkunci untuk lihat syaratnya.
-        </p>
-
-        {/* Tangga level 1-4. Level terkunci = <details> yang bisa diketuk.
-            items-start: kartu yang tidak dibuka TIDAK ikut memanjang saat
-            kartu sebelahnya di-expand (biar tak ada kotak putih kosong). */}
-        <div className="mb-4 grid grid-cols-1 items-start gap-2 sm:grid-cols-2">
-          {LEVELS.map((l) => {
-            const Icon = LEVEL_ICON[l.level as 1 | 2 | 3 | 4 | 5];
-            const current = result.level === l.level;
-            const passed = result.level > l.level;
-            const locked = result.level < l.level;
-            const head = (
-              <span className="flex items-center gap-1.5 text-xs font-semibold">
-                {locked ? (
-                  <Lock className="h-3.5 w-3.5 shrink-0 text-neutral-400" />
-                ) : (
-                  <Icon
-                    className={`h-3.5 w-3.5 shrink-0 ${current ? "text-brand-dark" : "text-neutral-400"}`}
-                  />
-                )}
-                Lv. {l.level} {l.name}
-                <span
-                  className={`ml-auto text-[10px] font-bold uppercase tracking-wide ${
-                    current
-                      ? "text-brand-dark"
-                      : passed
-                        ? "text-neutral-400"
-                        : "text-neutral-400"
-                  }`}
-                >
-                  {passed ? "Terlewati" : current ? "Sekarang" : "Terkunci"}
-                </span>
-              </span>
-            );
-            const boxCls = `rounded-xl border p-2.5 ${
-              current
-                ? "border-brand bg-brand/10"
-                : passed
-                  ? "border-neutral-200 bg-neutral-50"
-                  : "border-neutral-200"
-            }`;
-            // Level terkunci → bisa diketuk untuk lihat syarat
-            if (locked) {
-              return (
-                <details key={l.level} className={`ug-acc ${boxCls}`}>
-                  <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
-                    {head}
-                  </summary>
-                  <div className="mt-2 space-y-2.5 border-t border-neutral-200 pt-2.5">
-                    <p className="text-[11px] font-semibold text-neutral-700">
-                      Naik ke Lv. {l.level} butuh rata-rata skor{" "}
-                      {LEVEL_MIN[l.level]}/100 - genjot KPI ini:
-                    </p>
-                    {KPI_COMPONENTS.map((c) => {
-                      const target = scoreTargets[c.key] ?? 0;
-                      const value = kpiValues[c.key];
-                      const done = value >= target;
-                      const pct =
-                        target > 0
-                          ? Math.min(100, Math.round((value / target) * 100))
-                          : 100;
-                      return (
-                        <div key={c.key}>
-                          <div className="flex items-center justify-between gap-2 text-[11px]">
-                            <span
-                              className={`flex items-center gap-1.5 font-medium ${done ? "text-brand-dark" : "text-neutral-700"}`}
-                            >
-                              {done ? (
-                                <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                              ) : (
-                                <span className="h-3.5 w-3.5 shrink-0 rounded-full border border-neutral-300" />
-                              )}
-                              {c.label}
-                            </span>
-                            <span className="shrink-0 font-mono text-neutral-500">
-                              {fmtKpi(value, c.unit)} /{" "}
-                              <b className="text-neutral-800">
-                                {fmtKpi(target, c.unit)}
-                              </b>
-                            </span>
-                          </div>
-                          <div className="mt-1 h-1 overflow-hidden rounded-full bg-neutral-100">
-                            <div
-                              className={`h-full rounded-full ${done ? "bg-brand-dark" : "bg-neutral-400"}`}
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                          <p className="mt-0.5 text-[10px] leading-snug text-neutral-400">
-                            Cara: {KPI_HOW[c.key]}
+      {/* ===== Performa & Level — KPI, Skor 3 Bulan, dan Cara Naik Level
+          digabung 1 kartu bertab (bukan 3 section panjang terpisah kaya
+          sebelumnya) biar halaman ga jadi tumpukan scroll - polanya sama
+          persis dgn tab Statistik/Peta/Aktivitas di bawah. alwaysTabs
+          dipakai (bukan cuma di HP) karena tinggi tiap tab beda jauh. */}
+      <DataTabs
+        alwaysTabs
+        gridClassName="lg:grid-cols-1"
+        tabs={[
+          { key: "kpi", label: "KPI Bulan Ini" },
+          ...(!result.captain
+            ? [{ key: "skor3", label: "Skor 3 Bulan" }]
+            : []),
+          { key: "level", label: "Cara Naik Level" },
+        ]}
+        sections={[
+          {
+            tab: "kpi",
+            node: (
+              <section>
+                <div className="mb-2 flex items-baseline justify-between gap-2">
+                  <p className="text-xs font-bold uppercase tracking-wider text-neutral-400">
+                    Performa Bulan Ini
+                  </p>
+                  <p className="text-[11px] text-neutral-500">
+                    {bulanIni} ·{" "}
+                    <span className="font-semibold text-brand-dark">
+                      skor {result.score}/100
+                    </span>
+                  </p>
+                </div>
+                {/* Hanya 4 KPI operasional di sini (Konsistensi cuma di Rincian skor
+                    bawah) — target = bulan ideal (skor 100%) */}
+                <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                  {result.milestones
+                    .filter((p) => p.key !== "konsistensi")
+                    .map((p) => {
+                    // Cuma 1 aksen (lime) buat "tercapai" - sisanya monokrom, tidak
+                    // pakai merah/hijau biar senada dgn warna app secara keseluruhan.
+                    const done = p.pct >= 100;
+                    const st = done
+                      ? { bar: "bg-brand-dark", accent: "bg-brand-dark" }
+                      : { bar: "bg-neutral-900", accent: "bg-neutral-300" };
+                    return (
+                      <div
+                        key={p.key}
+                        className="relative overflow-hidden rounded-2xl border border-neutral-200 bg-white p-3.5 shadow-sm"
+                      >
+                        <span
+                          className={`absolute left-0 top-4 bottom-4 w-1 rounded-r ${st.accent}`}
+                        />
+                        <div className="flex items-start justify-between gap-1">
+                          <p className="text-[11px] leading-tight text-neutral-500">
+                            {p.label}
                           </p>
+                          {done && (
+                            <span className="shrink-0 rounded-full bg-brand/15 px-1.5 py-0.5 text-[9px] font-bold text-brand-dark">
+                              Tercapai
+                            </span>
+                          )}
                         </div>
+                        <p className="mt-1 truncate text-xl font-bold">
+                          {fmtKpi(p.value, p.unit)}
+                        </p>
+                        <p className="text-[11px] text-neutral-400">
+                          target {fmtKpi(p.target, p.unit)}
+                        </p>
+                        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-neutral-100">
+                          <div
+                            className={`h-full rounded-full ${st.bar}`}
+                            style={{ width: `${p.pct}%` }}
+                          />
+                        </div>
+                        <p className="mt-1 font-mono text-[10px] text-neutral-400">
+                          {p.pct}% ke target
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            ),
+          },
+          ...(!result.captain
+            ? [
+                {
+                  tab: "skor3",
+                  node: (
+                    <Skor3Bulan
+                      bars={skorBars}
+                      windowSize={result.monthsUsed}
+                      threshold={result.nextThreshold}
+                      nextLevelName={result.nextLevelName}
+                    />
+                  ),
+                },
+              ]
+            : []),
+          {
+            tab: "level",
+            node: (
+              <section className="rounded-2xl border border-neutral-200 bg-white p-5">
+                <div className="mb-1 flex items-center gap-2">
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-brand/20 text-brand-dark">
+                    <TrendingUp className="h-4 w-4" />
+                  </span>
+                  <h2 className="font-semibold">Cara Naik Level</h2>
+                </div>
+                <p className="mb-3 text-xs text-neutral-400">
+                  Kamu naik ke sebuah level kalau MEMENUHI SEMUA target level itu
+                  (di-set admin per level). Ketuk level terkunci untuk lihat syaratnya.
+                </p>
+
+                {/* Tangga level 1-4. Level terkunci = <details> yang bisa diketuk.
+                    items-start: kartu yang tidak dibuka TIDAK ikut memanjang saat
+                    kartu sebelahnya di-expand (biar tak ada kotak putih kosong). */}
+                <div className="mb-4 grid grid-cols-1 items-start gap-2 sm:grid-cols-2">
+                  {LEVELS.map((l) => {
+                    const Icon = LEVEL_ICON[l.level as 1 | 2 | 3 | 4 | 5];
+                    const current = result.level === l.level;
+                    const passed = result.level > l.level;
+                    const locked = result.level < l.level;
+                    const head = (
+                      <span className="flex items-center gap-1.5 text-xs font-semibold">
+                        {locked ? (
+                          <Lock className="h-3.5 w-3.5 shrink-0 text-neutral-400" />
+                        ) : (
+                          <Icon
+                            className={`h-3.5 w-3.5 shrink-0 ${current ? "text-brand-dark" : "text-neutral-400"}`}
+                          />
+                        )}
+                        Lv. {l.level} {l.name}
+                        <span
+                          className={`ml-auto text-[10px] font-bold uppercase tracking-wide ${
+                            current
+                              ? "text-brand-dark"
+                              : passed
+                                ? "text-neutral-400"
+                                : "text-neutral-400"
+                          }`}
+                        >
+                          {passed ? "Terlewati" : current ? "Sekarang" : "Terkunci"}
+                        </span>
+                      </span>
+                    );
+                    const boxCls = `rounded-xl border p-2.5 ${
+                      current
+                        ? "border-brand bg-brand/10"
+                        : passed
+                          ? "border-neutral-200 bg-neutral-50"
+                          : "border-neutral-200"
+                    }`;
+                    // Level terkunci → bisa diketuk untuk lihat syarat
+                    if (locked) {
+                      return (
+                        <details key={l.level} className={`ug-acc ${boxCls}`}>
+                          <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+                            {head}
+                          </summary>
+                          <div className="mt-2 space-y-2.5 border-t border-neutral-200 pt-2.5">
+                            <p className="text-[11px] font-semibold text-neutral-700">
+                              Naik ke Lv. {l.level} butuh rata-rata skor{" "}
+                              {LEVEL_MIN[l.level]}/100 - genjot KPI ini:
+                            </p>
+                            {KPI_COMPONENTS.map((c) => {
+                              const target = scoreTargets[c.key] ?? 0;
+                              const value = kpiValues[c.key];
+                              const done = value >= target;
+                              const pct =
+                                target > 0
+                                  ? Math.min(100, Math.round((value / target) * 100))
+                                  : 100;
+                              return (
+                                <div key={c.key}>
+                                  <div className="flex items-center justify-between gap-2 text-[11px]">
+                                    <span
+                                      className={`flex items-center gap-1.5 font-medium ${done ? "text-brand-dark" : "text-neutral-700"}`}
+                                    >
+                                      {done ? (
+                                        <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                                      ) : (
+                                        <span className="h-3.5 w-3.5 shrink-0 rounded-full border border-neutral-300" />
+                                      )}
+                                      {c.label}
+                                    </span>
+                                    <span className="shrink-0 font-mono text-neutral-500">
+                                      {fmtKpi(value, c.unit)} /{" "}
+                                      <b className="text-neutral-800">
+                                        {fmtKpi(target, c.unit)}
+                                      </b>
+                                    </span>
+                                  </div>
+                                  <div className="mt-1 h-1 overflow-hidden rounded-full bg-neutral-100">
+                                    <div
+                                      className={`h-full rounded-full ${done ? "bg-brand-dark" : "bg-neutral-400"}`}
+                                      style={{ width: `${pct}%` }}
+                                    />
+                                  </div>
+                                  <p className="mt-0.5 text-[10px] leading-snug text-neutral-400">
+                                    Cara: {KPI_HOW[c.key]}
+                                  </p>
+                                </div>
+                              );
+                            })}
+                            <p className="border-t border-dashed border-neutral-200 pt-1.5 text-[11px] text-neutral-500">
+                              <span className="font-semibold text-neutral-700">
+                                Hadiah:
+                              </span>{" "}
+                              {l.benefit}
+                            </p>
+                          </div>
+                        </details>
                       );
-                    })}
-                    <p className="border-t border-dashed border-neutral-200 pt-1.5 text-[11px] text-neutral-500">
-                      <span className="font-semibold text-neutral-700">
-                        Hadiah:
-                      </span>{" "}
-                      {l.benefit}
-                    </p>
-                  </div>
-                </details>
-              );
-            }
-            return (
-              <div key={l.level} className={boxCls}>
-                {head}
-                <p className="mt-1 text-[11px] text-neutral-400">{l.benefit}</p>
-              </div>
-            );
-          })}
-        </div>
+                    }
+                    return (
+                      <div key={l.level} className={boxCls}>
+                        {head}
+                        <p className="mt-1 text-[11px] text-neutral-400">{l.benefit}</p>
+                      </div>
+                    );
+                  })}
+                </div>
 
-        {/* KPI vs target bulan-ideal (tiap KPI capai target = skor penuh) —
-            gaya checklist. "Berikutnya" = belum beres, paling dekat. */}
-        <div className="mb-2 mt-1 flex items-center gap-2 text-xs font-semibold">
-          {nextLevelInfo
-            ? `Genjot KPI buat naik ke Lv. ${nextLevelInfo.level} ${nextLevelInfo.name}`
-            : "Semua target - pertahankan"}
-          <span className="rounded-full bg-brand/15 px-2 py-0.5 text-[10px] font-bold text-brand-dark">
-            {msDoneCount}/{milestones.length} target
-          </span>
-        </div>
-        <div className="mb-4 space-y-2">
-          {milestones.map((m) => {
-            const isNext = !m.done && m.key === nextMsKey;
-            return (
-              <div
-                key={m.key}
-                className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${
-                  m.done
-                    ? "border-brand/40 bg-brand/10"
-                    : isNext
-                      ? "border-brand-dark bg-brand/5"
-                      : "border-neutral-200"
-                }`}
-              >
-                <span
-                  className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-xs font-bold ${
-                    m.done
-                      ? "bg-brand text-neutral-900"
-                      : isNext
-                        ? "border-2 border-brand-dark text-brand-dark"
-                        : "bg-neutral-100 text-neutral-400"
-                  }`}
-                >
-                  {m.done ? "✓" : isNext ? "→" : "•"}
-                </span>
-                <span
-                  className={`min-w-0 flex-1 text-sm font-medium ${
-                    m.done || isNext ? "text-neutral-900" : "text-neutral-500"
-                  }`}
-                >
-                  {m.label}
-                </span>
-                {isNext && (
-                  <span className="shrink-0 rounded-full bg-brand/20 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-brand-dark">
-                    Berikutnya
+                {/* KPI vs target bulan-ideal (tiap KPI capai target = skor penuh) —
+                    gaya checklist. "Berikutnya" = belum beres, paling dekat. */}
+                <div className="mb-2 mt-1 flex items-center gap-2 text-xs font-semibold">
+                  {nextLevelInfo
+                    ? `Genjot KPI buat naik ke Lv. ${nextLevelInfo.level} ${nextLevelInfo.name}`
+                    : "Semua target - pertahankan"}
+                  <span className="rounded-full bg-brand/15 px-2 py-0.5 text-[10px] font-bold text-brand-dark">
+                    {msDoneCount}/{milestones.length} target
                   </span>
-                )}
-                <span
-                  className={`shrink-0 font-mono text-xs font-bold ${
-                    m.done ? "text-brand-dark" : "text-neutral-400"
-                  }`}
-                >
-                  {m.prog}
-                  {m.done ? " ✓" : ""}
-                </span>
-              </div>
-            );
-          })}
-        </div>
+                </div>
+                <div className="mb-4 space-y-2">
+                  {milestones.map((m) => {
+                    const isNext = !m.done && m.key === nextMsKey;
+                    return (
+                      <div
+                        key={m.key}
+                        className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${
+                          m.done
+                            ? "border-brand/40 bg-brand/10"
+                            : isNext
+                              ? "border-brand-dark bg-brand/5"
+                              : "border-neutral-200"
+                        }`}
+                      >
+                        <span
+                          className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-xs font-bold ${
+                            m.done
+                              ? "bg-brand text-neutral-900"
+                              : isNext
+                                ? "border-2 border-brand-dark text-brand-dark"
+                                : "bg-neutral-100 text-neutral-400"
+                          }`}
+                        >
+                          {m.done ? "✓" : isNext ? "→" : "•"}
+                        </span>
+                        <span
+                          className={`min-w-0 flex-1 text-sm font-medium ${
+                            m.done || isNext ? "text-neutral-900" : "text-neutral-500"
+                          }`}
+                        >
+                          {m.label}
+                        </span>
+                        {isNext && (
+                          <span className="shrink-0 rounded-full bg-brand/20 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-brand-dark">
+                            Berikutnya
+                          </span>
+                        )}
+                        <span
+                          className={`shrink-0 font-mono text-xs font-bold ${
+                            m.done ? "text-brand-dark" : "text-neutral-400"
+                          }`}
+                        >
+                          {m.prog}
+                          {m.done ? " ✓" : ""}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
 
-        {/* Progres tiap komponen KPI vs target bulan-ideal (skor 100%) */}
-        <p className="mb-2 text-xs font-semibold text-neutral-700">
-          Rincian 5 komponen{" "}
-          <span className="font-normal text-neutral-400">
-            (skor {bulanIni} {result.score}/100)
-          </span>
-        </p>
-        <div className="space-y-3">
-          {result.milestones.map((p) => (
-            <div key={p.key}>
-              <div className="mb-1 flex items-center justify-between gap-2 text-xs">
-                <span className="font-medium text-neutral-700">{p.label}</span>
-                <span className="shrink-0 text-neutral-400">
-                  {fmtKpi(p.value, p.unit)} / {fmtKpi(p.target, p.unit)} ·{" "}
-                  <span
-                    className={`font-semibold ${p.done ? "text-brand-dark" : "text-neutral-700"}`}
-                  >
-                    {p.pct}%
+                {/* Progres tiap komponen KPI vs target bulan-ideal (skor 100%) */}
+                <p className="mb-2 text-xs font-semibold text-neutral-700">
+                  Rincian 5 komponen{" "}
+                  <span className="font-normal text-neutral-400">
+                    (skor {bulanIni} {result.score}/100)
                   </span>
-                </span>
-              </div>
-              <div className="h-1.5 overflow-hidden rounded-full bg-neutral-100">
-                <div
-                  className={`h-full rounded-full ${p.done ? "bg-brand-dark" : "bg-neutral-900"}`}
-                  style={{ width: `${p.pct}%` }}
-                />
-              </div>
-              <p className="mt-1 text-xs text-neutral-400">{p.hint}</p>
-            </div>
-          ))}
-        </div>
-      </section>
+                </p>
+                <div className="space-y-3">
+                  {result.milestones.map((p) => (
+                    <div key={p.key}>
+                      <div className="mb-1 flex items-center justify-between gap-2 text-xs">
+                        <span className="font-medium text-neutral-700">{p.label}</span>
+                        <span className="shrink-0 text-neutral-400">
+                          {fmtKpi(p.value, p.unit)} / {fmtKpi(p.target, p.unit)} ·{" "}
+                          <span
+                            className={`font-semibold ${p.done ? "text-brand-dark" : "text-neutral-700"}`}
+                          >
+                            {p.pct}%
+                          </span>
+                        </span>
+                      </div>
+                      <div className="h-1.5 overflow-hidden rounded-full bg-neutral-100">
+                        <div
+                          className={`h-full rounded-full ${p.done ? "bg-brand-dark" : "bg-neutral-900"}`}
+                          style={{ width: `${p.pct}%` }}
+                        />
+                      </div>
+                      <p className="mt-1 text-xs text-neutral-400">{p.hint}</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ),
+          },
+        ]}
+      />
 
       {/* ===== Rute Hari Ini: logistik + hunting dalam satu daftar ===== */}
       <section className="rounded-2xl border border-neutral-200 bg-white p-5">
         <div className="mb-1 flex items-center gap-2">
-          <Route className="h-4 w-4 text-neutral-500" />
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-brand/20 text-brand-dark">
+            <Route className="h-4 w-4" />
+          </span>
           <h2 className="font-semibold">Rute Hari Ini</h2>
           {ruteStops.length > 0 && (
             <span className="rounded-full bg-brand px-2 py-0.5 text-xs font-bold text-neutral-900">
@@ -1207,15 +1189,15 @@ export default async function BerandaPage() {
             className="divide-y divide-neutral-100"
             items={ruteStops.map((stop) => {
               const badge = STOP_BADGE[stop.type];
+              const BadgeIcon = badge.icon;
               const maps =
                 stop.lat != null && stop.lng != null
                   ? `https://www.google.com/maps/dir/?api=1&destination=${stop.lat},${stop.lng}`
                   : null;
               return (
                 <div key={stop.key} className="flex items-center gap-2 py-2.5">
-                  <span
-                    className={`w-16 shrink-0 rounded-full border px-2 py-0.5 text-center text-[10px] font-bold ${badge.cls}`}
-                  >
+                  <span className="flex w-[70px] shrink-0 items-center justify-center gap-1 rounded-full border border-neutral-200 bg-neutral-50 px-2 py-1 text-[10px] font-semibold text-neutral-600">
+                    <BadgeIcon className="h-3 w-3 shrink-0" />
                     {badge.label}
                   </span>
                   <Link href={stop.href} className="min-w-0 flex-1 hover:underline">

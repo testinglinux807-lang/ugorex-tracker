@@ -563,6 +563,7 @@ export default async function OrderPage({
               order={r}
               canRespond
               isAdmin={user.role === "ADMIN"}
+              isSales={user.role === "SALES"}
               isGudang={isGudang}
               canTrack={!isGudang}
               showPrice={!isGudang}

@@ -25,9 +25,12 @@ import {
   assignForOrder,
 } from "@/lib/gudang-assign";
 import {
-  voucherDiscount,
+  applyVouchers,
+  voucherScopeKey,
+  voucherLabel,
   grosirTierFor,
   grosirDiscount,
+  type VoucherLike,
 } from "@/lib/voucher-calc";
 
 const PAYMENT_METHODS = new Set([
@@ -141,6 +144,7 @@ export async function createRestockRequest(formData: FormData) {
     productId: i.productId,
     qty: i.qty,
     price: productOf.get(i.productId)!.price,
+    code: productOf.get(i.productId)!.code,
   }));
   const subtotal = itemRows.reduce((a, i) => a + i.qty * i.price, 0);
 
@@ -151,21 +155,66 @@ export async function createRestockRequest(formData: FormData) {
   const grosirTier = grosirTierFor(tiers, totalQty);
   const grosir = grosirTier ? grosirDiscount(grosirTier, subtotal) : 0;
 
-  // Voucher (opsional) — validasi ulang di server, preview di client tidak
-  // dipercaya. Kuota BELUM dikonsumsi di sini — baru dikonsumsi setelah
-  // charge Midtrans berhasil (di bawah), supaya charge yang gagal tidak
-  // membakar kuota voucher untuk order yang batal. Voucher dihitung dari
-  // sisa setelah potongan grosir (bisa digabung).
-  const voucherCodeRaw = String(formData.get("voucherCode") ?? "").trim();
+  // Voucher (opsional, maks 3 - satu per jenis FREE/PERCENT/FIXED) —
+  // validasi ulang di server, preview di client tidak dipercaya. Kuota
+  // BELUM dikonsumsi di sini — baru dikonsumsi setelah charge Midtrans
+  // berhasil (di bawah), supaya charge yang gagal tidak membakar kuota
+  // voucher untuk order yang batal. Voucher dihitung dari sisa setelah
+  // potongan grosir (bisa digabung, urutan lihat lib/voucher-calc.ts).
+  const voucherCodesRaw = [
+    ...new Set(
+      formData
+        .getAll("voucherCode")
+        .map((v) => String(v).trim())
+        .filter(Boolean),
+    ),
+  ];
   let discount = 0;
-  let voucherCode: string | null = null;
-  let voucher: { id: string; maxUses: number | null } | null = null;
-  if (voucherCodeRaw) {
-    const found = await findUsableVoucher(voucherCodeRaw);
-    if ("error" in found) return { error: found.error };
-    discount = voucherDiscount(found.voucher!, subtotal - grosir);
-    voucherCode = found.voucher!.code;
-    voucher = found.voucher!;
+  let voucherCodes: string[] = [];
+  let vouchers: { id: string; code: string; maxUses: number | null }[] = [];
+  if (voucherCodesRaw.length > 3) {
+    return { error: "Maksimal 3 voucher sekaligus." };
+  }
+  if (voucherCodesRaw.length > 0) {
+    const found = await Promise.all(
+      voucherCodesRaw.map((code) => findUsableVoucher(code)),
+    );
+    const firstError = found.find((f) => "error" in f);
+    if (firstError && "error" in firstError) return { error: firstError.error };
+    const resolved = found.map((f) => f.voucher!);
+    const typeSeen = new Set<string>();
+    for (const v of resolved) {
+      if (typeSeen.has(v.type)) {
+        return { error: `Cuma boleh 1 voucher jenis ${voucherLabel(v)} sekaligus.` };
+      }
+      typeSeen.add(v.type);
+      if (v.productId) {
+        const scopeKey = voucherScopeKey({
+          id: v.productId,
+          code: v.product?.code ?? null,
+        });
+        const matches = itemRows.some(
+          (i) => voucherScopeKey({ id: i.productId, code: i.code }) === scopeKey,
+        );
+        if (!matches) {
+          return {
+            error: `Voucher ${v.code} cuma berlaku untuk produk ${
+              v.product?.name ?? "tertentu"
+            } - tambahkan dulu ke keranjang.`,
+          };
+        }
+      }
+    }
+    const voucherLikes: VoucherLike[] = resolved.map((v) => ({
+      code: v.code,
+      type: v.type,
+      value: v.value,
+      productId: v.productId,
+      productCode: v.product?.code ?? null,
+    }));
+    discount = applyVouchers(voucherLikes, itemRows).total;
+    voucherCodes = resolved.map((v) => v.code);
+    vouchers = resolved;
   }
   const total = subtotal - grosir - discount;
 
@@ -212,7 +261,7 @@ export async function createRestockRequest(formData: FormData) {
             id: "VOUCHER",
             price: -discount,
             quantity: 1,
-            name: `Diskon voucher ${voucherCode}`,
+            name: `Diskon voucher ${voucherCodes.join(", ")}`,
           },
         ]
       : []),
@@ -275,10 +324,12 @@ export async function createRestockRequest(formData: FormData) {
   }
 
   // Charge (atau fallback CASH/gratis) berhasil — baru sekarang konsumsi
-  // kuota voucher, atomik terhadap pemakaian bersamaan.
-  if (voucher && !(await consumeVoucher(voucher))) {
-    await undoReserve();
-    return { error: "Kuota voucher sudah habis." };
+  // kuota tiap voucher, atomik terhadap pemakaian bersamaan.
+  for (const v of vouchers) {
+    if (!(await consumeVoucher(v))) {
+      await undoReserve();
+      return { error: `Kuota voucher ${v.code} sudah habis.` };
+    }
   }
 
   try {
@@ -293,7 +344,7 @@ export async function createRestockRequest(formData: FormData) {
         stockReserved: true,
         discount,
         grosirDiscount: grosir,
-        voucherCode,
+        voucherCodes,
         paymentStatus: autoPaid ? "PAID" : "UNPAID",
         paymentMethod: method,
         paymentFee: fee,
@@ -303,7 +354,13 @@ export async function createRestockRequest(formData: FormData) {
         qrUrl: charge?.qrUrl ?? null,
         paymentDeeplink: charge?.deeplink ?? null,
         paymentExpiry: charge?.expiryTime ? new Date(charge.expiryTime) : null,
-        items: { create: itemRows },
+        items: {
+          create: itemRows.map(({ productId, qty, price }) => ({
+            productId,
+            qty,
+            price,
+          })),
+        },
       },
     });
   } catch {
@@ -462,7 +519,7 @@ export async function getOrderPaymentInfo(requestId: string) {
             id: "VOUCHER",
             price: -req.discount,
             quantity: 1,
-            name: `Diskon voucher ${req.voucherCode ?? ""}`.trim(),
+            name: `Diskon voucher ${req.voucherCodes.join(", ")}`.trim(),
           },
         ]
       : []),
