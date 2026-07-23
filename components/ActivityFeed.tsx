@@ -53,7 +53,7 @@ export function ActivityFeed({ activities }: { activities: Activity[] }) {
                 : "border-neutral-200 text-neutral-500 hover:bg-neutral-50"
             }`}
           >
-            {f === "ALL" ? "SEMUA" : f === "SALE" ? "PENJUALAN" : f === "REQUEST" ? "REQUESTS" : f === "FUNNEL" ? "AKTIVITAS" : f}
+            {f === "ALL" ? "SEMUA" : f === "SALE" ? "PENJUALAN" : f === "REQUEST" ? "FEEDBACK" : f === "FUNNEL" ? "AKTIVITAS" : f}
           </button>
         ))}
       </div>
@@ -87,7 +87,7 @@ export function ActivityFeed({ activities }: { activities: Activity[] }) {
               ) : a.type === "REQUEST" ? (
                 <span className="inline-flex items-center gap-1 rounded-full border border-blue-500 bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-600">
                   <MessageSquare className="h-3 w-3" />
-                  Request
+                  Feedback
                 </span>
               ) : (
                 <>

@@ -5,11 +5,27 @@ import "server-only";
 // bukan redirect ke halaman Midtrans. Kunci diambil dari .env:
 //  - MIDTRANS_SERVER_KEY            (server, rahasia)
 //  - NEXT_PUBLIC_MIDTRANS_CLIENT_KEY (client, dipakai tokenisasi kartu)
-//  - MIDTRANS_IS_PRODUCTION=true    (opsional; default sandbox)
 // Kalau kunci belum diisi, checkout tetap jalan tanpa pembayaran online.
+//
+// SANDBOX vs PRODUCTION ditentukan dari PREFIX kunci, bukan flag terpisah:
+// Midtrans memberi "SB-Mid-server-xxx" untuk sandbox dan "Mid-server-xxx"
+// untuk production. Dulu ini dikendalikan flag MIDTRANS_IS_PRODUCTION, dan
+// gampang salah — lupa mengisinya = kunci production ditembakkan ke endpoint
+// sandbox, semua charge ditolak 401 tanpa penjelasan. Sekarang cukup ganti
+// sepasang kunci saat pindah akun/lingkungan.
+// MIDTRANS_IS_PRODUCTION masih dihormati sebagai override manual kalau
+// sewaktu-waktu perlu memaksa (isi "true"/"false").
+
+export function isMidtransProduction(): boolean {
+  const override = process.env.MIDTRANS_IS_PRODUCTION;
+  if (override === "true") return true;
+  if (override === "false") return false;
+  const key = process.env.MIDTRANS_SERVER_KEY?.trim() ?? "";
+  return key !== "" && !key.startsWith("SB-");
+}
 
 const API_BASE = () =>
-  process.env.MIDTRANS_IS_PRODUCTION === "true"
+  isMidtransProduction()
     ? "https://api.midtrans.com"
     : "https://api.sandbox.midtrans.com";
 

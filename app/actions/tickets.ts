@@ -33,15 +33,38 @@ export async function createTicket(formData: FormData) {
   return { ok: true };
 }
 
-// Owner kirim feedback satu pintu (menu /feedback): kategori menentukan
-// tujuannya — KELUHAN → tiket (masuk inbox Keluhan sales/admin), SARAN &
-// BARANG → request bebas (SARAN diberi prefix "[Saran]" di judul biar
-// sales/admin langsung tahu jenisnya). Alur staf tidak berubah.
+// Feedback konter satu pintu: kategori menentukan tujuannya — KELUHAN →
+// tiket (masuk inbox Keluhan sales/admin), SARAN & BARANG → request bebas
+// (SARAN diberi prefix "[Saran]" di judul biar sales/admin langsung tahu
+// jenisnya). Alur staf tidak berubah.
+//
+// Dipakai dua pihak:
+// - OWNER lewat menu /feedback (toko = tokonya sendiri)
+// - SALES lewat menu Feedback (/request) tab "Dari Konter" — konter kadang
+//   menyampaikan langsung ke sales, jadi sales yang mencatatkan; wajib
+//   pilih konter yang dia pegang (field storeId).
 export async function createFeedback(formData: FormData) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  if (user.role !== "OWNER" || !user.ownedStore) {
-    return { error: "Hanya owner toko yang bisa mengirim feedback." };
+
+  let storeId: string;
+  if (user.role === "OWNER") {
+    if (!user.ownedStore) {
+      return { error: "Akun ini belum terhubung ke toko." };
+    }
+    storeId = user.ownedStore.id;
+  } else if (user.role === "SALES") {
+    storeId = String(formData.get("storeId") ?? "");
+    if (!storeId) return { error: "Pilih konter dulu." };
+    const store = await prisma.store.findUnique({
+      where: { id: storeId },
+      select: { salesId: true },
+    });
+    if (!store || store.salesId !== user.id) {
+      return { error: "Konter ini bukan tanggung jawabmu." };
+    }
+  } else {
+    return { error: "Hanya owner toko atau sales yang bisa kirim feedback." };
   }
 
   const kategori = String(formData.get("kategori") ?? "");
@@ -51,17 +74,12 @@ export async function createFeedback(formData: FormData) {
 
   if (kategori === "KELUHAN") {
     await prisma.ticket.create({
-      data: {
-        storeId: user.ownedStore.id,
-        subject,
-        message,
-        createdById: user.id,
-      },
+      data: { storeId, subject, message, createdById: user.id },
     });
   } else if (kategori === "SARAN" || kategori === "BARANG") {
     await prisma.request.create({
       data: {
-        storeId: user.ownedStore.id,
+        storeId,
         subject: kategori === "SARAN" ? `[Saran] ${subject}` : subject,
         message,
         createdById: user.id,
@@ -74,7 +92,9 @@ export async function createFeedback(formData: FormData) {
 
   revalidatePath("/feedback");
   revalidatePath("/tiket");
+  revalidatePath("/tugas");
   revalidatePath("/dashboard");
+  revalidatePath("/", "layout");
   publishRealtime("feedback");
   return { ok: true };
 }

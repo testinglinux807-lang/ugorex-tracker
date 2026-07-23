@@ -19,48 +19,60 @@ export default async function AppLayout({
   // Badge nav: order menunggu diproses (PENDING=packing gudang, READY=
   // menunggu kurir) + tugas yang belum selesai (sales: tugas dari admin
   // untuk dirinya; admin: semua tugas belum kelar) + keluhan terbuka (tab
-  // Keluhan di dalam Tugas, ikut ditambahkan ke badge /tugas) + request
-  // (saran/request barang) menunggu.
+  // Keluhan di dalam Tugas, ikut ditambahkan ke badge /tugas) + menu
+  // Feedback: saran/ajukan barang konter yang menunggu, plus (admin)
+  // feedback sales yang belum ditangani.
   let orderBadge = 0;
   let tugasBadge = 0;
   let ticketBadge = 0;
   let requestBadge = 0;
+  let staffFeedbackBadge = 0;
   if (user.role !== "OWNER") {
     const storeScope =
       user.role === "SALES" ? { salesId: user.id } : undefined;
-    [orderBadge, tugasBadge, ticketBadge, requestBadge] = await Promise.all([
-      prisma.request.count({
-        where: {
-          status: { in: ["PENDING", "READY"] },
-          items: { some: {} },
-          ...(storeScope ? { store: storeScope } : {}),
-        },
-      }),
-      prisma.task.count({
-        where: {
-          status: { not: "DONE" },
-          ...(user.role === "SALES" ? { assignedToId: user.id } : {}),
-        },
-      }),
-      prisma.ticket.count({
-        where: {
-          status: { not: "CLOSED" },
-          ...(storeScope ? { store: storeScope } : {}),
-        },
-      }),
-      prisma.request.count({
-        where: {
-          status: "PENDING",
-          items: { none: {} },
-          ...(storeScope ? { store: storeScope } : {}),
-        },
-      }),
-    ]);
+    [orderBadge, tugasBadge, ticketBadge, requestBadge, staffFeedbackBadge] =
+      await Promise.all([
+        prisma.request.count({
+          where: {
+            status: { in: ["PENDING", "READY"] },
+            items: { some: {} },
+            ...(storeScope ? { store: storeScope } : {}),
+          },
+        }),
+        prisma.task.count({
+          where: {
+            status: { not: "DONE" },
+            ...(user.role === "SALES" ? { assignedToId: user.id } : {}),
+          },
+        }),
+        prisma.ticket.count({
+          where: {
+            status: { not: "CLOSED" },
+            ...(storeScope ? { store: storeScope } : {}),
+          },
+        }),
+        prisma.request.count({
+          where: {
+            status: "PENDING",
+            items: { none: {} },
+            ...(storeScope ? { store: storeScope } : {}),
+          },
+        }),
+        // Admin: feedback sales yang belum ditangani. Sales tidak dibadge
+        // untuk kirimannya sendiri (dia yang bikin, bukan tugas masuk).
+        user.role === "ADMIN"
+          ? prisma.staffFeedback.count({ where: { status: "PENDING" } })
+          : Promise.resolve(0),
+      ]);
   }
+  // SALES tidak punya menu Order sendiri (orderan = tab di dalam Tugas),
+  // jadi badge orderannya ikut menempel di Tugas — kalau tidak, angkanya
+  // menempel di menu yang tidak ada dan sales tidak pernah lihat.
+  const salesOrderInTugas = user.role === "SALES";
   const navBadges = {
-    "/order": orderBadge,
-    "/tugas": tugasBadge + ticketBadge,
-    "/request": requestBadge,
+    "/order": salesOrderInTugas ? 0 : orderBadge,
+    "/tugas": tugasBadge + ticketBadge + (salesOrderInTugas ? orderBadge : 0),
+    "/request": requestBadge + staffFeedbackBadge,
   };
   // OWNER: nav cuma 4 item — gaya marketplace (tab atas desktop, bottom
   // bar mobile) daripada sidebar/drawer yang kepenuhan buat menu sekecil itu.

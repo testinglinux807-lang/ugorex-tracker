@@ -7,6 +7,7 @@ import { VisitForm } from "@/components/VisitForm";
 import { CreateOwnerForm } from "@/components/AccountForms";
 import { StoreSalesForm } from "@/components/StoreSalesForm";
 import { KonterFilter } from "@/components/KonterFilter";
+import { AddKonterForm } from "@/components/AddKonterForm";
 import { waLink } from "@/lib/wa";
 import {
   Plus,
@@ -20,6 +21,7 @@ import {
   Trophy,
   Package,
   Users,
+  ChevronDown,
   X,
 } from "lucide-react";
 
@@ -33,13 +35,17 @@ const rupiah = (n: number) =>
 export default async function KonterPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; tambah?: string }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (user.role === "OWNER") redirect("/pos");
 
-  const q = ((await searchParams).q ?? "").trim();
+  const sp = await searchParams;
+  const q = (sp.q ?? "").trim();
+  // ?tambah=1 → panel "Tambah Konter" langsung kebuka (dipakai CTA di beranda
+  // & redirect dari /konter/baru yang sudah dilebur ke halaman ini)
+  const openTambah = sp.tambah === "1";
 
   const scope = user.role === "SALES" ? { salesId: user.id } : {};
 
@@ -167,6 +173,29 @@ export default async function KonterPage({
         </div>
       </div>
 
+      {/* Tambah konter — dulu halaman sendiri (/konter/baru), sekarang panel
+          lipat di sini biar sales nggak pindah-pindah menu */}
+      <details
+        id="tambah"
+        open={openTambah}
+        className="ug-acc group scroll-mt-4 overflow-hidden rounded-xl border border-neutral-200 bg-white"
+      >
+        <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-semibold text-neutral-900 [&::-webkit-details-marker]:hidden">
+          <Plus className="h-4 w-4 shrink-0" />
+          <span className="min-w-0 flex-1">
+            Tambah Konter
+            <span className="font-normal text-neutral-400">
+              {" "}
+              · daftarkan konter baru
+            </span>
+          </span>
+          <ChevronDown className="h-4 w-4 shrink-0 text-neutral-400 transition-transform group-open:rotate-180" />
+        </summary>
+        <div className="border-t border-neutral-100 p-4">
+          <AddKonterForm inline />
+        </div>
+      </details>
+
       {/* Search */}
       <form method="GET" action="/konter" className="flex items-center gap-2">
         <div className="relative flex-1">
@@ -201,7 +230,7 @@ export default async function KonterPage({
         <div className="rounded-xl border border-dashed border-neutral-300 bg-white p-8 text-center">
           <p className="text-neutral-500">Belum ada konter.</p>
           <Link
-            href="/konter/baru"
+            href="/konter?tambah=1#tambah"
             className="mt-3 inline-flex items-center gap-1 rounded-lg bg-neutral-900 px-4 py-2 text-sm font-semibold text-white"
           >
             <Plus className="h-4 w-4" />
@@ -386,7 +415,7 @@ export default async function KonterPage({
                     </a>
                   )}
 
-                  <details className="rounded-lg border border-neutral-200">
+                  <details className="ug-acc overflow-hidden rounded-lg border border-neutral-200">
                     <summary className="flex cursor-pointer items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-700">
                       <ClipboardPen className="h-4 w-4" />
                       Catat Kunjungan / Funnel
@@ -406,7 +435,7 @@ export default async function KonterPage({
 
                   {/* Admin: pasang / ganti sales penanggung jawab konter */}
                   {user.role === "ADMIN" && (
-                    <details className="rounded-lg border border-neutral-200">
+                    <details className="ug-acc overflow-hidden rounded-lg border border-neutral-200">
                       <summary className="flex cursor-pointer items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-700">
                         <Users className="h-4 w-4" />
                         Sales:{" "}
@@ -433,7 +462,7 @@ export default async function KonterPage({
                       <CheckCircle2 className="h-3.5 w-3.5" /> Akun owner aktif
                     </p>
                   ) : (
-                    <details className="rounded-lg border border-neutral-200">
+                    <details className="ug-acc overflow-hidden rounded-lg border border-neutral-200">
                       <summary className="flex cursor-pointer items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-700">
                         <UserPlus className="h-4 w-4" />
                         Buatkan Akun Owner

@@ -131,7 +131,7 @@ export default async function StoreDetailPage({
   }
 
   // ===== Log konter: riwayat penting (funnel) + penjualan =====
-  // Keluhan tidak dimasukkan sini karena sudah punya tab Tiket sendiri.
+  // Keluhan tidak dimasukkan sini karena sudah punya tab Keluhan sendiri.
   const funnelActs = stageLogs.map((log) => ({
     id: `log-${log.id}`,
     kind: "FUNNEL" as const,
@@ -228,11 +228,11 @@ export default async function StoreDetailPage({
 
   const tiketPanel = (
     <div className="flex h-full flex-col rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-      <h2 className="mb-3 font-semibold">Tiket ({store.tickets.length})</h2>
+      <h2 className="mb-3 font-semibold">Keluhan ({store.tickets.length})</h2>
       <Paginated
         perPage={4}
         className="space-y-2"
-        empty={<p className="text-sm text-neutral-400">Belum ada tiket.</p>}
+        empty={<p className="text-sm text-neutral-400">Belum ada keluhan.</p>}
         items={store.tickets.map((t) => {
           const link = waLink(
             store.ownerPhone,
@@ -362,14 +362,14 @@ export default async function StoreDetailPage({
         { key: "log", label: "Log" },
         { key: "statistik", label: "Statistik" },
         { key: "prospek", label: "Prospek", count: store.prospects.length },
-        { key: "tiket", label: "Tiket", count: store.tickets.length },
+        { key: "tiket", label: "Keluhan", count: store.tickets.length },
       ]
     : [
         { key: "kelola", label: "Kunjungan" },
         { key: "log", label: "Log" },
         { key: "prospek", label: "Prospek", count: store.prospects.length },
         { key: "statistik", label: "Statistik" },
-        { key: "tiket", label: "Tiket", count: store.tickets.length },
+        { key: "tiket", label: "Keluhan", count: store.tickets.length },
       ];
 
   const sections = isAdmin
@@ -441,7 +441,7 @@ export default async function StoreDetailPage({
           </p>
         </div>
         <div className="min-w-0 rounded-2xl border border-neutral-200 bg-white p-4">
-          <p className="text-xs text-neutral-500">Tiket</p>
+          <p className="text-xs text-neutral-500">Keluhan</p>
           <p className="truncate text-xl font-bold lg:text-2xl">
             {store.tickets.length}
           </p>

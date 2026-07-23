@@ -80,7 +80,10 @@ export default async function LacakPage({
     events.push({
       icon: I.PackageCheck,
       title: "Barang siap dipickup di gudang",
-      sub: [r.readyBy, r.pickupCode ? `kode jemput ${r.pickupCode}` : null]
+      sub: [
+        r.readyBy ? `oleh ${r.readyBy}` : null,
+        r.pickupCode ? `kode jemput ${r.pickupCode}` : null,
+      ]
         .filter(Boolean)
         .join(" · "),
       at: r.readyAt,
@@ -90,7 +93,7 @@ export default async function LacakPage({
     events.push({
       icon: I.Truck,
       title: "Kurir mengambil barang - dalam pengiriman",
-      sub: r.pickedUpBy,
+      sub: r.pickedUpBy ? `oleh ${r.pickedUpBy}` : null,
       at: r.pickedUpAt,
     });
   }
@@ -101,7 +104,11 @@ export default async function LacakPage({
         r.status === "RETURNED"
           ? "Pesanan dikembalikan (semua)"
           : "Sebagian barang dikembalikan",
-      sub: [r.returnReason, `nilai retur ${rupiah(r.returnedTotal)}`]
+      sub: [
+        r.returnedBy ? `oleh ${r.returnedBy}` : null,
+        r.returnReason,
+        `nilai retur ${rupiah(r.returnedTotal)}`,
+      ]
         .filter(Boolean)
         .join(" · "),
       at: r.returnedAt,
@@ -112,7 +119,9 @@ export default async function LacakPage({
     events.push({
       icon: I.PackageCheck,
       title: "Pesanan tiba & diterima toko",
-      sub: [r.deliveredBy, r.deliveryNote].filter(Boolean).join(" · "),
+      sub: [r.deliveredBy ? `oleh ${r.deliveredBy}` : null, r.deliveryNote]
+        .filter(Boolean)
+        .join(" · "),
       at: r.deliveredAt,
     });
   }
@@ -120,7 +129,16 @@ export default async function LacakPage({
     events.push({
       icon: I.XCircle,
       title: "Pesanan dibatalkan",
-      sub: [r.cancelledBy, r.cancelReason].filter(Boolean).join(" · "),
+      sub: [
+        r.cancelledBy === "Sistem"
+          ? "otomatis oleh sistem (tagihan kedaluwarsa)"
+          : r.cancelledBy
+            ? `oleh ${r.cancelledBy}`
+            : null,
+        r.cancelReason,
+      ]
+        .filter(Boolean)
+        .join(" · "),
       at: r.cancelledAt,
       tone: "danger",
     });
@@ -129,7 +147,9 @@ export default async function LacakPage({
     events.push({
       icon: I.BadgeCheck,
       title: "Dana dikembalikan",
-      sub: [r.refundedBy, r.refundNote].filter(Boolean).join(" · "),
+      sub: [r.refundedBy ? `ditandai ${r.refundedBy}` : null, r.refundNote]
+        .filter(Boolean)
+        .join(" · "),
       at: r.refundedAt,
     });
   }

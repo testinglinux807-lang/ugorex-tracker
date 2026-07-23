@@ -41,6 +41,8 @@ import {
   MapPin,
   ArrowRight,
   Truck,
+  Store,
+  ClipboardPen,
   PlusCircle,
   Navigation,
   Route,
@@ -439,6 +441,42 @@ export default async function BerandaPage() {
   const belumReorder = Math.max(0, konterCount - kpiNow.aktif);
   const targetHarian = Math.max(1, Math.ceil(belumReorder / sisaHari));
 
+  // Sales yang baru mulai: belum punya konter, atau punya konter tapi belum
+  // sekali pun mencatat kunjungan. Buat mereka hero "Tinggal X poin lagi buat
+  // naik level" cuma bikin ciut — angkanya nol semua dan gradenya jeblok
+  // padahal belum ngapa-ngapain. Ganti dengan panduan langkah pertama.
+  const firstName = user.name.split(" ")[0];
+  const isNewSales = konterCount === 0 || totalProspek === 0;
+  const onboardSteps = [
+    {
+      done: konterCount > 0,
+      icon: Store,
+      title: "Daftarkan konter",
+      desc: "Konter yang kamu pegang, sekalian titik lokasinya biar muncul di peta rute.",
+      href: "/konter?tambah=1#tambah",
+      cta: "Tambah konter",
+    },
+    {
+      done: totalProspek > 0,
+      icon: ClipboardPen,
+      title: "Catat kunjungan",
+      desc: "Pilih barang per kode & isi jumlah yang dititip (bayar setelah laku).",
+      href: "/konter",
+      cta: "Buka konter",
+    },
+    {
+      done: false,
+      icon: Truck,
+      title: "Antar restok",
+      desc: "Begitu toko pesan, paketnya jadi tugas kamu di menu Tugas.",
+      href: "/tugas",
+      cta: "Buka tugas",
+    },
+  ];
+  // Langkah aktif = yang pertama belum kelar; cuma ini yang di-highlight
+  // supaya jelas satu aksi berikutnya, bukan tiga tombol berebut perhatian.
+  const activeStep = onboardSteps.findIndex((s) => !s.done);
+
   // Penjualan untuk grafik & produk terlaris
   const salesPoints = sales.map((s) => ({
     ts: new Date(s.createdAt).getTime(),
@@ -635,7 +673,84 @@ export default async function BerandaPage() {
 
   return (
     <div className="space-y-6">
-      {/* ===== HERO COACH (dark): insight naik level + progres + ring grade ===== */}
+      {/* ===== HERO ===== */}
+      {isNewSales ? (
+        /* Sales baru: sambutan + 3 langkah pertama. Tanpa grade/level dulu —
+           angka nol & grade F di hari pertama bukan info, cuma bikin ciut. */
+        <section className="overflow-hidden rounded-2xl bg-neutral-900 p-5 text-white sm:p-6">
+          <span className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-brand/30 bg-brand/10 px-3 py-1 text-[11px] font-medium text-brand">
+            <Sparkles className="h-3 w-3" /> Coach Ugorex
+          </span>
+          <h1 className="text-xl font-bold leading-snug sm:text-2xl">
+            Selamat datang, {firstName}
+          </h1>
+          <p className="mt-2 max-w-xl text-sm text-neutral-400">
+            Isi dashboard ini - omzet, penghasilan, peta rute - kebuka sendiri
+            begitu kamu mulai jalan. Tiga langkah ini dulu:
+          </p>
+
+          <ol className="mt-4 grid gap-2 sm:grid-cols-3">
+            {onboardSteps.map((s, i) => {
+              const Icon = s.icon;
+              const active = i === activeStep;
+              return (
+                <li
+                  key={s.title}
+                  className={`rounded-xl border p-3.5 transition-colors ${
+                    active
+                      ? "border-brand/40 bg-brand/10"
+                      : "border-white/10 bg-white/5"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
+                        s.done
+                          ? "bg-brand text-neutral-900"
+                          : active
+                            ? "bg-brand text-neutral-900"
+                            : "bg-white/10 text-neutral-400"
+                      }`}
+                    >
+                      {s.done ? <CheckCircle2 className="h-3.5 w-3.5" /> : i + 1}
+                    </span>
+                    <p
+                      className={`text-sm font-semibold ${
+                        s.done ? "text-neutral-400 line-through" : "text-white"
+                      }`}
+                    >
+                      {s.title}
+                    </p>
+                    <Icon className="ml-auto h-4 w-4 shrink-0 text-neutral-500" />
+                  </div>
+                  <p className="mt-1.5 text-xs leading-snug text-neutral-400">
+                    {s.desc}
+                  </p>
+                  {!s.done && (
+                    <Link
+                      href={s.href}
+                      className={`mt-3 inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${
+                        active
+                          ? "bg-brand text-neutral-900 hover:opacity-90"
+                          : "border border-white/15 text-neutral-300 hover:bg-white/10"
+                      }`}
+                    >
+                      {s.cta}
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </Link>
+                  )}
+                </li>
+              );
+            })}
+          </ol>
+
+          <p className="mt-4 text-xs text-neutral-500">
+            Grade &amp; level mulai dihitung otomatis setelah ada aktivitas -
+            santai, sekarang belum dinilai.
+          </p>
+        </section>
+      ) : (
+      /* HERO COACH (dark): insight naik level + progres + ring grade */
       <section className="overflow-hidden rounded-2xl bg-neutral-900 p-5 text-white sm:p-6">
         <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
           {/* Kiri: coach insight + fokus + progres level.
@@ -761,6 +876,7 @@ export default async function BerandaPage() {
           </div>
         </div>
       </section>
+      )}
 
       {/* ===== Ringkasan: 6 kartu seragam (omzet, penghasilan, konter,
           prospek, konversi, stok) — 3 kolom di desktop, 2 di HP. Ditaruh
@@ -1170,7 +1286,7 @@ export default async function BerandaPage() {
             Antar Restok{antarCount > 0 ? ` (${antarCount})` : ""}
           </Link>
           <Link
-            href="/konter/baru"
+            href="/konter?tambah=1#tambah"
             className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-neutral-300 py-2.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-50"
           >
             <PlusCircle className="h-4 w-4" />

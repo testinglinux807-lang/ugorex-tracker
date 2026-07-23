@@ -63,6 +63,7 @@ model User {
   createdBy    User?    @relation("UserCreator", fields: [createdById], references: [id])
   createdUsers User[]   @relation("UserCreator")
   createdRequests Request[] @relation("RequestCreator")
+  staffFeedbacks  StaffFeedback[] @relation("StaffFeedbackCreator")
   pushSubscriptions PushSubscription[]
   notifications     Notification[]
 
@@ -475,6 +476,32 @@ model Ticket {
   createdBy   User?    @relation("TicketCreator", fields: [createdById], references: [id])
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+// Feedback SALES ke ADMIN (menu Feedback, tab "Ke Admin"): keluhan, saran,
+// atau pengajuan barang soal kerjaannya sendiri — BUKAN atas nama konter.
+// Yang atas nama konter tetap lewat Ticket (keluhan) / Request (saran &
+// ajukan barang) supaya masuk inbox konter yang sudah ada.
+model StaffFeedback {
+  id      String @id @default(cuid())
+  kind    String // KELUHAN | SARAN | BARANG
+  subject String
+  message String
+  status  String @default("PENDING") // PENDING | COMPLETED
+
+  createdById String
+  createdBy   User   @relation("StaffFeedbackCreator", fields: [createdById], references: [id], onDelete: Cascade)
+
+  // Balasan admin — pengirimnya dikabari (in-app + WA + push)
+  response    String?
+  respondedBy String? // snapshot "Nama (Admin)"
+  respondedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, createdAt])
+  @@index([createdById, createdAt])
 }
 
 // Koreksi sisa stok oleh owner toko (angka fisik beda dengan catatan).

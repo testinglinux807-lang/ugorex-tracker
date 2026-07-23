@@ -28,7 +28,8 @@ import {
   getGudangRadiusKm,
   assignForOrder,
 } from "@/lib/gudang-assign";
-import { Info, Printer, ShoppingBag } from "lucide-react";
+import { LoadingLink } from "@/components/LoadingLink";
+import { ArrowLeft, Info, Printer, ShoppingBag } from "lucide-react";
 
 const rupiah = (n: number) =>
   new Intl.NumberFormat("id-ID", {
@@ -546,6 +547,19 @@ export default async function OrderPage({
 
   return (
     <div className="space-y-5">
+      {/* Sales masuk ke sini dari Tugas > Antar Barang (Order bukan menu
+          sendiri untuk sales), jadi kasih jalan pulang yang jelas — kalau
+          tidak, tidak ada item nav yang menyala di halaman ini. */}
+      {user.role === "SALES" && (
+        <LoadingLink
+          href="/tugas"
+          loadingText="Membuka Tugas…"
+          icon={<ArrowLeft className="h-4 w-4" />}
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-600 hover:text-neutral-900"
+        >
+          Kembali ke Tugas
+        </LoadingLink>
+      )}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">

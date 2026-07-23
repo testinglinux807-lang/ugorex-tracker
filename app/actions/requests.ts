@@ -18,6 +18,7 @@ import {
   type ChargeItem,
 } from "@/lib/midtrans";
 import { paymentFee } from "@/lib/payment-fee";
+import { wibDayStart } from "@/lib/date";
 import { findUsableVoucher, consumeVoucher } from "@/lib/voucher";
 import {
   loadGudangLocs,
@@ -613,51 +614,9 @@ export async function markOrderPaidCash(id: string) {
   return { ok: true };
 }
 
-// Owner mengajukan request bebas (mis. minta dikunjungi). Sales juga bisa —
-// kadang konter menyampaikan keluhan langsung ke sales, jadi sales yang
-// mencatatkan atas nama konter yang dia pegang (pilih konter di form).
-export async function createRequest(formData: FormData) {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-
-  let storeId: string;
-  if (user.role === "OWNER") {
-    if (!user.ownedStore) {
-      return { error: "Akun ini belum terhubung ke toko." };
-    }
-    storeId = user.ownedStore.id;
-  } else if (user.role === "SALES") {
-    storeId = String(formData.get("storeId") ?? "");
-    if (!storeId) return { error: "Pilih konter dulu." };
-    const store = await prisma.store.findUnique({
-      where: { id: storeId },
-      select: { salesId: true },
-    });
-    if (!store || store.salesId !== user.id) {
-      return { error: "Konter ini bukan tanggung jawabmu." };
-    }
-  } else {
-    return { error: "Hanya owner toko atau sales yang bisa mengajukan request." };
-  }
-
-  const subject = String(formData.get("subject") ?? "").trim();
-  const message = String(formData.get("message") ?? "").trim();
-  if (!subject || !message) {
-    return { error: "Judul dan isi request wajib diisi." };
-  }
-
-  await prisma.request.create({
-    data: {
-      storeId,
-      subject,
-      message,
-      createdById: user.id,
-    },
-  });
-  revalidatePath("/request");
-  revalidatePath("/dashboard");
-  return { ok: true };
-}
+// Pembuatan feedback bebas konter (keluhan/saran/ajukan barang) ada di
+// app/actions/tickets.ts → createFeedback: satu pintu untuk owner (menu
+// Feedback) dan sales (menu Feedback, catat atas nama konter).
 
 // Sales (pemegang toko) atau admin membalas request bebas — balasan tampil
 // di kartu request dan pembuatnya dikabari (in-app + WA + push).
@@ -698,6 +657,90 @@ export async function respondRequest(id: string, formData: FormData) {
   }
   revalidatePath("/request");
   return { ok: true };
+}
+
+// ===== Tugas otomatis "jemput & antar paket" =====
+// Notifikasi (push/WA) itu usaha terbaik saja — izinnya bisa ditolak, HP
+// bisa mati, gateway bisa down. Kalau sales cuma mengandalkan notif, paket
+// bisa nyangkut di gudang tanpa ada yang tahu. Jadi begitu gudang menandai
+// barang siap dipickup, kerjaannya dicatat sebagai TUGAS beneran: muncul di
+// Tugas > Dari Admin, ikut hitungan badge, dan punya tenggat. Tugas ini
+// ditutup sendiri saat paket sampai/diretur, dan dihapus kalau order batal.
+
+// Penanda order di judul tugas — dipakai buat mencari tugasnya lagi nanti
+// (pola yang sama dengan log "Restok masuk dari order #...").
+const orderTag = (id: string) => `#${id.slice(-8).toUpperCase()}`;
+
+// Tenggat antar: akhir hari ini kalau barang siap sebelum jam 12 siang WIB,
+// selebihnya akhir besok — biar paket yang baru siap sore tidak langsung
+// dicap telat (tugas ikut menentukan grade sales, lihat lib/task-grade.ts).
+function deliveryDueDate(now: Date = new Date()): Date {
+  const dayStart = wibDayStart(now);
+  const hoursIn = (now.getTime() - dayStart.getTime()) / 3_600_000;
+  const days = hoursIn < 12 ? 1 : 2;
+  return new Date(dayStart.getTime() + days * 86_400_000 - 1);
+}
+
+async function openDeliveryTask(orderId: string) {
+  const r = await prisma.request.findUnique({
+    where: { id: orderId },
+    select: {
+      id: true,
+      resiNo: true,
+      pickupCode: true,
+      store: { select: { id: true, name: true, salesId: true } },
+    },
+  });
+  // Konter tanpa sales pemegang: tidak ada yang bisa ditugaskan
+  if (!r?.store.salesId) return;
+
+  const tag = orderTag(r.id);
+  // Anti-dobel: gudang bisa saja menandai siap dipickup dua kali (mis. order
+  // dibuka lagi lalu diproses ulang).
+  const exists = await prisma.task.findFirst({
+    where: { storeId: r.store.id, title: { contains: tag } },
+    select: { id: true },
+  });
+  if (exists) return;
+
+  await prisma.task.create({
+    data: {
+      title: `Antar paket ${tag} ke ${r.store.name}`,
+      note: [
+        "Jemput barang di gudang, lalu antar ke toko.",
+        r.resiNo ? `Resi ${r.resiNo}.` : null,
+        r.pickupCode ? `Kode jemput ${r.pickupCode}.` : null,
+        "Selesai otomatis setelah kirim report pengiriman / toko konfirmasi terima.",
+      ]
+        .filter(Boolean)
+        .join(" "),
+      priority: "HIGH",
+      dueDate: deliveryDueDate(),
+      assignedToId: r.store.salesId,
+      storeId: r.store.id,
+    },
+  });
+  // Tugas dibuat di after() — setelah revalidate alur order jalan. Dorong
+  // sekali lagi supaya tab Tugas yang lagi kebuka langsung ikut nampil.
+  publishRealtime("task");
+}
+
+// Tutup tugas antar milik satu order. `remove` = hapus (order batal / dibuka
+// lagi), bukan ditandai selesai — biar tidak dihitung sebagai tugas beres.
+async function closeDeliveryTask(
+  orderId: string,
+  storeId: string,
+  remove = false,
+) {
+  const where = { storeId, title: { contains: orderTag(orderId) } };
+  if (remove) {
+    await prisma.task.deleteMany({ where });
+    return;
+  }
+  await prisma.task.updateMany({
+    where: { ...where, status: { not: "DONE" } },
+    data: { status: "DONE", completedAt: new Date() },
+  });
 }
 
 // ===== Alur status order restok (diagram "STATUS order") =====
@@ -769,6 +812,9 @@ export async function markOrderReady(id: string) {
 
   // Kabari sales pemegang toko: barang siap dijemput di gudang
   after(() => notifyOrder(id, "ready"));
+  // Kerjaannya juga dicatat sebagai tugas — sales tidak perlu bergantung
+  // pada notifikasi sampai atau tidak.
+  after(() => openDeliveryTask(id));
   revalidateOrderPaths(req.storeId);
   return { ok: true };
 }
@@ -849,6 +895,7 @@ export async function acceptOrder(id: string) {
   after(() => logRestockArrival(req));
   // Kabari sales/admin: toko sudah mengonfirmasi terima barang
   after(() => notifyOrder(id, "accepted"));
+  after(() => closeDeliveryTask(id, req.storeId));
   revalidateOrderPaths(req.storeId);
   return { ok: true };
 }
@@ -971,6 +1018,7 @@ export async function returnOrder(id: string, formData: FormData) {
   }
   // Kabari sales/admin: toko menolak semua/sebagian barang
   after(() => notifyOrder(id, "returned"));
+  after(() => closeDeliveryTask(id, req.storeId));
   revalidateOrderPaths(req.storeId);
   return { ok: true };
 }
@@ -1094,6 +1142,12 @@ export async function updateRequestStatus(id: string, status: string) {
   // Riwayat funnel ikut mencatat barang yang masuk
   if (fulfilling) after(() => logRestockArrival(req));
 
+  // Tugas antar ikut alurnya: selesai kalau ordernya diselesaikan, dihapus
+  // kalau dibuka lagi (order mulai ulang dari packing — tugas baru dibuat
+  // lagi begitu gudang menandai siap dipickup).
+  if (fulfilling) after(() => closeDeliveryTask(id, req.storeId));
+  if (reopening) after(() => closeDeliveryTask(id, req.storeId, true));
+
   // Owner dikabari begitu barangnya mulai dikirim
   if (status === "SHIPPED" && req.status !== "SHIPPED" && req.items.length > 0) {
     after(() => notifyOrder(id, "shipped"));
@@ -1152,6 +1206,7 @@ export async function completeOrderWithReport(id: string, formData: FormData) {
 
   // Kabari owner: barangnya sudah sampai (WA + push kalau aktif)
   after(() => notifyOrder(id, "delivered"));
+  after(() => closeDeliveryTask(id, req.storeId));
 
   revalidateOrderPaths(req.storeId);
   return { ok: true };
@@ -1252,6 +1307,9 @@ export async function cancelOrder(id: string, formData: FormData) {
   if (req.stockReserved) await restoreCentralStock(req.items);
 
   after(() => notifyOrder(id, "cancelled"));
+  // Order batal → tugasnya dihapus, bukan ditandai selesai (jangan ikut
+  // menaikkan grade untuk pekerjaan yang tidak pernah dikerjakan).
+  after(() => closeDeliveryTask(id, req.storeId, true));
   revalidateOrderPaths(req.storeId);
   return { ok: true };
 }

@@ -11,10 +11,8 @@ import {
   Filter,
   Database,
   Store,
-  PlusCircle,
   ShoppingCart,
   MessagesSquare,
-  Inbox,
   ListTodo,
   ShoppingBag,
   Users,
@@ -27,7 +25,15 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-type Item = { href: string; label: string; icon: LucideIcon };
+type Item = {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+  // Halaman lain yang "milik" menu ini — dipakai supaya menu tetap menyala
+  // saat user berada di halaman yang tidak punya item nav sendiri
+  // (mis. sales buka /order dari dalam Tugas).
+  alias?: string[];
+};
 
 const NAV: Record<string, Item[]> = {
   ADMIN: [
@@ -41,15 +47,19 @@ const NAV: Record<string, Item[]> = {
     { href: "/keuangan", label: "Keuangan", icon: Wallet },
     { href: "/payroll", label: "Payroll", icon: Coins },
     { href: "/data", label: "Data", icon: Database },
-    { href: "/request", label: "Request", icon: Inbox },
+    // Satu pintu: feedback konter (keluhan/saran/ajukan barang) + feedback
+    // sales ke admin. URL-nya masih /request (peninggalan nama lama).
+    { href: "/request", label: "Feedback", icon: MessagesSquare },
   ],
   SALES: [
     { href: "/beranda", label: "Dashboard", icon: LayoutDashboard },
     { href: "/konter", label: "Konter", icon: Store },
-    { href: "/tugas", label: "Tugas", icon: ListTodo },
-    { href: "/order", label: "Order", icon: ShoppingBag },
-    { href: "/konter/baru", label: "Tambah", icon: PlusCircle },
-    { href: "/request", label: "Request", icon: Inbox },
+    // Order bukan menu sendiri lagi: jemput & antar barang itu bagian dari
+    // kerjaan harian sales, jadi tempatnya di Tugas > tab Antar Barang
+    // (halaman /order tetap ada, dibuka dari tab itu buat rincian & riwayat).
+    { href: "/tugas", label: "Tugas", icon: ListTodo, alias: ["/order"] },
+    // Tambah konter tidak lagi jadi menu sendiri — formnya ada di /konter
+    { href: "/request", label: "Feedback", icon: MessagesSquare },
   ],
   
   OWNER: [
@@ -69,15 +79,21 @@ function useItems(role: string) {
   return NAV[role] ?? NAV.ADMIN;
 }
 
-// href paling spesifik yang cocok dengan pathname
+// Menu yang menyala: cocokkan pathname ke href ATAU alias-nya, ambil yang
+// paling spesifik (path terpanjang) supaya /konter/baru kalah dari /konter.
 function activeHref(pathname: string, items: Item[]) {
   let best = "";
+  let bestLen = -1;
   for (const it of items) {
-    if (
-      (pathname === it.href || pathname.startsWith(it.href + "/")) &&
-      it.href.length > best.length
-    )
-      best = it.href;
+    for (const path of [it.href, ...(it.alias ?? [])]) {
+      if (
+        (pathname === path || pathname.startsWith(path + "/")) &&
+        path.length > bestLen
+      ) {
+        best = it.href;
+        bestLen = path.length;
+      }
+    }
   }
   return best;
 }

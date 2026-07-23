@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
-import { sendWa } from "@/lib/wa-notify";
+import { sendWa, isWaEnabled } from "@/lib/wa-notify";
 import { waNumber } from "@/lib/wa";
 import { parseNik, parseHomePoint } from "@/lib/user-fields";
 
@@ -52,7 +52,7 @@ export async function requestPhoneOtp(formData: FormData) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  if (!process.env.FONNTE_TOKEN) {
+  if (!isWaEnabled()) {
     return { error: "Pengiriman WA belum aktif (FONNTE_TOKEN kosong)." };
   }
 
@@ -82,6 +82,24 @@ export async function requestPhoneOtp(formData: FormData) {
   }
 
   const code = String(randomInt(100000, 1000000));
+  // Kirim dulu, simpan belakangan — sama seperti reset password: kalau
+  // Fonnte menolak, jangan bilang "kode terkirim" dan jangan kunci rate
+  // limit 60 detik untuk percobaan berikutnya.
+  const sent = await sendWa(
+    newPhone,
+    [
+      `Kode verifikasi Ugorex: ${code}`,
+      ``,
+      `Kode ini untuk mengganti nomor HP akun ${user.name}.`,
+      `Berlaku 5 menit - jangan bagikan ke siapa pun.`,
+    ].join("\n"),
+  );
+  if (!sent) {
+    return {
+      error: "Gagal mengirim kode ke WhatsApp. Pastikan nomor barunya aktif.",
+    };
+  }
+
   await prisma.user.update({
     where: { id: user.id },
     data: {
@@ -92,16 +110,6 @@ export async function requestPhoneOtp(formData: FormData) {
       otpSentAt: new Date(),
     },
   });
-
-  await sendWa(
-    newPhone,
-    [
-      `Kode verifikasi Ugorex: ${code}`,
-      ``,
-      `Kode ini untuk mengganti nomor HP akun ${user.name}.`,
-      `Berlaku 5 menit - jangan bagikan ke siapa pun.`,
-    ].join("\n"),
-  );
 
   return { ok: true, target: newPhone };
 }

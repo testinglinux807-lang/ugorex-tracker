@@ -10,6 +10,7 @@ import {
   ArrowRight,
   Inbox,
   MessageSquareReply,
+  UserPen,
 } from "lucide-react";
 
 // Menu Feedback owner — satu pintu untuk keluhan (tiket), saran, dan
@@ -30,12 +31,17 @@ export default async function FeedbackPage() {
 
   const storeId = user.ownedStore.id;
   const [tickets, requests, mySales, myRating] = await Promise.all([
+    // createdBy ikut diambil: feedback konter ini bisa juga DICATAT SALES
+    // (owner cerita langsung ke sales, sales input di menu Feedback-nya).
+    // Tanpa penanda itu, owner bingung lihat catatan yang bukan dia tulis.
     prisma.ticket.findMany({
       where: { storeId },
+      include: { createdBy: { select: { id: true, name: true, role: true } } },
       orderBy: { createdAt: "desc" },
     }),
     prisma.request.findMany({
       where: { storeId, items: { none: {} } },
+      include: { createdBy: { select: { id: true, name: true, role: true } } },
       orderBy: { createdAt: "desc" },
     }),
     // Sales pemegang konter + rating yang pernah diberikan owner ini —
@@ -49,6 +55,16 @@ export default async function FeedbackPage() {
     prisma.salesRating.findUnique({ where: { storeId } }),
   ]);
 
+  // Siapa yang mencatat, kalau BUKAN owner sendiri (sales/admin yang input
+  // atas nama konter ini) — null = ditulis owner lewat form di halaman ini.
+  const ROLE_LABEL: Record<string, string> = { SALES: "Sales", ADMIN: "Admin" };
+  const dicatatOleh = (
+    by: { id: string; name: string; role: string } | null,
+  ): string | null =>
+    by && by.id !== user.id
+      ? `${by.name}${ROLE_LABEL[by.role] ? ` (${ROLE_LABEL[by.role]})` : ""}`
+      : null;
+
   // Gabungkan tiket + request jadi satu riwayat, terbaru duluan
   type Item = {
     id: string;
@@ -60,6 +76,7 @@ export default async function FeedbackPage() {
     response: string | null;
     respondedBy: string | null;
     respondedAt: Date | null;
+    recordedBy: string | null;
     createdAt: Date;
   };
   const items: Item[] = [
@@ -84,6 +101,7 @@ export default async function FeedbackPage() {
         response: null,
         respondedBy: null,
         respondedAt: null,
+        recordedBy: dicatatOleh(t.createdBy),
         createdAt: t.createdAt,
       }),
     ),
@@ -102,6 +120,7 @@ export default async function FeedbackPage() {
         response: r.response,
         respondedBy: r.respondedBy,
         respondedAt: r.respondedAt,
+        recordedBy: dicatatOleh(r.createdBy),
         createdAt: r.createdAt,
       };
     }),
@@ -203,6 +222,12 @@ export default async function FeedbackPage() {
                       >
                         {it.kind}
                       </span>
+                      {it.recordedBy && (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-neutral-200 bg-neutral-50 px-2 py-0.5 text-[10px] font-medium text-neutral-500">
+                          <UserPen className="h-3 w-3" />
+                          Dicatat {it.recordedBy}
+                        </span>
+                      )}
                       {it.createdAt.toLocaleDateString("id-ID", {
                         day: "numeric",
                         month: "short",

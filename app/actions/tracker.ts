@@ -535,6 +535,8 @@ export async function createStore(formData: FormData) {
   });
   revalidatePath("/data");
   revalidatePath("/prospects");
+  revalidatePath("/konter");
+  revalidatePath("/beranda");
 }
 
 // Buat prospek baru: barang X di konter Y

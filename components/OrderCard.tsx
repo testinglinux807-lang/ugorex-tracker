@@ -397,15 +397,20 @@ export function OrderCard({
               <span className="font-semibold">{rupiah(r.returnedTotal)}</span>
               {" - barang kembali ke stok pusat"}
             </p>
-            <p className="text-red-400">
-              {r.returnedBy ?? "-"}
-              {r.returnedAt
-                ? ` · ${fmtDate(r.returnedAt, {
+            <p className="text-red-600">
+              Diretur oleh {r.returnedBy ?? "-"}
+              {r.returnedAt && (
+                <span className="text-red-400">
+                  {" · "}
+                  {fmtDateTime(r.returnedAt, {
                     day: "numeric",
                     month: "short",
                     year: "numeric",
-                  })}`
-                : ""}
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
+              )}
             </p>
             {r.paymentStatus === "PAID" &&
               (r.refundedAt ? (
@@ -418,7 +423,7 @@ export function OrderCard({
                     <p className="text-neutral-600">{r.refundNote}</p>
                   )}
                   <p className="text-neutral-400">
-                    {r.refundedBy ?? "-"} ·{" "}
+                    Ditandai oleh {r.refundedBy ?? "-"} ·{" "}
                     {fmtDate(r.refundedAt, {
                       day: "numeric",
                       month: "short",
@@ -445,15 +450,24 @@ export function OrderCard({
             {r.cancelReason && (
               <p className="text-red-600">Alasan: {r.cancelReason}</p>
             )}
-            <p className="text-red-400">
-              {r.cancelledBy ?? "-"}
-              {r.cancelledAt
-                ? ` · ${fmtDate(r.cancelledAt, {
+            {/* "Sistem" = sapuan otomatis order online yang tagihannya
+                kedaluwarsa (sweepExpiredOrders), bukan dibatalkan orang. */}
+            <p className="text-red-600">
+              {r.cancelledBy === "Sistem"
+                ? "Dibatalkan otomatis oleh sistem"
+                : `Dibatalkan oleh ${r.cancelledBy ?? "-"}`}
+              {r.cancelledAt && (
+                <span className="text-red-400">
+                  {" · "}
+                  {fmtDateTime(r.cancelledAt, {
                     day: "numeric",
                     month: "short",
                     year: "numeric",
-                  })}`
-                : ""}
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
+              )}
             </p>
             {r.paymentStatus === "PAID" &&
               (r.refundedAt ? (
@@ -466,7 +480,7 @@ export function OrderCard({
                     <p className="text-neutral-600">{r.refundNote}</p>
                   )}
                   <p className="text-neutral-400">
-                    {r.refundedBy ?? "-"} ·{" "}
+                    Ditandai oleh {r.refundedBy ?? "-"} ·{" "}
                     {fmtDate(r.refundedAt, {
                       day: "numeric",
                       month: "short",

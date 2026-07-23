@@ -21,12 +21,30 @@ const rupiah = (n: number) =>
     maximumFractionDigits: 0,
   }).format(n);
 
+// Token Fonnte yang benar-benar terpakai. Di-trim: nilai .env yang cuma
+// berisi spasi/baris baru (mis. FONNTE_TOKEN=" ... " yang kepencet enter)
+// itu TRUTHY, jadi tanpa trim semua guard "WA aktif?" lolos padahal
+// kirimannya pasti ditolak Fonnte — pesan seolah terkirim, kode OTP tidak
+// pernah sampai.
+function fonnteToken(): string | null {
+  const t = process.env.FONNTE_TOKEN?.trim();
+  return t ? t : null;
+}
+
+// Apakah pengiriman WA aktif (token terisi) — dipakai untuk memutuskan
+// perlu/tidaknya mengantre pesan WA.
+export function isWaEnabled(): boolean {
+  return fonnteToken() !== null;
+}
+
 // Kirim satu pesan WA. Tidak pernah melempar error — notifikasi gagal
-// tidak boleh menggagalkan alur utama.
-export async function sendWa(phone: string, message: string) {
-  const token = process.env.FONNTE_TOKEN;
+// tidak boleh menggagalkan alur utama. Return true HANYA kalau Fonnte
+// menerima pesannya; alur yang bergantung pada pesan sampai (OTP) wajib
+// mengecek nilai baliknya.
+export async function sendWa(phone: string, message: string): Promise<boolean> {
+  const token = fonnteToken();
   const target = waNumber(phone);
-  if (!token || !target) return;
+  if (!token || !target) return false;
   try {
     const res = await fetch("https://api.fonnte.com/send", {
       method: "POST",
@@ -34,9 +52,26 @@ export async function sendWa(phone: string, message: string) {
       body: JSON.stringify({ target, message }),
       cache: "no-store",
     });
-    if (!res.ok) console.error("Fonnte error:", res.status, await res.text());
+    const body = await res.text();
+    if (!res.ok) {
+      console.error("Fonnte error:", res.status, body);
+      return false;
+    }
+    // Fonnte membalas 200 walau gagal (token salah, kuota habis, device
+    // disconnect) — status sebenarnya ada di body: {"status":false,...}
+    try {
+      const json = JSON.parse(body) as { status?: boolean; reason?: string };
+      if (json.status === false) {
+        console.error("Fonnte tolak kiriman:", json.reason ?? body);
+        return false;
+      }
+    } catch {
+      // Body bukan JSON — anggap terkirim, biarkan log di bawah
+    }
+    return true;
   } catch (err) {
     console.error("Fonnte unreachable:", err);
+    return false;
   }
 }
 
@@ -51,7 +86,7 @@ export async function notifyNewTask(input: {
   dueDate: Date | null;
   storeId: string | null;
 }) {
-  const waEnabled = !!process.env.FONNTE_TOKEN;
+  const waEnabled = isWaEnabled();
   const pushEnabled =
     !!process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY &&
     !!process.env.VAPID_PRIVATE_KEY;
@@ -156,7 +191,7 @@ export async function notifyStockEmpty(storeId: string, productIds: string[]) {
     select: { id: true, name: true, code: true },
   });
 
-  const waEnabled = !!process.env.FONNTE_TOKEN;
+  const waEnabled = isWaEnabled();
   const pushEnabled =
     !!process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY &&
     !!process.env.VAPID_PRIVATE_KEY;
@@ -257,7 +292,7 @@ export async function notifyRequestReply(requestId: string) {
       },
     }),
   ];
-  if (process.env.FONNTE_TOKEN && req.createdBy.phone) {
+  if (isWaEnabled() && req.createdBy.phone) {
     jobs.push(sendWa(req.createdBy.phone, message));
   }
   if (
@@ -265,6 +300,53 @@ export async function notifyRequestReply(requestId: string) {
     process.env.VAPID_PRIVATE_KEY
   ) {
     jobs.push(sendPushToUsers([req.createdBy.id], push));
+  }
+  await Promise.allSettled(jobs);
+}
+
+// Kabari sales bahwa feedback-nya ke admin sudah dibalas (menu Feedback,
+// tab "Ke Admin"). Channel sama dengan balasan request konter.
+export async function notifyStaffFeedbackReply(id: string) {
+  const fb = await prisma.staffFeedback.findUnique({
+    where: { id },
+    include: { createdBy: { select: { id: true, phone: true } } },
+  });
+  if (!fb || !fb.response) return;
+
+  const push = {
+    title: `Feedback "${fb.subject}" dibalas admin`,
+    body:
+      fb.response.length > 120 ? `${fb.response.slice(0, 117)}…` : fb.response,
+    url: "/request",
+  };
+
+  const appUrl = process.env.APP_URL?.replace(/\/$/, "");
+  const message = [
+    `Feedback "${fb.subject}" sudah dibalas`,
+    ``,
+    `Balasan dari ${fb.respondedBy ?? "admin Ugorex"}:`,
+    fb.response,
+    ...(appUrl ? [``, `Lihat: ${appUrl}/request`] : []),
+  ].join("\n");
+
+  const jobs: Promise<unknown>[] = [
+    prisma.notification.create({
+      data: {
+        userId: fb.createdBy.id,
+        title: push.title,
+        body: push.body,
+        url: push.url,
+      },
+    }),
+  ];
+  if (isWaEnabled() && fb.createdBy.phone) {
+    jobs.push(sendWa(fb.createdBy.phone, message));
+  }
+  if (
+    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY &&
+    process.env.VAPID_PRIVATE_KEY
+  ) {
+    jobs.push(sendPushToUsers([fb.createdBy.id], push));
   }
   await Promise.allSettled(jobs);
 }
@@ -309,7 +391,7 @@ export async function notifyCommissionPayout(
       },
     }),
   ];
-  if (process.env.FONNTE_TOKEN && sales.phone) {
+  if (isWaEnabled() && sales.phone) {
     jobs.push(sendWa(sales.phone, message));
   }
   if (
@@ -359,7 +441,7 @@ export async function notifyKpiBonusPayout(
       },
     }),
   ];
-  if (process.env.FONNTE_TOKEN && sales.phone) {
+  if (isWaEnabled() && sales.phone) {
     jobs.push(sendWa(sales.phone, message));
   }
   if (
@@ -409,7 +491,7 @@ export async function notifyGudangSalaryPayout(
       },
     }),
   ];
-  if (process.env.FONNTE_TOKEN && emp.phone) {
+  if (isWaEnabled() && emp.phone) {
     jobs.push(sendWa(emp.phone, message));
   }
   if (
@@ -443,7 +525,7 @@ export async function notifyOrder(
     | "accepted"
     | "returned",
 ) {
-  const waEnabled = !!process.env.FONNTE_TOKEN;
+  const waEnabled = isWaEnabled();
   const pushEnabled =
     !!process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY &&
     !!process.env.VAPID_PRIVATE_KEY;

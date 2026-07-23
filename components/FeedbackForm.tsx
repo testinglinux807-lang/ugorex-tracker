@@ -18,7 +18,11 @@ const KATEGORI = [
   },
 ] as const;
 
-export function FeedbackForm() {
+// Konter pilihan untuk versi sales — sales mencatatkan feedback ATAS NAMA
+// konter yang dia pegang (konter sering nyampein langsung, bukan lewat app).
+export type FeedbackStoreOption = { id: string; name: string };
+
+export function FeedbackForm({ stores }: { stores?: FeedbackStoreOption[] }) {
   const [state, formAction, pending] = useActionState(
     async (_prev: unknown, fd: FormData) => (await createFeedback(fd)) ?? null,
     null,
@@ -26,16 +30,53 @@ export function FeedbackForm() {
   const [kategori, setKategori] =
     useState<(typeof KATEGORI)[number]["value"]>("KELUHAN");
   const active = KATEGORI.find((k) => k.value === kategori)!;
+  const forSales = !!stores;
 
   return (
     <div className="space-y-3 rounded-2xl border border-neutral-200 bg-white p-5">
-      <h2 className="font-semibold">Kirim Feedback</h2>
+      <h2 className="font-semibold">
+        {forSales ? "Catat Feedback Konter" : "Kirim Feedback"}
+      </h2>
       <p className="text-xs text-neutral-400">
-        Keluhan, saran, atau ajukan barang - semua dari satu pintu, langsung
-        sampai ke sales &amp; admin.
+        {forSales
+          ? "Keluhan, saran, atau pengajuan barang yang disampaikan konter langsung ke kamu - dicatat atas nama konternya."
+          : "Keluhan, saran, atau ajukan barang - semua dari satu pintu, langsung sampai ke sales & admin."}
       </p>
+      {forSales && (
+        <p className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-500">
+          <span className="font-semibold text-neutral-900">Keluhan</span> masuk
+          ke inbox Keluhan (menu Tugas) dan ikut tampil di tab Keluhan detail
+          konter - satu catatan, bukan dobel.{" "}
+          <span className="font-semibold text-neutral-900">Saran</span> &{" "}
+          <span className="font-semibold text-neutral-900">Ajukan barang</span>{" "}
+          ditangani di halaman ini.
+        </p>
+      )}
 
       <form action={formAction} className="space-y-3">
+        {stores && (
+          <div>
+            <label className="mb-1 block text-sm font-medium text-neutral-700">
+              Konter <span className="text-neutral-900">*</span>
+            </label>
+            <select
+              name="storeId"
+              required
+              defaultValue=""
+              className={inputCls}
+            >
+              <option value="" disabled>
+                Pilih konter…
+              </option>
+              {stores.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         <div>
           <label className="mb-1 block text-sm font-medium text-neutral-700">
             Kategori <span className="text-neutral-900">*</span>
@@ -88,7 +129,9 @@ export function FeedbackForm() {
         )}
         {state?.ok && (
           <p className="rounded-lg border border-neutral-900 bg-neutral-900 px-3 py-2 text-sm text-white">
-            Feedback terkirim ke sales &amp; admin.
+            {forSales
+              ? "Feedback konter tercatat, sudah masuk ke admin."
+              : "Feedback terkirim ke sales & admin."}
           </p>
         )}
 
@@ -97,7 +140,13 @@ export function FeedbackForm() {
           disabled={pending}
           className="w-full rounded-lg bg-neutral-900 py-2.5 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-60"
         >
-          {pending ? <PendingLabel text="Mengirim…" /> : "Kirim Feedback"}
+          {pending ? (
+            <PendingLabel text="Mengirim…" />
+          ) : forSales ? (
+            "Catat Feedback"
+          ) : (
+            "Kirim Feedback"
+          )}
         </button>
       </form>
     </div>

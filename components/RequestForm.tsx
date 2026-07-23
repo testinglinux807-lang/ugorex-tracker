@@ -2,7 +2,7 @@
 
 import { useActionState, useState, useTransition } from "react";
 import Script from "next/script";
-import { createRequest, createRestockRequest } from "@/app/actions/requests";
+import { createRestockRequest } from "@/app/actions/requests";
 import { X, Minus, Plus, CheckCircle2 } from "lucide-react";
 import { PendingLabel } from "@/components/SubmitButton";
 import { CodePicker, type RestockCode } from "@/components/CodePicker";
@@ -26,10 +26,16 @@ import {
 } from "@/components/PaymentInstructionPanel";
 
 const MIDTRANS_CLIENT_KEY = process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY;
-const MIDTRANS_3DS_URL =
-  process.env.NEXT_PUBLIC_MIDTRANS_IS_PRODUCTION === "true"
-    ? "https://api.midtrans.com/v2/assets/js/midtrans-new-3ds.min.js"
-    : "https://api.sandbox.midtrans.com/v2/assets/js/midtrans-new-3ds.min.js";
+// Lingkungan tokenisasi kartu WAJIB sama dengan lingkungan charge di server,
+// kalau tidak token kartunya ditolak. Dulu dua-duanya diatur flag terpisah
+// (NEXT_PUBLIC_MIDTRANS_IS_PRODUCTION vs MIDTRANS_IS_PRODUCTION) sehingga
+// bisa beda diam-diam. Sekarang sama-sama disimpulkan dari prefix kunci:
+// "SB-Mid-client-xxx" = sandbox, "Mid-client-xxx" = production.
+const MIDTRANS_IS_PRODUCTION =
+  !!MIDTRANS_CLIENT_KEY && !MIDTRANS_CLIENT_KEY.startsWith("SB-");
+const MIDTRANS_3DS_URL = MIDTRANS_IS_PRODUCTION
+  ? "https://api.midtrans.com/v2/assets/js/midtrans-new-3ds.min.js"
+  : "https://api.sandbox.midtrans.com/v2/assets/js/midtrans-new-3ds.min.js";
 
 function tokenizeCard(card: CardFields): Promise<string | null> {
   return new Promise((resolve) => {
@@ -591,82 +597,6 @@ function RestockForm({
   );
 }
 
-// Konter pilihan di form request versi sales (yang dia pegang)
-export type RequestStoreOption = { id: string; name: string };
-
-// Request bebas (mis. minta dikunjungi sales). Owner: toko otomatis toko
-// miliknya. Sales: wajib pilih konter yang dia pegang (prop stores).
-function FreeForm({ stores }: { stores?: RequestStoreOption[] }) {
-  const [state, formAction, pending] = useActionState(
-    async (_prev: unknown, fd: FormData) => (await createRequest(fd)) ?? null,
-    null,
-  );
-
-  return (
-    <form action={formAction} className="space-y-3">
-      {stores && (
-        <div>
-          <label className="mb-1 block text-sm font-medium text-neutral-700">
-            Konter <span className="text-neutral-900">*</span>
-          </label>
-          <select name="storeId" required defaultValue="" className={inputCls}>
-            <option value="" disabled>
-              Pilih konter…
-            </option>
-            {stores.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-      <div>
-        <label className="mb-1 block text-sm font-medium text-neutral-700">
-          Judul <span className="text-neutral-900">*</span>
-        </label>
-        <input
-          name="subject"
-          required
-          placeholder="Mis. Minta dikunjungi sales"
-          className={inputCls}
-        />
-      </div>
-      <div>
-        <label className="mb-1 block text-sm font-medium text-neutral-700">
-          Detail <span className="text-neutral-900">*</span>
-        </label>
-        <textarea
-          name="message"
-          required
-          rows={3}
-          placeholder="Jelaskan kebutuhanmu…"
-          className={inputCls}
-        />
-      </div>
-
-      {state?.error && (
-        <p className="rounded-lg border border-neutral-300 bg-neutral-100 px-3 py-2 text-sm font-medium text-neutral-900">
-          {state.error}
-        </p>
-      )}
-      {state?.ok && (
-        <p className="rounded-lg border border-neutral-900 bg-neutral-900 px-3 py-2 text-sm text-white">
-          Request terkirim ke sales & admin.
-        </p>
-      )}
-
-      <button
-        type="submit"
-        disabled={pending}
-        className="w-full rounded-lg bg-neutral-900 py-2.5 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-60"
-      >
-        {pending ? <PendingLabel text="Mengirim…" /> : "Kirim Request"}
-      </button>
-    </form>
-  );
-}
-
 // Kartu checkout restok — dipakai di halaman Order owner
 export function RestockCheckout({
   codes,
@@ -683,9 +613,7 @@ export function RestockCheckout({
         <Script
           src={MIDTRANS_3DS_URL}
           data-environment={
-            process.env.NEXT_PUBLIC_MIDTRANS_IS_PRODUCTION === "true"
-              ? "production"
-              : "sandbox"
+            MIDTRANS_IS_PRODUCTION ? "production" : "sandbox"
           }
           data-client-key={MIDTRANS_CLIENT_KEY}
           strategy="afterInteractive"
@@ -708,22 +636,6 @@ export function RestockCheckout({
         grosirTiers={grosirTiers}
         initialVoucher={initialVoucher}
       />
-    </div>
-  );
-}
-
-// Kartu request bebas — dipakai di halaman Request. Owner tanpa prop stores;
-// sales kirim daftar konter yang dia pegang (catat keluhan atas nama konter).
-export function FreeRequestForm({ stores }: { stores?: RequestStoreOption[] }) {
-  return (
-    <div className="space-y-3 rounded-2xl border border-neutral-200 bg-white p-5">
-      <h2 className="font-semibold">Ajukan Request</h2>
-      <p className="text-xs text-neutral-400">
-        {stores
-          ? "Catat keluhan/permintaan yang disampaikan konter langsung ke kamu."
-          : "Mis. minta dikunjungi sales, komplain, dll."}
-      </p>
-      <FreeForm stores={stores} />
     </div>
   );
 }

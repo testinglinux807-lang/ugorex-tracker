@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import {
+  markOrderPaidCash,
   markOrderReady,
   pickupOrder,
   updateRequestStatus,
@@ -28,6 +29,8 @@ import { waLink } from "@/lib/wa";
 import {
   ArrowRight,
   Award,
+  Banknote,
+  ShoppingBag,
   Truck,
   Package,
   PackageCheck,
@@ -555,7 +558,13 @@ export default async function TugasPage() {
       <TugasTabs
         tabs={[
           penugasanTab,
-          { key: "orderan", label: "Orderan Masuk", count: orderCount },
+          {
+            key: "orderan",
+            // Sales: ini tab kerjaan lapangan (jemput di gudang → antar ke
+            // toko), jadi namanya mengikuti pekerjaannya, bukan "orderan".
+            label: isAdmin ? "Orderan Masuk" : "Antar Barang",
+            count: orderCount,
+          },
           { key: "request", label: "Request", count: freeRequests.length },
           { key: "keluhan", label: "Keluhan", count: tickets.length },
           { key: "kunjungan", label: "Kunjungan", count: unvisited.length },
@@ -564,10 +573,38 @@ export default async function TugasPage() {
           { tab: "penugasan", node: penugasanNode },
           {
             tab: "orderan",
-            node:
-              orderCount === 0 ? (
-                <EmptyCard text="Tidak ada orderan yang perlu diproses." />
-              ) : (
+            node: (
+              <div className="space-y-3">
+                {/* Pintu ke halaman order lengkap (kartu rincian, lacak
+                    paket, riwayat, cari resi) — sales tidak punya menu Order
+                    sendiri lagi, jadi masuknya dari sini. */}
+                <Link
+                  href="/order"
+                  className="flex items-center justify-between gap-2 rounded-2xl border border-neutral-200 bg-white p-4 text-sm hover:border-neutral-400"
+                >
+                  <span className="flex min-w-0 items-center gap-2 font-medium">
+                    <span className="relative shrink-0">
+                      <ShoppingBag className="h-4 w-4 text-neutral-500" />
+                      {orderCount > 0 && (
+                        <span className="absolute -right-1.5 -top-1.5 h-2 w-2 rounded-full bg-red-600 ring-2 ring-white" />
+                      )}
+                    </span>
+                    <span className="min-w-0">
+                      Rincian barang, lacak paket &amp; riwayat orderan
+                    </span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-1.5">
+                    {orderCount > 0 && (
+                      <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 text-[10px] font-bold leading-none text-white">
+                        {orderCount > 99 ? "99+" : orderCount}
+                      </span>
+                    )}
+                    <ArrowRight className="h-4 w-4 text-neutral-400" />
+                  </span>
+                </Link>
+                {orderCount === 0 ? (
+                  <EmptyCard text="Tidak ada orderan yang perlu diproses." />
+                ) : (
                 <div className="rounded-2xl border border-neutral-200 bg-white p-5">
                   {/* Alur: bayar → packing gudang → pickup kurir → sampai.
                       Aksi langsung di baris; begitu ditandai, item pindah
@@ -692,23 +729,48 @@ export default async function TugasPage() {
                             o.store.ownerPhone,
                             `Halo${o.store.ownerName ? " " + o.store.ownerName : ""}, orderan restok #${o.id.slice(-8).toUpperCase()} di ${o.store.name} (total ${rupiah(o.total)}) belum dibayar. Mohon diselesaikan ya, terima kasih.`,
                           );
+                          // Bayar tunai diterima sales saat serah terima —
+                          // order total 0 (diskon penuh via CASH / harga
+                          // belum diisi) juga dilunasi manual di sini.
+                          const cash =
+                            o.paymentMethod === "CASH" ||
+                            o.total + o.paymentFee === 0;
                           return (
                             <div
                               key={o.id}
                               className="flex flex-wrap items-center justify-between gap-2 py-2.5"
                             >
                               {orderInfo(o)}
-                              {wa && (
-                                <a
-                                  href={wa}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700"
-                                >
-                                  <MessageCircle className="h-3.5 w-3.5" />
-                                  Ingatkan
-                                </a>
-                              )}
+                              <div className="flex shrink-0 flex-wrap gap-1.5">
+                                {wa && (
+                                  <a
+                                    href={wa}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700"
+                                  >
+                                    <MessageCircle className="h-3.5 w-3.5" />
+                                    Ingatkan
+                                  </a>
+                                )}
+                                {cash && (
+                                  <form
+                                    action={async () => {
+                                      "use server";
+                                      await markOrderPaidCash(o.id);
+                                    }}
+                                  >
+                                    <SubmitButton
+                                      pendingText="Memproses…"
+                                      overlayText="Menandai order lunas…"
+                                      className="inline-flex items-center gap-1 rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-neutral-800 disabled:opacity-60"
+                                    >
+                                      <Banknote className="h-3.5 w-3.5" />
+                                      Tandai Lunas
+                                    </SubmitButton>
+                                  </form>
+                                )}
+                              </div>
                             </div>
                           );
                         })}
@@ -716,7 +778,9 @@ export default async function TugasPage() {
                     </>
                   )}
                 </div>
-              ),
+                )}
+              </div>
+            ),
           },
           {
             tab: "request",

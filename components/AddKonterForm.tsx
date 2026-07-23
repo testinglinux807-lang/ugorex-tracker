@@ -8,13 +8,16 @@ import { PendingLabel } from "@/components/SubmitButton";
 
 const inputCls = "w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm";
 
-export function AddKonterForm() {
+// `inline` = form dipasang di dalam /konter (panel lipat). Bedanya cuma
+// setelah simpan: bukan pindah halaman, tapi reset form + refresh daftar.
+export function AddKonterForm({ inline = false }: { inline?: boolean }) {
   const router = useRouter();
   const [lat, setLat] = useState("");
   const [lng, setLng] = useState("");
   const [locating, setLocating] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState<string | null>(null);
 
   function useMyLocation() {
     if (!navigator.geolocation) {
@@ -39,11 +42,24 @@ export function AddKonterForm() {
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
+    setSaved(null);
     setPending(true);
+    const form = e.currentTarget;
+    const fd = new FormData(form);
     try {
-      const fd = new FormData(e.currentTarget);
       await createStore(fd);
-      router.push("/konter");
+      if (inline) {
+        // Tetap di /konter: bersihkan form, tampilkan konfirmasi, muat ulang
+        // daftar konter di server component.
+        form.reset();
+        setLat("");
+        setLng("");
+        setSaved(String(fd.get("name") ?? "").trim() || "Konter");
+        setPending(false);
+        router.refresh();
+      } else {
+        router.push("/konter");
+      }
     } catch {
       setError("Gagal menyimpan konter.");
       setPending(false);
@@ -53,7 +69,11 @@ export function AddKonterForm() {
   return (
     <form
       onSubmit={onSubmit}
-      className="space-y-3 rounded-xl border border-neutral-200 bg-white p-5"
+      className={
+        inline
+          ? "space-y-3"
+          : "space-y-3 rounded-xl border border-neutral-200 bg-white p-5"
+      }
     >
       <div>
         <label className="mb-1 block text-sm font-medium text-neutral-700">
@@ -130,6 +150,11 @@ export function AddKonterForm() {
       {error && (
         <p className="rounded-lg border border-neutral-300 bg-neutral-100 px-3 py-2 text-sm font-medium text-neutral-900">
           {error}
+        </p>
+      )}
+      {saved && (
+        <p className="rounded-lg border border-neutral-900 bg-neutral-900 px-3 py-2 text-sm text-white">
+          {saved} tersimpan - sudah masuk daftar konter di bawah.
         </p>
       )}
 
