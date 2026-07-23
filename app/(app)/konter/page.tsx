@@ -60,7 +60,7 @@ export default async function KonterPage({
       orderBy: { createdAt: "desc" },
     }),
     prisma.product.findMany({
-      select: { id: true, name: true },
+      select: { id: true, name: true, code: true, hpModel: true },
       orderBy: { name: "asc" },
     }),
     // Agregat per konter+barang dihitung di database, bukan menarik semua
@@ -397,6 +397,8 @@ export default async function KonterPage({
                         products={products.map((p) => ({
                           id: p.id,
                           name: p.name,
+                          code: p.code,
+                          hpModel: p.hpModel,
                         }))}
                       />
                     </div>

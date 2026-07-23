@@ -6,13 +6,6 @@ import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { notifyStockEmpty } from "@/lib/wa-notify";
-import { findUsableVoucher, consumeVoucher } from "@/lib/voucher";
-import {
-  applyVouchers,
-  voucherScopeKey,
-  voucherLabel,
-  type VoucherLike,
-} from "@/lib/voucher-calc";
 
 // Owner mencatat transaksi penjualan (POS) — bisa beberapa barang sekaligus
 // dalam satu keranjang (key: qty__<productId> + price__<productId>).
@@ -72,123 +65,17 @@ export async function createSale(formData: FormData) {
     }
   }
 
-  // Voucher (opsional, maks 3 - satu per jenis FREE/PERCENT/FIXED): potongan
-  // per baris diambil dari lib/voucher-calc.ts applyVouchers (urutan FREE →
-  // PERCENT → FIXED, satu sumber sama dgn order restok).
-  const voucherCodesRaw = [
-    ...new Set(
-      formData
-        .getAll("voucherCode")
-        .map((v) => String(v).trim())
-        .filter(Boolean),
-    ),
-  ];
-  let perLine = new Map<string, number>();
-  if (voucherCodesRaw.length > 3) {
-    return { error: "Maksimal 3 voucher sekaligus." };
-  }
-  if (voucherCodesRaw.length > 0) {
-    const found = await Promise.all(
-      voucherCodesRaw.map((code) => findUsableVoucher(code)),
-    );
-    const firstError = found.find((f) => "error" in f);
-    if (firstError && "error" in firstError) return { error: firstError.error };
-    const resolved = found.map((f) => f.voucher!);
-    const typeSeen = new Set<string>();
-    for (const v of resolved) {
-      if (typeSeen.has(v.type)) {
-        return { error: `Cuma boleh 1 voucher jenis ${voucherLabel(v)} sekaligus.` };
-      }
-      typeSeen.add(v.type);
-      if (v.productId) {
-        const scopeKey = voucherScopeKey({
-          id: v.productId,
-          code: v.product?.code ?? null,
-        });
-        const matches = lines.some(
-          (l) =>
-            voucherScopeKey({
-              id: l.productId,
-              code: productOf.get(l.productId)?.code ?? null,
-            }) === scopeKey,
-        );
-        if (!matches) {
-          return {
-            error: `Voucher ${v.code} cuma berlaku untuk produk ${
-              v.product?.name ?? "tertentu"
-            } - tambahkan dulu ke keranjang.`,
-          };
-        }
-      }
-    }
-    const voucherLikes: VoucherLike[] = resolved.map((v) => ({
-      code: v.code,
-      type: v.type,
-      value: v.value,
-      productId: v.productId,
-      productCode: v.product?.code ?? null,
-    }));
-    const itemsForCalc = lines.map((l) => ({
-      ...l,
-      code: productOf.get(l.productId)?.code ?? null,
-    }));
-    const result = applyVouchers(voucherLikes, itemsForCalc);
-    perLine = result.perLine;
-    for (const v of resolved) {
-      if (!(await consumeVoucher(v))) {
-        return { error: `Kuota voucher ${v.code} sudah habis.` };
-      }
-    }
-  }
-
-  // Bagikan potongan per scope-key (kode/produk) ke baris-baris yang
-  // sekode - proporsional kalau lebih dari satu baris berbagi kode yang sama.
-  const byKey = new Map<string, typeof lines>();
-  for (const l of lines) {
-    const key = voucherScopeKey({
-      id: l.productId,
-      code: productOf.get(l.productId)?.code ?? null,
-    });
-    const arr = byKey.get(key) ?? [];
-    arr.push(l);
-    byKey.set(key, arr);
-  }
-  const rows: {
-    storeId: string;
-    productId: string;
-    productName: string;
-    qty: number;
-    price: number;
-    discount: number;
-    total: number;
-    createdById: string;
-  }[] = [];
-  for (const [key, group] of byKey) {
-    const keyTotal = perLine.get(key) ?? 0;
-    const groupTotal = group.reduce((a, l) => a + l.qty * l.price, 0);
-    let sisa = keyTotal;
-    group.forEach((l, i) => {
-      const lineTotal = l.qty * l.price;
-      const share =
-        i === group.length - 1
-          ? sisa
-          : Math.min(
-              lineTotal,
-              Math.floor((keyTotal * lineTotal) / (groupTotal || 1)),
-            );
-      sisa -= share;
-      rows.push({
-        storeId,
-        productId: l.productId,
-        productName: productOf.get(l.productId)!.name,
-        qty: l.qty,
-        price: l.price,
-        discount: share,
-        total: lineTotal - share,
-        createdById: user.id,
-      });
-    });
-  }
+  // POS cuma catat penjualan owner ke customer-nya sendiri — bukan transaksi
+  // ke Ugorex, jadi voucher toko (buat restok) tidak berlaku di sini.
+  const rows = lines.map((l) => ({
+    storeId,
+    productId: l.productId,
+    productName: productOf.get(l.productId)!.name,
+    qty: l.qty,
+    price: l.price,
+    total: l.qty * l.price,
+    createdById: user.id,
+  }));
 
   await prisma.sale.createMany({ data: rows });
 

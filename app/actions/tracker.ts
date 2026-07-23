@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { STAGES, RESULTS, type Stage, type Result } from "@/lib/constants";
+import { joinName, productParts } from "@/lib/product-code";
 
 // Catat kunjungan: tandai tahap funnel + respon + catatan untuk 1 barang di 1 konter.
 // Sekaligus buat/lengkapi prospek dan tambah riwayat.
@@ -225,11 +226,157 @@ export async function deleteProduct(productId: string) {
   if (user.role !== "ADMIN") return { error: "Hanya admin." };
 
   await prisma.product.delete({ where: { id: productId } });
+  revalidateProductPaths();
+  return { ok: true };
+}
+
+function revalidateProductPaths() {
   revalidatePath("/data");
   revalidatePath("/katalog");
   revalidatePath("/pos");
   revalidatePath("/request");
   revalidatePath("/order");
+}
+
+// ===== Barang per KODE (menu Data admin) — 1 kode = banyak tipe HP,
+// sekode berbagi harga & stok pusat. Lihat lib/product-code.ts. =====
+
+// Tambah 1 kode: type + harga + stok + beberapa tipe HP sekaligus (satu per
+// baris). Kalau kodenya sudah ada, tipe HP baru ikut ditambah ke kode itu &
+// stok mengikuti stok kode yang ada (tidak menimpa).
+export async function createProductGroup(formData: FormData) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (user.role !== "ADMIN") return { error: "Hanya admin." };
+
+  const code = String(formData.get("code") ?? "").trim().toUpperCase();
+  let type = String(formData.get("type") ?? "").trim();
+  const price = parseInt(String(formData.get("price") ?? "0"), 10) || 0;
+  let centralStock =
+    parseInt(String(formData.get("centralStock") ?? "0"), 10) || 0;
+  const models = String(formData.get("models") ?? "")
+    .split("\n")
+    .map((m) => m.trim())
+    .filter(Boolean);
+
+  if (!code) return { error: "Kode barang wajib diisi." };
+  if (models.length === 0) return { error: "Isi minimal satu tipe HP." };
+
+  // Kalau kode sudah ada: warisi stok & type dari anggota yang ada.
+  const sibling = await prisma.product.findFirst({ where: { code } });
+  if (sibling) {
+    centralStock = sibling.centralStock;
+    if (!type) type = productParts(sibling).type;
+  }
+  if (!type) return { error: "Isi jenis barang (mis. Antigores Spy)." };
+
+  const finalPrice = price > 0 ? price : (sibling?.price ?? 0);
+  await prisma.product.createMany({
+    data: models.map((model) => ({
+      name: joinName(type, model),
+      hpModel: model,
+      code,
+      price: finalPrice,
+      centralStock,
+    })),
+  });
+  revalidateProductPaths();
+  return { ok: true };
+}
+
+// Edit level KODE: jenis (type), harga & stok pusat — berlaku ke semua tipe
+// HP sekode. Ganti jenis = rename semua produk sekode (tipe HP-nya tetap).
+export async function updateProductGroup(code: string, formData: FormData) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (user.role !== "ADMIN") return { error: "Hanya admin." };
+
+  const price = parseInt(String(formData.get("price") ?? "0"), 10) || 0;
+  const centralStock =
+    parseInt(String(formData.get("centralStock") ?? "0"), 10) || 0;
+  const type = String(formData.get("type") ?? "").trim();
+
+  const members = await prisma.product.findMany({ where: { code } });
+  await prisma.$transaction([
+    prisma.product.updateMany({
+      where: { code },
+      data: { price, centralStock },
+    }),
+    // Rename jenis kalau diisi — nama = jenis baru + tipe HP lama. Sekalian
+    // simpan hpModel (self-healing). Data lama non-"Antigores" yang belum
+    // punya hpModel tak bisa ditebak modelnya (type kosong) → di-skip biar
+    // tidak dobel-prepend jenis; item begitu diperbaiki via rename per-tipe.
+    ...(type
+      ? members
+          .filter((m) => m.hpModel != null || productParts(m).type !== "")
+          .map((m) => {
+            const model = productParts(m).model;
+            return prisma.product.update({
+              where: { id: m.id },
+              data: { name: joinName(type, model), hpModel: model },
+            });
+          })
+      : []),
+  ]);
+  revalidateProductPaths();
+  return { ok: true };
+}
+
+// Hapus SATU kode sekaligus (semua tipe HP di bawahnya).
+export async function deleteProductGroup(code: string) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (user.role !== "ADMIN") return { error: "Hanya admin." };
+
+  await prisma.product.deleteMany({ where: { code } });
+  revalidateProductPaths();
+  return { ok: true };
+}
+
+// Tambah 1 tipe HP ke kode yang sudah ada (warisi type/harga/stok).
+export async function addHpModel(code: string, formData: FormData) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (user.role !== "ADMIN") return { error: "Hanya admin." };
+
+  const model = String(formData.get("model") ?? "").trim();
+  if (!model) return { error: "Isi tipe HP-nya." };
+
+  const sibling = await prisma.product.findFirst({ where: { code } });
+  if (!sibling) return { error: "Kode tidak ditemukan." };
+  const type = productParts(sibling).type;
+
+  await prisma.product.create({
+    data: {
+      name: joinName(type, model),
+      hpModel: model,
+      code,
+      price: sibling.price,
+      centralStock: sibling.centralStock,
+    },
+  });
+  revalidateProductPaths();
+  return { ok: true };
+}
+
+// Ganti nama tipe HP (bagian model) 1 barang - type-nya tetap.
+export async function renameHpModel(productId: string, formData: FormData) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (user.role !== "ADMIN") return { error: "Hanya admin." };
+
+  const model = String(formData.get("model") ?? "").trim();
+  if (!model) return { error: "Nama tipe HP wajib diisi." };
+
+  const product = await prisma.product.findUnique({ where: { id: productId } });
+  if (!product) return { error: "Barang tidak ditemukan." };
+  const type = productParts(product).type;
+
+  await prisma.product.update({
+    where: { id: productId },
+    data: { name: joinName(type, model), hpModel: model },
+  });
+  revalidateProductPaths();
   return { ok: true };
 }
 

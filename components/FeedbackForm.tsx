@@ -13,7 +13,7 @@ const KATEGORI = [
   { value: "SARAN", label: "Saran", hint: "Mis. Tambah model buat Samsung" },
   {
     value: "BARANG",
-    label: "Request barang",
+    label: "Ajukan barang",
     hint: "Mis. Minta dikunjungi sales / bawakan sampel",
   },
 ] as const;
@@ -31,8 +31,8 @@ export function FeedbackForm() {
     <div className="space-y-3 rounded-2xl border border-neutral-200 bg-white p-5">
       <h2 className="font-semibold">Kirim Feedback</h2>
       <p className="text-xs text-neutral-400">
-        Keluhan, saran, atau request - semua dari satu pintu, langsung sampai
-        ke sales &amp; admin.
+        Keluhan, saran, atau ajukan barang - semua dari satu pintu, langsung
+        sampai ke sales &amp; admin.
       </p>
 
       <form action={formAction} className="space-y-3">

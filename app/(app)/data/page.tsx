@@ -1,12 +1,13 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
-import { createProduct, createStore } from "@/app/actions/tracker";
+import { createStore } from "@/app/actions/tracker";
 import { CreateSalesForm, CreateGudangForm } from "@/components/AccountForms";
 import { Paginated } from "@/components/Paginated";
 import { KonterList } from "@/components/KonterList";
 import { SalesRow, GudangRow } from "@/components/DataActions";
-import { ProductTable } from "@/components/ProductTable";
+import { ProductCodeManager } from "@/components/ProductCodeManager";
+import { AddProductGroup } from "@/components/AddProductGroup";
 import { SubmitButton } from "@/components/SubmitButton";
 import { DataTabs } from "@/components/DataTabs";
 import { VoucherManager } from "@/components/VoucherManager";
@@ -20,6 +21,10 @@ import {
   SalesInviteManager,
   type SalesInviteItem,
 } from "@/components/SalesInviteManager";
+import { CsContactForm } from "@/components/CsContactForm";
+import { getCsContact } from "@/lib/cs-config";
+import { TargetBonusForm } from "@/components/TargetBonusForm";
+import { listTargetBonusPeriods } from "@/lib/target-bonus";
 import {
   Package,
   Percent,
@@ -27,6 +32,8 @@ import {
   TicketPercent,
   Users,
   Warehouse,
+  MessageCircle,
+  Target,
 } from "lucide-react";
 
 const inputCls = "w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm";
@@ -48,6 +55,8 @@ export default async function DataPage() {
   if (user.role === "SALES") redirect("/konter");
 
   const isAdmin = user.role === "ADMIN";
+  const csContact = isAdmin ? await getCsContact() : null;
+  const targetBonusPeriods = isAdmin ? await listTargetBonusPeriods() : [];
 
   const [
     products,
@@ -129,6 +138,11 @@ export default async function DataPage() {
     }),
   }));
 
+  // Daftar kode barang yang sudah ada — buat autocomplete di Tambah Barang.
+  const existingCodes = [
+    ...new Set(products.map((p) => p.code).filter((c): c is string => !!c)),
+  ].sort();
+
   // Pilihan produk buat voucher (menu Voucher Toko) — dropdown SAMA persis
   // dengan yang dipakai owner belanja restok (CodePicker): dedup per KODE
   // mold + tampilkan stok pusat asli, biar admin lihat stoknya benar-benar
@@ -179,6 +193,22 @@ export default async function DataPage() {
         </p>
       </div>
 
+      {/* Kontak CS — muncul di /profil semua owner toko ("Hubungi CS") */}
+      {csContact && (
+        <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+          <div className="mb-3 flex items-center gap-2">
+            <MessageCircle className="h-4 w-4 text-neutral-500" />
+            <h2 className="font-semibold">Kontak CS</h2>
+          </div>
+          <p className="mb-3 text-xs text-neutral-400">
+            Ditampilkan ke semua owner toko di halaman Profil mereka
+            (&quot;Hubungi CS&quot;), bareng kontak sales pemegang tokonya
+            masing-masing.
+          </p>
+          <CsContactForm name={csContact.name} phone={csContact.phone} />
+        </section>
+      )}
+
       {/* Tab dipakai di HP DAN desktop (alwaysTabs) — seksi-seksi halaman
           ini tingginya beda jauh, kalau ditampilkan sekaligus di grid
           desktop pasangannya jadi acak & berantakan. Per tab: daftar lebar
@@ -202,18 +232,19 @@ export default async function DataPage() {
             tab: "barang",
             className: "lg:col-span-2",
             node: (
-      /* Barang — 2/3 kiri: cari + pagination (katalog ratusan item) */
+      /* Barang — 2/3 kiri: per KODE (kaya dropdown order), bisa diedit */
       <section className="rounded-xl border border-neutral-200 bg-white p-5">
         <div className="mb-3 flex items-center gap-2">
           <Package className="h-4 w-4 text-neutral-500" />
           <h2 className="font-semibold">Barang</h2>
           <Count n={products.length} />
         </div>
-        <ProductTable
+        <ProductCodeManager
           products={products.map((p) => ({
             id: p.id,
             name: p.name,
             code: p.code,
+            hpModel: p.hpModel,
             price: p.price,
             description: p.description,
             centralStock: p.centralStock,
@@ -230,50 +261,7 @@ export default async function DataPage() {
             <Package className="h-4 w-4 text-neutral-500" />
             <h2 className="font-semibold">Tambah Barang</h2>
           </div>
-          <form action={createProduct} className="space-y-2">
-            <input
-              name="name"
-              required
-              placeholder="Nama barang"
-              className={inputCls}
-            />
-            <input
-              name="code"
-              placeholder="Kode / ID (mis. AA01)"
-              className={inputCls}
-            />
-            <div className="grid grid-cols-2 gap-2">
-              <input
-                name="price"
-                type="number"
-                min={0}
-                placeholder="Harga (Rp)"
-                className={inputCls}
-              />
-              <input
-                name="centralStock"
-                type="number"
-                min={0}
-                placeholder="Stok pusat"
-                className={inputCls}
-              />
-            </div>
-            <p className="text-[11px] text-neutral-400">
-              Barang dengan kode yang sama berbagi satu stok pusat - kalau
-              kodenya sudah dipakai barang lain, stok mengikuti stok kode itu.
-            </p>
-            <input
-              name="description"
-              placeholder="Deskripsi (opsional)"
-              className={inputCls}
-            />
-            <SubmitButton
-              pendingText="Menyimpan…"
-              className={`${btnCls} w-full disabled:opacity-60`}
-            >
-              Tambah Barang
-            </SubmitButton>
-          </form>
+          <AddProductGroup codes={existingCodes} />
         </section>
             ),
           },
@@ -290,8 +278,8 @@ export default async function DataPage() {
               <Count n={vouchers.length} />
             </div>
             <p className="mb-3 text-xs text-neutral-400">
-              Kode diskon untuk owner - bisa dipakai saat order restok dan
-              catat penjualan di POS.
+              Kode diskon untuk owner - dipakai saat order restok (bukan
+              POS, itu urusan penjualan owner sendiri ke customer-nya).
             </p>
             <VoucherManager
               vouchers={vouchers.map((v) => ({
@@ -328,6 +316,37 @@ export default async function DataPage() {
                 percent: t.percent,
                 active: t.active,
               }))}
+            />
+          </section>
+                  ),
+                },
+                {
+                  tab: "voucher",
+                  className: "lg:col-span-3",
+                  node: (
+          /* Beda dari Voucher Toko/Diskon Grosir di atas: bukan kode manual,
+             otomatis jalan tiap toko begitu total pcs order RESTOK bulan
+             ini capai target - lihat lib/target-bonus.ts. */
+          <section className="rounded-xl border border-neutral-200 bg-white p-5">
+            <div className="mb-3 flex items-center gap-2">
+              <Target className="h-4 w-4 text-neutral-500" />
+              <h2 className="font-semibold">Target Bulanan</h2>
+            </div>
+            <p className="mb-3 text-xs text-neutral-400">
+              Beda dari voucher di atas - ini otomatis, berlaku ke SEMUA
+              toko. Begitu total pcs order restok (lunas) satu toko bulan
+              ini tembus target, sistem langsung terbitin 1 voucher gratis
+              khusus toko itu, tinggal dipakai pas order berikutnya.
+            </p>
+            <TargetBonusForm
+              periods={targetBonusPeriods.map((p) => ({
+                id: p.id,
+                period: p.period,
+                qty: p.qty,
+                productName: p.product.name,
+                productCode: p.product.code,
+              }))}
+              codes={voucherCodes}
             />
           </section>
                   ),

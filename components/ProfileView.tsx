@@ -10,6 +10,7 @@ import {
 } from "@/components/AccountSettings";
 import { GradeBadge, LevelBadge } from "@/components/Badge";
 import type { Grade } from "@/lib/sales-grade";
+import { waLink } from "@/lib/wa";
 import {
   KeyRound,
   Smartphone,
@@ -21,6 +22,7 @@ import {
   MapPin,
   CheckCircle2,
   Store,
+  MessageCircle,
   type LucideIcon,
 } from "lucide-react";
 
@@ -115,6 +117,7 @@ export function ProfileView({
   extra,
   gradeInfo,
   store,
+  contact,
 }: {
   name: string;
   roleLabel: string;
@@ -135,6 +138,10 @@ export function ProfileView({
     ownerPhone: string | null;
     lat: number | null;
     lng: number | null;
+  } | null;
+  contact: {
+    cs: { name: string; phone: string | null };
+    sales: { name: string; phone: string } | null;
   } | null;
 }) {
   const [modal, setModal] = useState<"password" | "phone" | null>(null);
@@ -184,6 +191,8 @@ export function ProfileView({
       {extra && <ExtraDataCard {...extra} />}
 
       {store && <StoreCard {...store} />}
+
+      {contact && <ContactCard {...contact} />}
 
       {/* Keluar */}
       <form action={logout}>
@@ -578,5 +587,75 @@ function StoreCard({
         </button>
       </form>
     </CollapsibleCard>
+  );
+}
+
+// Kontak bantuan (khusus OWNER): CS Ugorex (diatur admin) + sales pemegang
+// tokonya sendiri - buat pertanyaan di luar urusan restok/POS sehari-hari.
+function ContactRow({
+  name,
+  role,
+  phone,
+  message,
+}: {
+  name: string;
+  role: string;
+  phone: string | null;
+  message: string;
+}) {
+  const link = waLink(phone, message);
+  return (
+    <div className="flex items-center justify-between gap-2 rounded-xl border border-neutral-200 px-3 py-2.5">
+      <div className="min-w-0">
+        <p className="truncate text-sm font-semibold text-neutral-900">{name}</p>
+        <p className="text-xs text-neutral-400">{role}</p>
+      </div>
+      {link ? (
+        <a
+          href={link}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex shrink-0 items-center gap-1.5 rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90"
+        >
+          <MessageCircle className="h-3.5 w-3.5" />
+          Chat WA
+        </a>
+      ) : (
+        <span className="shrink-0 text-xs text-neutral-400">Belum ada nomor</span>
+      )}
+    </div>
+  );
+}
+
+function ContactCard({
+  cs,
+  sales,
+}: {
+  cs: { name: string; phone: string | null };
+  sales: { name: string; phone: string } | null;
+}) {
+  return (
+    <div className={cardCls}>
+      <div className="mb-4 flex items-center gap-2">
+        <MessageCircle className="h-4 w-4 shrink-0 text-neutral-500" />
+        <h2 className="font-semibold">Hubungi CS</h2>
+      </div>
+      <div className="space-y-2">
+        <ContactRow
+          name={cs.name}
+          role="Customer Service"
+          phone={cs.phone}
+          message={`Halo ${cs.name}, saya owner toko mau tanya-tanya.`}
+        />
+        {sales && (
+          <ContactRow
+            name={sales.name}
+            role="Sales Penanggung Jawab"
+            phone={sales.phone}
+            message={`Halo ${sales.name}, saya owner toko mau tanya-tanya.`}
+          />
+        )}
+      </div>
+    </div>
   );
 }

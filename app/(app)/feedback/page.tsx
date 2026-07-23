@@ -52,7 +52,7 @@ export default async function FeedbackPage() {
   // Gabungkan tiket + request jadi satu riwayat, terbaru duluan
   type Item = {
     id: string;
-    kind: "Keluhan" | "Saran" | "Request barang";
+    kind: "Keluhan" | "Saran" | "Ajukan barang";
     subject: string;
     message: string;
     statusLabel: string;
@@ -91,7 +91,7 @@ export default async function FeedbackPage() {
       const saran = r.subject.startsWith("[Saran]");
       return {
         id: `r-${r.id}`,
-        kind: saran ? "Saran" : "Request barang",
+        kind: saran ? "Saran" : "Ajukan barang",
         subject: saran ? r.subject.replace(/^\[Saran\]\s*/, "") : r.subject,
         message: r.message,
         statusLabel: r.status === "COMPLETED" ? "Selesai" : "Menunggu",
@@ -110,7 +110,7 @@ export default async function FeedbackPage() {
   const KIND_CLS: Record<Item["kind"], string> = {
     Keluhan: "border-red-200 bg-red-50 text-red-600",
     Saran: "border-neutral-300 bg-neutral-100 text-neutral-600",
-    "Request barang": "border-brand-dark bg-brand/20 text-neutral-900",
+    "Ajukan barang": "border-brand-dark bg-brand/20 text-neutral-900",
   };
 
   return (
@@ -118,7 +118,7 @@ export default async function FeedbackPage() {
       <div>
         <h1 className="text-2xl font-bold">Feedback</h1>
         <p className="text-sm text-neutral-500">
-          Keluhan, saran, dan request barang ke sales/admin
+          Keluhan, saran, dan ajukan barang ke sales/admin
         </p>
       </div>
 

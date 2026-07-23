@@ -3,7 +3,7 @@
 import { useActionState, useState, useTransition } from "react";
 import Script from "next/script";
 import { createRequest, createRestockRequest } from "@/app/actions/requests";
-import { X } from "lucide-react";
+import { X, Minus, Plus, CheckCircle2 } from "lucide-react";
 import { PendingLabel } from "@/components/SubmitButton";
 import { CodePicker, type RestockCode } from "@/components/CodePicker";
 import { VoucherInput, type AppliedVoucher } from "@/components/VoucherInput";
@@ -68,9 +68,14 @@ export type GrosirTierInfo = { minQty: number; percent: number };
 function RestockForm({
   codes,
   grosirTiers,
+  initialVoucher = null,
 }: {
   codes: RestockCode[];
   grosirTiers: GrosirTierInfo[];
+  // Diisi kalau owner masuk lewat tombol "Ambil Voucher" (kartu Target
+  // Bulanan, ?claimBonus=1) - voucher & produk gratisnya langsung ke-apply
+  // begitu form ini dibuka, tanpa perlu ngetik kode manual.
+  initialVoucher?: AppliedVoucher | null;
 }) {
   const [state, formAction, pending] = useActionState(
     async (_prev: unknown, fd: FormData) =>
@@ -81,9 +86,17 @@ function RestockForm({
 
   // qty di-key per KODE mold; lookup detail lewat byCode
   const byCode = new Map(codes.map((c) => [c.code, c]));
-  const [qtys, setQtys] = useState<Record<string, number>>({});
+  const [qtys, setQtys] = useState<Record<string, number>>(() => {
+    if (initialVoucher?.productCode) {
+      const c = byCode.get(initialVoucher.productCode);
+      if (c && c.central > 0) return { [initialVoucher.productCode]: 1 };
+    }
+    return {};
+  });
   const [showReceipt, setShowReceipt] = useState(false);
-  const [vouchers, setVouchers] = useState<AppliedVoucher[]>([]);
+  const [vouchers, setVouchers] = useState<AppliedVoucher[]>(
+    initialVoucher ? [initialVoucher] : [],
+  );
   const [method, setMethod] = useState<PaymentMethod>("CASH");
   const [card, setCard] = useState<CardFields>(EMPTY_CARD);
   const [cardBusy, setCardBusy] = useState(false);
@@ -170,16 +183,24 @@ function RestockForm({
     return voucherResult.perLine.get(code) ?? 0;
   }
 
-  // Jumlah order dibatasi stok pusat (dibagi sekode)
+  // Kode produk hasil klaim "Ambil Voucher" (Target Bulanan) — qty-nya
+  // dikunci di 1 (gratisnya cuma 1 pcs), gak ada stepper +/- biar gak
+  // kelihatan kayak bisa nambahin barang gratis berkali-kali.
+  const lockedCode = initialVoucher?.productCode ?? null;
+
+  // Jumlah order dibatasi stok pusat (dibagi sekode) - kalau kode ini lagi
+  // dikunci (produk voucher bonus), dibatasi maksimal 1.
   function setQty(code: string, n: number) {
     const max = byCode.get(code)?.central ?? 0;
-    setQtys((s) => ({ ...s, [code]: Math.min(max, Math.max(0, n)) }));
+    const cap = code === lockedCode ? Math.min(1, max) : max;
+    setQtys((s) => ({ ...s, [code]: Math.min(cap, Math.max(0, n)) }));
   }
 
   // Pilih kode dari picker → masuk keranjang (atau qty +1 kalau sudah ada)
   function addCode(code: string) {
     const c = byCode.get(code);
     if (!c || c.central <= 0) return; // stok pusat habis
+    if (code === lockedCode && (qtys[code] ?? 0) >= 1) return; // udah dikunci di 1
     setQty(code, (qtys[code] ?? 0) + 1);
   }
 
@@ -210,6 +231,13 @@ function RestockForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
+      {initialVoucher && (
+        <div className="flex items-center gap-2 rounded-lg border border-brand-dark/30 bg-brand/10 px-3 py-2 text-xs font-medium text-neutral-700">
+          <CheckCircle2 className="h-4 w-4 shrink-0 text-brand-dark" />
+          Voucher {initialVoucher.code} kepakai - gratis 1{" "}
+          {initialVoucher.productName ?? "produk"} udah masuk keranjang.
+        </div>
+      )}
       {/* Pilih KODE mold (bukan per model HP) — tiap kode kasih catatan
           tipe HP yang kompatibel */}
       <div>
@@ -267,17 +295,43 @@ function RestockForm({
                     @{rupiah(c.price)} · stok pusat {c.central}
                   </p>
                 </div>
-                <input
-                  type="number"
-                  min={1}
-                  max={c.central}
-                  value={n}
-                  onChange={(e) =>
-                    setQty(code, parseInt(e.target.value, 10) || 1)
-                  }
-                  aria-label={`Jumlah ${c.code}`}
-                  className="w-10 shrink-0 border-0 border-b border-neutral-300 bg-transparent p-0 text-center text-sm focus:border-neutral-900 focus:outline-none focus:ring-0"
-                />
+                {code === lockedCode ? (
+                  <span className="shrink-0 rounded-full bg-brand/15 px-2.5 py-1 text-[10px] font-bold text-brand-dark">
+                    1 pcs · GRATIS
+                  </span>
+                ) : (
+                  <div className="flex shrink-0 items-center gap-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setQty(code, n - 1)}
+                      disabled={n <= 1}
+                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded border border-neutral-300 text-neutral-500 hover:bg-neutral-100 disabled:opacity-40"
+                      aria-label={`Kurangi ${c.code}`}
+                    >
+                      <Minus className="h-3 w-3" />
+                    </button>
+                    <input
+                      type="number"
+                      min={1}
+                      max={c.central}
+                      value={n}
+                      onChange={(e) =>
+                        setQty(code, parseInt(e.target.value, 10) || 1)
+                      }
+                      aria-label={`Jumlah ${c.code}`}
+                      className="w-8 shrink-0 border-0 bg-transparent p-0 text-center text-sm focus:outline-none focus:ring-0"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setQty(code, n + 1)}
+                      disabled={n >= c.central}
+                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded border border-neutral-300 text-neutral-500 hover:bg-neutral-100 disabled:opacity-40"
+                      aria-label={`Tambah ${c.code}`}
+                    >
+                      <Plus className="h-3 w-3" />
+                    </button>
+                  </div>
+                )}
                 <span className="w-16 shrink-0 text-right text-sm font-semibold">
                   {(n * c.price).toLocaleString("id-ID")}
                 </span>
@@ -617,9 +671,11 @@ function FreeForm({ stores }: { stores?: RequestStoreOption[] }) {
 export function RestockCheckout({
   codes,
   grosirTiers = [],
+  initialVoucher = null,
 }: {
   codes: RestockCode[];
   grosirTiers?: GrosirTierInfo[];
+  initialVoucher?: AppliedVoucher | null;
 }) {
   return (
     <div className="space-y-3 rounded-2xl border border-neutral-200 bg-white p-5">
@@ -640,7 +696,18 @@ export function RestockCheckout({
         Belanja per kode barang dari stok pusat - tiap kode ada catatan tipe HP
         yang cocok. Langsung checkout tanpa tunggu sales cek stok.
       </p>
-      <RestockForm codes={codes} grosirTiers={grosirTiers} />
+      <RestockForm
+        // key: kalau owner udah lagi di tab checkout ini pas nge-klik
+        // "Pakai di Order" (navigasi ?claimBonus=1 gak bikin RestockForm
+        // remount karena posisinya di tree sama), keranjang gak pernah
+        // ke-seed ulang - qtys/vouchers cuma di-inisialisasi SEKALI pas
+        // mount. Kunci ke kode voucher biar ganti/baru muncul → remount
+        // fresh → initialVoucher ke-apply lagi.
+        key={initialVoucher?.code ?? "default"}
+        codes={codes}
+        grosirTiers={grosirTiers}
+        initialVoucher={initialVoucher}
+      />
     </div>
   );
 }

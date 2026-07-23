@@ -3,6 +3,7 @@
 import { useActionState, useMemo, useState } from "react";
 import { recordVisitMulti } from "@/app/actions/tracker";
 import { STAGES, STAGE_LABEL, RESULTS, RESULT_LABEL } from "@/lib/constants";
+import { groupProductsByCode } from "@/lib/product-code";
 import { Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { PendingLabel } from "@/components/SubmitButton";
 
@@ -11,12 +12,21 @@ const PER_PAGE = 6;
 
 type Item = { checked: boolean; qty: number };
 
+// Catat kunjungan / funnel — barang dipilih per KODE mold (kaya dropdown
+// order owner), bukan per tipe HP satu-satu (dulu bisa ratusan halaman).
+// Tiap kode diwakili 1 produk (member pertama, lihat lib/product-code.ts) —
+// stoknya masuk ke bucket yang sama dengan yang dibaca order/POS.
 export function VisitForm({
   storeId,
   products,
 }: {
   storeId: string;
-  products: { id: string; name: string }[];
+  products: {
+    id: string;
+    name: string;
+    code: string | null;
+    hpModel: string | null;
+  }[];
 }) {
   const action = recordVisitMulti.bind(null, storeId);
   const [state, formAction, pending] = useActionState(
@@ -24,30 +34,58 @@ export function VisitForm({
     null,
   );
 
+  // Kode → produk perwakilan + daftar tipe HP kompatibel (buat dicari & catatan)
+  const codes = useMemo(() => {
+    return groupProductsByCode(
+      products.map((p) => ({
+        id: p.id,
+        name: p.name,
+        code: p.code,
+        hpModel: p.hpModel,
+        price: 0,
+        centralStock: 0,
+        description: null,
+      })),
+    ).map((g) => ({
+      key: g.key,
+      code: g.code,
+      type: g.type,
+      repId: g.members[0]?.id ?? "",
+      models: g.members.map((m) => m.model || m.name),
+    }));
+  }, [products]);
+
+  // qty di-key per KODE (key grup); submit pakai repId
   const [items, setItems] = useState<Record<string, Item>>({});
   const [q, setQ] = useState("");
   const [page, setPage] = useState(0);
 
+  const term = q.trim().toLowerCase();
   const filtered = useMemo(
     () =>
-      products.filter((p) =>
-        p.name.toLowerCase().includes(q.trim().toLowerCase()),
-      ),
-    [products, q],
+      !term
+        ? codes
+        : codes.filter((c) =>
+            `${c.code ?? ""} ${c.type} ${c.models.join(" ")}`
+              .toLowerCase()
+              .includes(term),
+          ),
+    [codes, term],
   );
   const pageCount = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
   const safePage = Math.min(page, pageCount - 1);
   const view = filtered.slice(safePage * PER_PAGE, safePage * PER_PAGE + PER_PAGE);
-  const selectedIds = Object.keys(items).filter((id) => items[id]?.checked);
+  const selectedKeys = Object.keys(items).filter((k) => items[k]?.checked);
+  const byKey = useMemo(() => new Map(codes.map((c) => [c.key, c])), [codes]);
 
-  function toggle(id: string) {
+  function toggle(key: string) {
     setItems((s) => ({
       ...s,
-      [id]: { checked: !s[id]?.checked, qty: s[id]?.qty ?? 0 },
+      [key]: { checked: !s[key]?.checked, qty: s[key]?.qty ?? 0 },
     }));
   }
-  function setQty(id: string, qty: number) {
-    setItems((s) => ({ ...s, [id]: { checked: true, qty } }));
+  function setQty(key: string, qty: number) {
+    setItems((s) => ({ ...s, [key]: { checked: true, qty } }));
   }
 
   return (
@@ -80,14 +118,17 @@ export function VisitForm({
         </div>
       </div>
 
-      {/* Pilih barang + qty per barang: search + pagination */}
+      {/* Pilih barang per KODE + qty: search + pagination */}
       <div>
-        <div className="mb-1 flex items-center justify-between">
+        <div className="mb-1 flex items-center justify-between gap-2">
           <label className="text-sm font-medium text-neutral-700">
-            Barang & jumlah dikasih
+            Barang & jumlah yang dititip{" "}
+            <span className="font-normal text-neutral-400">
+              (bayar setelah laku)
+            </span>
           </label>
-          <span className="text-xs text-neutral-400">
-            {selectedIds.length} dipilih
+          <span className="shrink-0 text-xs text-neutral-400">
+            {selectedKeys.length} dipilih
           </span>
         </div>
 
@@ -100,7 +141,7 @@ export function VisitForm({
               setQ(e.target.value);
               setPage(0);
             }}
-            placeholder="Cari barang…"
+            placeholder="Cari kode / tipe HP (mis. iPhone 13, AA16)…"
             className="w-full rounded-lg border border-neutral-300 py-2 pl-8 pr-3 text-sm"
           />
         </div>
@@ -111,25 +152,51 @@ export function VisitForm({
               Barang tidak ditemukan.
             </p>
           ) : (
-            view.map((p) => {
-              const it = items[p.id];
+            view.map((c) => {
+              const it = items[c.key];
               const on = !!it?.checked;
               return (
                 <div
-                  key={p.id}
+                  key={c.key}
                   className={`rounded-lg border px-3 py-2 ${
                     on ? "border-neutral-400 bg-neutral-50" : "border-neutral-200"
                   }`}
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <label className="flex min-w-0 cursor-pointer items-center gap-2 text-sm">
+                  <div className="flex items-start justify-between gap-2">
+                    <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-2 text-sm">
                       <input
                         type="checkbox"
                         checked={on}
-                        onChange={() => toggle(p.id)}
-                        className="h-4 w-4 shrink-0 accent-neutral-900"
+                        onChange={() => toggle(c.key)}
+                        className="mt-0.5 h-4 w-4 shrink-0 accent-neutral-900"
                       />
-                      <span className="truncate">{p.name}</span>
+                      <span className="min-w-0">
+                        <span className="flex items-center gap-1.5">
+                          {c.code && (
+                            <span className="shrink-0 rounded bg-neutral-900 px-1 py-0.5 text-[10px] font-bold text-white">
+                              {c.code}
+                            </span>
+                          )}
+                          <span className="font-medium">{c.type || c.models[0]}</span>
+                        </span>
+                        <span className="mt-0.5 block text-[11px] leading-snug text-neutral-500">
+                          Cocok {c.models.length} tipe:{" "}
+                          {c.models.map((m, i) => (
+                            <span key={i}>
+                              {i > 0 && ", "}
+                              <span
+                                className={
+                                  term && m.toLowerCase().includes(term)
+                                    ? "rounded bg-brand px-0.5 font-semibold text-neutral-900"
+                                    : ""
+                                }
+                              >
+                                {m}
+                              </span>
+                            </span>
+                          ))}
+                        </span>
+                      </span>
                     </label>
                     {on && (
                       <input
@@ -137,11 +204,11 @@ export function VisitForm({
                         min={0}
                         value={it?.qty ?? 0}
                         onChange={(e) =>
-                          setQty(p.id, parseInt(e.target.value, 10) || 0)
+                          setQty(c.key, parseInt(e.target.value, 10) || 0)
                         }
                         placeholder="Jumlah"
-                        aria-label={`Jumlah ${p.name}`}
-                        className="w-24 shrink-0 rounded-lg border border-neutral-300 px-2 py-1.5 text-sm"
+                        aria-label={`Jumlah ${c.code ?? c.type}`}
+                        className="w-20 shrink-0 rounded-lg border border-neutral-300 px-2 py-1.5 text-sm"
                       />
                     )}
                   </div>
@@ -177,13 +244,22 @@ export function VisitForm({
           </div>
         )}
 
-        {/* Kirim semua barang terpilih + qty-nya (lintas halaman/pencarian) */}
-        {selectedIds.map((id) => (
-          <span key={id}>
-            <input type="hidden" name={`sel__${id}`} value={id} />
-            <input type="hidden" name={`qty__${id}`} value={items[id]?.qty ?? 0} />
-          </span>
-        ))}
+        {/* Kirim produk perwakilan tiap kode terpilih + qty-nya (lintas
+            halaman/pencarian) */}
+        {selectedKeys.map((key) => {
+          const repId = byKey.get(key)?.repId;
+          if (!repId) return null;
+          return (
+            <span key={key}>
+              <input type="hidden" name={`sel__${repId}`} value={repId} />
+              <input
+                type="hidden"
+                name={`qty__${repId}`}
+                value={items[key]?.qty ?? 0}
+              />
+            </span>
+          );
+        })}
       </div>
 
       <div>

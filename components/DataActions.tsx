@@ -13,6 +13,7 @@ import {
 import { updateGudang } from "@/app/actions/payroll";
 import { SubmitButton, PendingLabel } from "@/components/SubmitButton";
 import { Pencil, Trash2, X, MapPin } from "lucide-react";
+import { type ReactNode } from "react";
 
 const inputCls = "w-full rounded-lg border border-neutral-300 px-2 py-1.5 text-sm";
 
@@ -22,6 +23,36 @@ const rupiah = (n: number) =>
     currency: "IDR",
     maximumFractionDigits: 0,
   }).format(n);
+
+// Stabilo lime pada bagian teks yang cocok dengan kata pencarian - gaya
+// sama dengan CodePicker (order owner) supaya konsisten. Case-insensitive.
+function markMatch(text: string, term: string): ReactNode {
+  const t = term.trim();
+  if (!t) return text;
+  const lower = text.toLowerCase();
+  const needle = t.toLowerCase();
+  const out: ReactNode[] = [];
+  let i = 0;
+  let key = 0;
+  while (i < text.length) {
+    const idx = lower.indexOf(needle, i);
+    if (idx === -1) {
+      out.push(text.slice(i));
+      break;
+    }
+    if (idx > i) out.push(text.slice(i, idx));
+    out.push(
+      <span
+        key={key++}
+        className="rounded bg-brand px-0.5 font-semibold text-neutral-900"
+      >
+        {text.slice(idx, idx + needle.length)}
+      </span>,
+    );
+    i = idx + needle.length;
+  }
+  return out;
+}
 
 // Tombol hapus dengan konfirmasi browser — default ikon tong sampah kecil;
 // kasih className+children sendiri kalau butuh tombol berlabel.
@@ -89,6 +120,7 @@ function EditToggle({
 export function ProductRow({
   product,
   codeCount = 1,
+  highlight = "",
 }: {
   product: {
     id: string;
@@ -101,6 +133,8 @@ export function ProductRow({
   // Jumlah barang (termasuk ini) yang memakai kode yang sama — barang
   // sekode berbagi satu stok pusat fisik.
   codeCount?: number;
+  // Kata pencarian aktif — bagian nama/kode yang cocok distabilo lime.
+  highlight?: string;
 }) {
   const [editing, setEditing] = useState(false);
   const action = updateProduct.bind(null, product.id);
@@ -124,12 +158,19 @@ export function ProductRow({
         <div className="min-w-0 flex-1">
           <p className="flex items-start gap-1.5 font-medium">
             {product.code && (
-              <span className="mt-0.5 shrink-0 rounded bg-neutral-900 px-1.5 py-0.5 text-[10px] font-bold text-white">
+              <span
+                className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                  highlight &&
+                  product.code.toLowerCase().includes(highlight.toLowerCase())
+                    ? "bg-brand text-neutral-900"
+                    : "bg-neutral-900 text-white"
+                }`}
+              >
                 {product.code}
               </span>
             )}
             <span className="min-w-0 break-words leading-snug">
-              {product.name}
+              {markMatch(product.name, highlight)}
             </span>
           </p>
           <p className="truncate text-xs text-neutral-400">

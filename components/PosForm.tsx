@@ -5,8 +5,6 @@ import { createSale } from "@/app/actions/pos";
 import { SuccessPopup } from "@/components/SuccessPopup";
 import { ProductPicker } from "@/components/ProductPicker";
 import { PendingLabel } from "@/components/SubmitButton";
-import { VoucherInput, type AppliedVoucher } from "@/components/VoucherInput";
-import { applyVouchers } from "@/lib/voucher-calc";
 import { X } from "lucide-react";
 
 const rupiah = (n: number) =>
@@ -34,7 +32,6 @@ export function PosForm({
 }) {
   const [pickerId, setPickerId] = useState("");
   const [cart, setCart] = useState<CartLine[]>([]);
-  const [vouchers, setVouchers] = useState<AppliedVoucher[]>([]);
 
   const [state, formAction, pending] = useActionState(
     async (_prev: unknown, fd: FormData) => (await createSale(fd)) ?? null,
@@ -48,7 +45,6 @@ export function PosForm({
     if (state?.ok) {
       setPopup(rupiah(lastTotal.current));
       setCart([]);
-      setVouchers([]);
       const t = setTimeout(() => setPopup(null), 2200);
       return () => clearTimeout(t);
     }
@@ -97,12 +93,7 @@ export function PosForm({
     setCart((c) => c.filter((l) => l.productId !== id));
   }
 
-  const subtotal = cart.reduce((a, l) => a + l.qty * l.price, 0);
-  const discount = applyVouchers(
-    vouchers,
-    cart.map((l) => ({ ...l, code: prodOf(l.productId)?.code ?? null })),
-  ).total;
-  const total = subtotal - discount;
+  const total = cart.reduce((a, l) => a + l.qty * l.price, 0);
   const invalid = cart.some((l) => l.price <= 0);
 
   return (
@@ -203,23 +194,8 @@ export function PosForm({
         </div>
       )}
 
-      {/* Voucher toko (opsional, dibuat admin) */}
-      <VoucherInput applied={vouchers} onApplied={setVouchers} />
-
       {/* Total otomatis, gaya nota */}
       <div className="space-y-0.5 px-0.5">
-        {discount > 0 && (
-          <>
-            <div className="flex items-baseline justify-between text-sm text-neutral-500">
-              <span>Subtotal</span>
-              <span>{rupiah(subtotal)}</span>
-            </div>
-            <div className="flex items-baseline justify-between text-sm text-neutral-500">
-              <span>Diskon ({vouchers.map((v) => v.code).join(", ")})</span>
-              <span>−{rupiah(discount)}</span>
-            </div>
-          </>
-        )}
         <div className="flex items-baseline justify-between">
           <span className="text-sm font-semibold text-neutral-700">
             TOTAL{cart.length > 0 ? ` (${cart.length} barang)` : ""}

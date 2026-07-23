@@ -86,7 +86,7 @@ export default async function StoreDetailPage({
     orderBy: { createdAt: "desc" },
   });
   const products = await prisma.product.findMany({
-    select: { id: true, name: true },
+    select: { id: true, name: true, code: true, hpModel: true },
     orderBy: { name: "asc" },
   });
 
@@ -271,7 +271,12 @@ export default async function StoreDetailPage({
   const visitForm = (
     <VisitForm
       storeId={store.id}
-      products={products.map((p) => ({ id: p.id, name: p.name }))}
+      products={products.map((p) => ({
+        id: p.id,
+        name: p.name,
+        code: p.code,
+        hpModel: p.hpModel,
+      }))}
     />
   );
 

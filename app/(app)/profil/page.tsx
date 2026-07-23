@@ -15,6 +15,7 @@ import {
   wibPeriod,
 } from "@/lib/sales-score-history";
 import { ProfileView } from "@/components/ProfileView";
+import { getCsContact } from "@/lib/cs-config";
 
 export default async function ProfilPage() {
   const user = await getCurrentUser();
@@ -46,6 +47,25 @@ export default async function ProfilPage() {
           lng: user.ownedStore.lng,
         }
       : null;
+
+  // Kontak "Hubungi CS" (khusus OWNER): CS Ugorex + sales pemegang tokonya.
+  let contactInfo: {
+    cs: { name: string; phone: string | null };
+    sales: { name: string; phone: string } | null;
+  } | null = null;
+  if (user.role === "OWNER" && user.ownedStore) {
+    const [cs, store] = await Promise.all([
+      getCsContact(),
+      prisma.store.findUnique({
+        where: { id: user.ownedStore.id },
+        select: { sales: { select: { name: true, phone: true } } },
+      }),
+    ]);
+    contactInfo = {
+      cs,
+      sales: store?.sales ? { name: store.sales.name, phone: store.sales.phone } : null,
+    };
+  }
 
   // Grade & level (rumus sama dgn beranda - lib/sales-kpi-grade.ts) buat
   // ditampilkan di kartu identitas, khusus SALES.
@@ -129,6 +149,7 @@ export default async function ProfilPage() {
         extra={extra}
         gradeInfo={gradeInfo}
         store={storeInfo}
+        contact={contactInfo}
       />
     </div>
   );

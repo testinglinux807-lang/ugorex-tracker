@@ -188,6 +188,9 @@ export async function createRestockRequest(formData: FormData) {
         return { error: `Cuma boleh 1 voucher jenis ${voucherLabel(v)} sekaligus.` };
       }
       typeSeen.add(v.type);
+      if (v.storeId && v.storeId !== user.ownedStore.id) {
+        return { error: `Voucher ${v.code} bukan buat toko ini.` };
+      }
       if (v.productId) {
         const scopeKey = voucherScopeKey({
           id: v.productId,

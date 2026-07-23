@@ -195,11 +195,51 @@ model Voucher {
   // beda-beda per toko, lihat app/(app)/order/page.tsx repId), bukan id ini.
   productId String?
   product   Product?  @relation(fields: [productId], references: [id])
+  // Diisi otomatis kalau voucher ini hasil bonus target bulanan (lihat
+  // StoreMonthlyBonus) - cuma toko itu yang boleh pakai. null = kode umum,
+  // siapa saja yang tahu kodenya boleh pakai (voucher biasa buatan admin).
+  storeId   String?
+  store     Store?    @relation(fields: [storeId], references: [id])
   maxUses   Int? // batas total pemakaian; null = tanpa batas
   usedCount Int       @default(0)
   expiresAt DateTime? // null = tanpa kadaluarsa
   active    Boolean   @default(true)
   createdAt DateTime  @default(now())
+  monthlyBonus StoreMonthlyBonus?
+}
+
+// Progres & bukti klaim "Target Bulanan" per toko (menu Data - Voucher
+// Toko): target qty & produk hadiah bulan itu diambil dari
+// TargetBonusPeriod (lihat lib/target-bonus.ts), berlaku sama ke semua
+// toko. Begitu total pcs order RESTOK (lunas) toko itu bulan ini >=
+// target, sistem otomatis terbitkan 1 voucher FREE (khusus toko itu,
+// lihat Voucher.storeId) - dicatat di sini SEKALI per toko per bulan biar
+// tidak diterbitkan dobel.
+model StoreMonthlyBonus {
+  id        String    @id @default(cuid())
+  storeId   String
+  store     Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  period    String // "YYYY-MM" (WIB)
+  voucherId String?   @unique
+  voucher   Voucher?  @relation(fields: [voucherId], references: [id])
+  // Diisi saat owner "menggores" & membuka kode voucher (sekali saja) -
+  // biar kartu gores tidak reset ke belum-tergores tiap refresh.
+  claimedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@unique([storeId, period])
+}
+
+// Target & hadiah "Target Bulanan" PER BULAN (admin, menu Data - Voucher
+// Toko) - beda bulan boleh beda target qty & produk hadiahnya. Bulan yang
+// belum di-set = fitur nonaktif buat bulan itu (tidak ada kartu di /order).
+model TargetBonusPeriod {
+  id        String   @id @default(cuid())
+  period    String   @unique // "YYYY-MM" (WIB)
+  qty       Int
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  createdAt DateTime @default(now())
 }
 
 // Aturan diskon grosir order restok (dikelola admin di menu Data, di bawah
@@ -266,6 +306,8 @@ model Store {
   requests     Request[]
   tasks        Task[]
   salesRating  SalesRating?
+  vouchers       Voucher[]
+  monthlyBonuses StoreMonthlyBonus[]
 }
 
 // Rating sales dari owner konter (bintang 1-5 + keterangan) — diisi owner
@@ -341,6 +383,10 @@ model Product {
   id          String     @id @default(cuid())
   name        String
   code        String? // kode/ID barang (mis. "AA01") — barang kompatibel berbagi kode
+  // Bagian "tipe HP" dari nama (mis. "IPHONE 14 PM"); jenis = nama tanpa ini.
+  // Disimpan biar pemisahan jenis/tipe reliable utk jenis apa pun (bukan cuma
+  // "Antigores ..."). null utk data lama → fallback regex (lib/product-code.ts).
+  hpModel     String?
   description String?
   price       Int        @default(0) // harga satuan (Rupiah)
   imageUrl    String? // foto katalog (data URL terkompresi atau URL eksternal)
@@ -350,6 +396,7 @@ model Product {
   transactions Sale[]
   requestItems RequestItem[]
   vouchers    Voucher[]
+  targetBonusPeriods TargetBonusPeriod[]
 }
 
 // Satu barang di satu konter = satu "prospek" yang ditrack lewat funnel

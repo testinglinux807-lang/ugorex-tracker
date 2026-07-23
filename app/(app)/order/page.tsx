@@ -14,6 +14,15 @@ import { OrderTabs } from "@/components/OrderTabs";
 import { RestockCheckout } from "@/components/RequestForm";
 import { StockEditor } from "@/components/StockEditor";
 import { deliveryPhotoSrcMap } from "@/lib/product-image";
+import { TargetBonusList } from "@/components/TargetBonusList";
+import { TargetBonusCard } from "@/components/TargetBonusCard";
+import {
+  getMonthlyBonusProgress,
+  getMonthlyBonusProgressBatch,
+  getStoreBonusHistory,
+  ensureMonthlyBonusVoucher,
+  type MonthlyBonusProgress,
+} from "@/lib/target-bonus";
 import {
   loadGudangLocs,
   getGudangRadiusKm,
@@ -31,7 +40,7 @@ const rupiah = (n: number) =>
 export default async function OrderPage({
   searchParams,
 }: {
-  searchParams: Promise<{ focus?: string }>;
+  searchParams: Promise<{ focus?: string; claimBonus?: string }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
@@ -39,7 +48,7 @@ export default async function OrderPage({
   if (user.role === "GUDANG") redirect("/gudang");
 
   const isOwner = user.role === "OWNER";
-  const { focus } = await searchParams;
+  const { focus, claimBonus } = await searchParams;
 
   // Order online yang tagihannya kedaluwarsa >24 jam dibatalkan otomatis
   // (stok reservasi balik) — disapu tiap halaman order dibuka.
@@ -166,29 +175,36 @@ export default async function OrderPage({
   // ===== Tampilan OWNER: checkout + riwayat order toko =====
   if (isOwner) {
     const storeId = user.ownedStore!.id;
-    const [products, prospects, grosirTiers, sold] = await Promise.all([
-      prisma.product.findMany({
-        select: {
-          id: true,
-          name: true,
-          code: true,
-          price: true,
-          centralStock: true,
-        },
-        orderBy: { name: "asc" },
-      }),
-      prisma.prospect.findMany({ where: { storeId } }),
-      prisma.grosirTier.findMany({
-        where: { active: true },
-        select: { minQty: true, percent: true },
-      }),
-      // Terjual per barang (bahan sisa stok tab "Stok" — dulu /stok terpisah)
-      prisma.sale.groupBy({
-        by: ["productId"],
-        where: { storeId },
-        _sum: { qty: true },
-      }),
-    ]);
+    // "Target Bulanan" (lib/target-bonus.ts) - dicek tiap halaman ini
+    // dibuka (bukan cuma di titik checkout) supaya begitu status order
+    // berubah jadi lunas dari mana pun, voucher bonusnya tetap kebentuk.
+    after(() => ensureMonthlyBonusVoucher(storeId));
+    const [products, prospects, grosirTiers, sold, bonusProgress, bonusHistory] =
+      await Promise.all([
+        prisma.product.findMany({
+          select: {
+            id: true,
+            name: true,
+            code: true,
+            price: true,
+            centralStock: true,
+          },
+          orderBy: { name: "asc" },
+        }),
+        prisma.prospect.findMany({ where: { storeId } }),
+        prisma.grosirTier.findMany({
+          where: { active: true },
+          select: { minQty: true, percent: true },
+        }),
+        // Terjual per barang (bahan sisa stok tab "Stok" — dulu /stok terpisah)
+        prisma.sale.groupBy({
+          by: ["productId"],
+          where: { storeId },
+          _sum: { qty: true },
+        }),
+        getMonthlyBonusProgress(storeId),
+        getStoreBonusHistory(storeId),
+      ]);
     // Order yang masih perlu dibayar online — dipantau watcher supaya status
     // ikut update begitu owner balik dari app pembayaran (mis. GoPay). Batasi
     // ke 5 terbaru (orders sudah createdAt desc) biar tak menembak Midtrans
@@ -330,11 +346,25 @@ export default async function OrderPage({
           </p>
         </div>
 
+        {/* Target Bulanan — cuma tampil kalau admin sudah men-set (menu
+            Data). Basisnya order RESTOK (bukan jual POS) - makanya di sini. */}
+        {bonusProgress && (
+          <TargetBonusCard progress={bonusProgress} history={bonusHistory} />
+        )}
+
         <OrderTabs
-          defaultTab={focusIdx !== -1 ? "history" : "checkout"}
+          defaultTab={
+            claimBonus === "1" ? "checkout" : focusIdx !== -1 ? "history" : "checkout"
+          }
           historyCount={orderCount}
           checkout={
-            <RestockCheckout codes={restockCodes} grosirTiers={grosirTiers} />
+            <RestockCheckout
+              codes={restockCodes}
+              grosirTiers={grosirTiers}
+              initialVoucher={
+                claimBonus === "1" ? bonusProgress?.claimVoucher ?? null : null
+              }
+            />
           }
           stok={
             <div className="space-y-4">
@@ -486,6 +516,34 @@ export default async function OrderPage({
         })
       : 0;
 
+  // "Target Bulanan" per konter (khusus sales) — semua toko yang dia
+  // pegang, bukan cuma yang punya order restok, biar kelihatan konter mana
+  // yang belum jalan juga.
+  let bonusItems: {
+    storeId: string;
+    storeName: string;
+    progress: MonthlyBonusProgress;
+  }[] = [];
+  if (user.role === "SALES") {
+    const myStores = await prisma.store.findMany({
+      where: { salesId: user.id },
+      select: { id: true, name: true },
+    });
+    for (const s of myStores) after(() => ensureMonthlyBonusVoucher(s.id));
+    const progressMap = await getMonthlyBonusProgressBatch(
+      myStores.map((s) => s.id),
+    );
+    if (progressMap) {
+      bonusItems = myStores
+        .filter((s) => progressMap.has(s.id))
+        .map((s) => ({
+          storeId: s.id,
+          storeName: s.name,
+          progress: progressMap.get(s.id)!,
+        }));
+    }
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -546,6 +604,8 @@ export default async function OrderPage({
           </div>
         </div>
       )}
+
+      {bonusItems.length > 0 && <TargetBonusList items={bonusItems} />}
 
       <OrderList
         showFilters={!isGudang}
