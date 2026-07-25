@@ -22,6 +22,24 @@ export async function parseNik(
   return { nik };
 }
 
+// Batas ukuran foto KTP (data URL) ~1.1MB — lebih longgar dari foto produk
+// (700KB) karena teks di KTP perlu resolusi lebih tinggi biar kebaca.
+const MAX_KTP_PHOTO_LENGTH = 1_500_000;
+
+// Foto KTP dari form registrasi sales — WAJIB diisi (beda dari NIK yang
+// opsional). Return { error } kalau kosong/tidak valid.
+export function parseKtpPhoto(
+  formData: FormData,
+): { url?: string; error?: string } {
+  const raw = String(formData.get("ktpPhotoUrl") ?? "").trim();
+  if (!raw) return { error: "Foto KTP wajib diunggah." };
+  if (raw.length > MAX_KTP_PHOTO_LENGTH) {
+    return { error: "Foto KTP terlalu besar, coba foto ulang." };
+  }
+  if (!raw.startsWith("data:image/")) return { error: "Foto KTP tidak valid." };
+  return { url: raw };
+}
+
 // Titik rumah/gudang dari form (homeLat/homeLng) — dua-duanya harus terisi
 // angka valid; selain itu dianggap tanpa titik (null).
 export function parseHomePoint(formData: FormData) {

@@ -462,6 +462,31 @@ export default async function SalesDetailPage({
         </div>
       </section>
 
+      {/* Foto KTP (admin, read-only) — diunggah sales saat registrasi lewat
+          link undangan. Akun lama (dibuat sebelum field ini ada) belum punya. */}
+      <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+        <h2 className="mb-1 font-semibold">Foto KTP</h2>
+        {sales.ktpPhotoUrl ? (
+          <a
+            href={sales.ktpPhotoUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-2 inline-block"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={sales.ktpPhotoUrl}
+              alt={`Foto KTP ${sales.name}`}
+              className="h-28 w-44 rounded-lg border border-neutral-200 object-cover transition hover:opacity-90"
+            />
+          </a>
+        ) : (
+          <p className="mt-2 text-sm text-neutral-400">
+            Belum ada foto KTP (akun dibuat sebelum wajib unggah foto KTP).
+          </p>
+        )}
+      </section>
+
       {/* No. rekening (admin) — ditampilkan read-only di tabel Payroll,
           diedit dari sini */}
       <section

@@ -1,10 +1,11 @@
 "use client";
 
 import Image from "next/image";
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState } from "react";
 import { registerSalesViaInvite } from "@/app/actions/users";
 import { PendingLabel } from "@/components/SubmitButton";
-import { Eye, EyeOff, LocateFixed, MapPin } from "lucide-react";
+import { compressToDataUrl } from "@/components/ProductPhoto";
+import { Eye, EyeOff, LocateFixed, MapPin, IdCard } from "lucide-react";
 
 const inputCls =
   "w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-900";
@@ -23,6 +24,21 @@ export function SalesRegisterForm({ token }: { token: string }) {
   const [lng, setLng] = useState("");
   const [locating, setLocating] = useState(false);
   const [locError, setLocError] = useState<string | null>(null);
+  const [ktpPreview, setKtpPreview] = useState<string | null>(null);
+  const [ktpError, setKtpError] = useState<string | null>(null);
+  const ktpFileRef = useRef<HTMLInputElement>(null);
+
+  async function onPickKtp(file: File | undefined) {
+    if (!file) return;
+    setKtpError(null);
+    try {
+      // maxSize lebih besar dari foto produk (512) — teks di KTP perlu
+      // resolusi lebih tinggi biar tetap kebaca.
+      setKtpPreview(await compressToDataUrl(file, 1280, { quality: 0.85 }));
+    } catch {
+      setKtpError("Foto gagal diproses, coba pilih foto lain.");
+    }
+  }
 
   function useMyLocation() {
     if (!navigator.geolocation) {
@@ -133,6 +149,53 @@ export function SalesRegisterForm({ token }: { token: string }) {
 
           <div>
             <label className="mb-1 block text-sm font-medium text-neutral-700">
+              Foto KTP <span className="text-neutral-900">*</span>
+            </label>
+            <input type="hidden" name="ktpPhotoUrl" value={ktpPreview ?? ""} />
+            <input
+              ref={ktpFileRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={(e) => onPickKtp(e.target.files?.[0])}
+            />
+            {ktpPreview ? (
+              <div className="flex items-center gap-2">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={ktpPreview}
+                  alt="Preview foto KTP"
+                  className="h-16 w-24 rounded-lg border border-neutral-200 object-cover"
+                />
+                <button
+                  type="button"
+                  onClick={() => ktpFileRef.current?.click()}
+                  className="rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-600 hover:bg-neutral-100"
+                >
+                  Ganti foto
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => ktpFileRef.current?.click()}
+                className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-neutral-300 px-3 py-3 text-sm text-neutral-600 hover:bg-neutral-100"
+              >
+                <IdCard className="h-4 w-4" />
+                Ambil / unggah foto KTP
+              </button>
+            )}
+            <p className="mt-1 text-xs text-neutral-400">
+              Pastikan NIK &amp; nama di KTP terbaca jelas.
+            </p>
+            {ktpError && (
+              <p className="mt-1 text-xs font-medium text-red-600">{ktpError}</p>
+            )}
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-neutral-700">
               No. Rekening
             </label>
             <input
@@ -193,7 +256,7 @@ export function SalesRegisterForm({ token }: { token: string }) {
 
           <button
             type="submit"
-            disabled={pending}
+            disabled={pending || !ktpPreview}
             className="w-full rounded-lg bg-neutral-900 py-2.5 text-sm font-semibold text-white transition hover:bg-neutral-800 disabled:opacity-60"
           >
             {pending ? <PendingLabel text="Mendaftar…" /> : "Daftar & Masuk"}

@@ -40,6 +40,11 @@ model User {
   // NIK KTP (role SALES, 16 digit) — data administrasi karyawan
   nik String?
 
+  // Foto KTP (role SALES, base64 data URL) — wajib diunggah saat
+  // registrasi via link undangan (/daftar-sales/[token]), tampil di
+  // detail sales admin. Akun lama (dibuat sebelum field ini ada) boleh null.
+  ktpPhotoUrl String?
+
   // Gaji pokok bulanan (role GUDANG) — dipakai payroll. 0 = belum diatur.
   basePay Int @default(0)
 

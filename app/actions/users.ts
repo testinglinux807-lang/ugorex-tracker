@@ -8,7 +8,7 @@ import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser, createSession } from "@/lib/auth";
 import { notifyCommissionPayout } from "@/lib/wa-notify";
-import { parseNik, parseHomePoint } from "@/lib/user-fields";
+import { parseNik, parseHomePoint, parseKtpPhoto } from "@/lib/user-fields";
 import { publishRealtime } from "@/lib/realtime";
 
 // Sales/Admin membuat akun OWNER untuk sebuah toko (saat owner setuju)
@@ -197,6 +197,9 @@ export async function registerSalesViaInvite(
   const nikRes = await parseNik(formData);
   if (nikRes.error) return { error: nikRes.error };
 
+  const ktpRes = parseKtpPhoto(formData);
+  if (ktpRes.error) return { error: ktpRes.error };
+
   // Klaim token dulu secara atomik (anti dobel submit / rebutan), baru
   // buat akunnya; kalau pembuatan akun gagal, klaimnya dilepas lagi.
   const claimed = await prisma.salesInvite.updateMany({
@@ -217,6 +220,7 @@ export async function registerSalesViaInvite(
         role: "SALES",
         createdById: invite.createdById,
         nik: nikRes.nik,
+        ktpPhotoUrl: ktpRes.url,
         bankAccount: String(formData.get("bankAccount") ?? "").trim() || null,
         ...parseHomePoint(formData),
       },
