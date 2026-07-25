@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { notifyNewTask } from "@/lib/wa-notify";
+import { publishRealtime } from "@/lib/realtime";
 
 // Admin memberi tugas manual ke satu / banyak sales sekaligus — muncul di
 // tab Tugas masing-masing sales (satu baris Task per sales).
@@ -70,6 +71,7 @@ export async function createTask(formData: FormData) {
   });
 
   revalidatePath("/tugas");
+  publishRealtime("tugas");
   return { ok: true, count: ids.length };
 }
 
@@ -96,6 +98,7 @@ export async function setTaskDone(id: string, done: boolean) {
     },
   });
   revalidatePath("/tugas");
+  publishRealtime("tugas");
 }
 
 // Admin menghapus tugas
@@ -105,4 +108,5 @@ export async function deleteTask(id: string) {
   if (user.role !== "ADMIN") return;
   await prisma.task.delete({ where: { id } });
   revalidatePath("/tugas");
+  publishRealtime("tugas");
 }

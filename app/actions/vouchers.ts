@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { findUsableVoucher } from "@/lib/voucher";
+import { publishRealtime } from "@/lib/realtime";
 
 async function requireAdmin() {
   const user = await getCurrentUser();
@@ -78,6 +79,7 @@ export async function createVoucher(formData: FormData) {
     },
   });
   revalidatePath("/data");
+  publishRealtime("data");
   return { ok: true };
 }
 
@@ -91,6 +93,7 @@ export async function toggleVoucher(id: string) {
     data: { active: !v.active },
   });
   revalidatePath("/data");
+  publishRealtime("data");
 }
 
 // Admin menghapus voucher
@@ -98,6 +101,7 @@ export async function deleteVoucher(id: string) {
   if (!(await requireAdmin())) return;
   await prisma.voucher.delete({ where: { id } }).catch(() => {});
   revalidatePath("/data");
+  publishRealtime("data");
 }
 
 // Admin membuat tier diskon grosir (menu Data, di bawah Voucher Toko):
@@ -122,6 +126,7 @@ export async function createGrosirTier(formData: FormData) {
   await prisma.grosirTier.create({ data: { minQty, percent } });
   revalidatePath("/data");
   revalidatePath("/order");
+  publishRealtime("data");
   return { ok: true };
 }
 
@@ -136,6 +141,7 @@ export async function toggleGrosirTier(id: string) {
   });
   revalidatePath("/data");
   revalidatePath("/order");
+  publishRealtime("data");
 }
 
 // Admin menghapus tier grosir
@@ -144,6 +150,7 @@ export async function deleteGrosirTier(id: string) {
   await prisma.grosirTier.delete({ where: { id } }).catch(() => {});
   revalidatePath("/data");
   revalidatePath("/order");
+  publishRealtime("data");
 }
 
 // Owner mengecek kode voucher dari form checkout/POS (preview diskon).

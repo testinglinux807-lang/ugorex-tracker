@@ -12,6 +12,7 @@ import {
   notifyKpiBonusPayout,
   notifyGudangSalaryPayout,
 } from "@/lib/wa-notify";
+import { publishRealtime } from "@/lib/realtime";
 
 async function requireAdmin() {
   const user = await getCurrentUser();
@@ -61,6 +62,7 @@ export async function updateGudang(formData: FormData) {
   });
   revalidatePath("/payroll");
   revalidatePath("/order");
+  publishRealtime("payroll");
   return { ok: true };
 }
 
@@ -76,6 +78,7 @@ export async function setGudangRadius(formData: FormData) {
   });
   revalidatePath("/payroll");
   revalidatePath("/order");
+  publishRealtime("payroll");
   return { ok: true };
 }
 
@@ -102,6 +105,7 @@ export async function addLog(formData: FormData) {
     data: { userId, type, amount, date, note, createdById: user.id },
   });
   revalidatePath("/payroll");
+  publishRealtime("payroll");
   return { ok: true };
 }
 
@@ -130,6 +134,7 @@ export async function addLembur(formData: FormData) {
     data: { userId, startAt, endAt, note },
   });
   revalidatePath("/payroll");
+  publishRealtime("payroll");
   return { ok: true };
 }
 
@@ -140,6 +145,7 @@ export async function deleteLog(formData: FormData) {
   if (!id) return { error: "Data tidak ditemukan." };
   await prisma.payrollLog.delete({ where: { id } });
   revalidatePath("/payroll");
+  publishRealtime("payroll");
   return { ok: true };
 }
 
@@ -156,6 +162,7 @@ export async function startLembur() {
 
   await prisma.lemburSession.create({ data: { userId: user.id } });
   revalidatePath("/lembur");
+  publishRealtime("lembur");
   return { ok: true };
 }
 
@@ -176,6 +183,7 @@ export async function stopLembur() {
   });
   revalidatePath("/lembur");
   revalidatePath("/payroll");
+  publishRealtime("lembur");
   return { ok: true };
 }
 
@@ -191,6 +199,7 @@ export async function cancelLembur() {
   if (!open) return { error: "Tidak ada lembur berjalan." };
   await prisma.lemburSession.delete({ where: { id: open.id } });
   revalidatePath("/lembur");
+  publishRealtime("lembur");
   return { ok: true };
 }
 
@@ -202,6 +211,7 @@ export async function deleteLemburSession(formData: FormData) {
   if (!id) return { error: "Sesi tidak ditemukan." };
   await prisma.lemburSession.delete({ where: { id } });
   revalidatePath("/payroll");
+  publishRealtime("payroll");
   return { ok: true };
 }
 
@@ -229,6 +239,7 @@ export async function setPayrollConfig(formData: FormData) {
     });
   if (ops.length > 0) await prisma.$transaction(ops);
   revalidatePath("/payroll");
+  publishRealtime("payroll");
   return { ok: true };
 }
 
@@ -275,6 +286,7 @@ export async function markKpiBonusPaid(formData: FormData) {
   after(() => notifyKpiBonusPayout(salesId, amount, period));
   revalidatePath("/payroll");
   revalidatePath("/keuangan");
+  publishRealtime("payroll");
   return { ok: true };
 }
 
@@ -298,6 +310,7 @@ export async function unmarkKpiBonusPaid(formData: FormData) {
   ]);
   revalidatePath("/payroll");
   revalidatePath("/keuangan");
+  publishRealtime("payroll");
   return { ok: true };
 }
 
@@ -332,6 +345,7 @@ export async function markGudangSalaryPaid(formData: FormData) {
 
   after(() => notifyGudangSalaryPayout(userId, amount, period));
   revalidatePath("/payroll");
+  publishRealtime("payroll");
   return { ok: true };
 }
 
@@ -346,5 +360,6 @@ export async function unmarkGudangSalaryPaid(formData: FormData) {
 
   await prisma.gudangSalaryPayout.deleteMany({ where: { userId, period } });
   revalidatePath("/payroll");
+  publishRealtime("payroll");
   return { ok: true };
 }

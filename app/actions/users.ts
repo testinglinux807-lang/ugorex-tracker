@@ -9,6 +9,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser, createSession } from "@/lib/auth";
 import { notifyCommissionPayout } from "@/lib/wa-notify";
 import { parseNik, parseHomePoint } from "@/lib/user-fields";
+import { publishRealtime } from "@/lib/realtime";
 
 // Sales/Admin membuat akun OWNER untuk sebuah toko (saat owner setuju)
 export async function createOwnerAccount(storeId: string, formData: FormData) {
@@ -39,6 +40,7 @@ export async function createOwnerAccount(storeId: string, formData: FormData) {
 
   revalidatePath(`/data`);
   revalidatePath(`/prospects`);
+  publishRealtime("data");
   return { ok: true };
 }
 
@@ -76,6 +78,7 @@ export async function createSalesAccount(formData: FormData) {
   });
   revalidatePath("/data");
   revalidatePath("/sales");
+  publishRealtime("sales");
   return { ok: true };
 }
 
@@ -113,6 +116,7 @@ export async function createGudangAccount(formData: FormData) {
   });
   revalidatePath("/payroll");
   revalidatePath("/data");
+  publishRealtime("payroll");
   return { ok: true };
 }
 
@@ -128,6 +132,7 @@ export async function deleteGudangAccount(id: string) {
   await prisma.user.delete({ where: { id } });
   revalidatePath("/payroll");
   revalidatePath("/data");
+  publishRealtime("payroll");
   return { ok: true };
 }
 
@@ -151,6 +156,7 @@ export async function createSalesInvite(formData: FormData) {
     },
   });
   revalidatePath("/sales");
+  publishRealtime("sales");
   return { ok: true };
 }
 
@@ -162,6 +168,7 @@ export async function deleteSalesInvite(id: string) {
 
   await prisma.salesInvite.delete({ where: { id } });
   revalidatePath("/sales");
+  publishRealtime("sales");
   return { ok: true };
 }
 
@@ -228,6 +235,7 @@ export async function registerSalesViaInvite(
 
   revalidatePath("/sales");
   revalidatePath("/data");
+  publishRealtime("sales");
   await createSession({ userId: created.id, role: "SALES", name: created.name });
   redirect("/beranda");
 }
@@ -252,6 +260,7 @@ export async function createGudangInvite(formData: FormData) {
     },
   });
   revalidatePath("/data");
+  publishRealtime("data");
   return { ok: true };
 }
 
@@ -263,6 +272,7 @@ export async function deleteGudangInvite(id: string) {
 
   await prisma.gudangInvite.delete({ where: { id } });
   revalidatePath("/data");
+  publishRealtime("data");
   return { ok: true };
 }
 
@@ -327,6 +337,7 @@ export async function registerGudangViaInvite(
 
   revalidatePath("/data");
   revalidatePath("/payroll");
+  publishRealtime("payroll");
   await createSession({ userId: created.id, role: "GUDANG", name: created.name });
   redirect("/gudang");
 }
@@ -368,6 +379,7 @@ export async function updateSalesAccount(userId: string, formData: FormData) {
   revalidatePath("/data");
   revalidatePath("/sales");
   revalidatePath("/beranda");
+  publishRealtime("sales");
   return { ok: true };
 }
 
@@ -395,6 +407,7 @@ export async function setSalesCommission(userId: string, formData: FormData) {
   });
   revalidatePath("/sales");
   revalidatePath(`/sales/${userId}`);
+  publishRealtime("sales");
   return { ok: true };
 }
 
@@ -416,6 +429,7 @@ export async function setSalesBankAccount(formData: FormData) {
   revalidatePath("/payroll");
   revalidatePath("/sales");
   revalidatePath(`/sales/${userId}`);
+  publishRealtime("payroll");
   return { ok: true };
 }
 
@@ -453,6 +467,7 @@ export async function setSalesCaptain(userId: string, formData: FormData) {
   revalidatePath("/sales");
   revalidatePath(`/sales/${userId}`);
   revalidatePath("/beranda");
+  publishRealtime("sales");
   return { ok: true };
 }
 
@@ -502,6 +517,7 @@ export async function recordCommissionPayout(
   revalidatePath("/penghasilan");
   revalidatePath("/beranda");
   revalidatePath("/payroll");
+  publishRealtime("keuangan");
   return { ok: true };
 }
 
@@ -525,6 +541,7 @@ export async function deleteCommissionPayout(id: string) {
   revalidatePath("/penghasilan");
   revalidatePath("/beranda");
   revalidatePath("/payroll");
+  publishRealtime("keuangan");
   return { ok: true };
 }
 
@@ -544,6 +561,7 @@ export async function deleteSalesAccount(userId: string) {
   revalidatePath("/data");
   revalidatePath("/dashboard");
   revalidatePath("/sales");
+  publishRealtime("sales");
   return { ok: true };
 }
 
@@ -577,5 +595,6 @@ export async function deleteOwnerAccount(storeId: string) {
   ]);
   revalidatePath("/data");
   revalidatePath(`/konter/${storeId}`);
+  publishRealtime("data");
   return { ok: true };
 }

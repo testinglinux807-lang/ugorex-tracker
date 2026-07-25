@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { STAGES, RESULTS, type Stage, type Result } from "@/lib/constants";
 import { joinName, productParts } from "@/lib/product-code";
+import { publishRealtime } from "@/lib/realtime";
 
 // Catat kunjungan: tandai tahap funnel + respon + catatan untuk 1 barang di 1 konter.
 // Sekaligus buat/lengkapi prospek dan tambah riwayat.
@@ -56,6 +57,7 @@ export async function recordVisit(storeId: string, formData: FormData) {
   revalidatePath(`/konter/${storeId}`);
   revalidatePath("/prospects");
   revalidatePath("/dashboard");
+  publishRealtime("prospects");
   return { ok: true };
 }
 
@@ -125,6 +127,7 @@ export async function recordVisitMulti(storeId: string, formData: FormData) {
   revalidatePath("/konter");
   revalidatePath("/prospects");
   revalidatePath("/dashboard");
+  publishRealtime("prospects");
   return { ok: true, count };
 }
 
@@ -173,6 +176,7 @@ export async function createProduct(formData: FormData) {
   revalidatePath("/data");
   revalidatePath("/pos");
   revalidatePath("/katalog");
+  publishRealtime("data");
 }
 
 // Admin mengubah data barang
@@ -215,6 +219,7 @@ export async function updateProduct(productId: string, formData: FormData) {
   revalidatePath("/pos");
   revalidatePath("/request");
   revalidatePath("/order");
+  publishRealtime("data");
   return { ok: true };
 }
 
@@ -236,6 +241,7 @@ function revalidateProductPaths() {
   revalidatePath("/pos");
   revalidatePath("/request");
   revalidatePath("/order");
+  publishRealtime("data");
 }
 
 // ===== Barang per KODE (menu Data admin) — 1 kode = banyak tipe HP,
@@ -410,6 +416,7 @@ export async function updateStore(storeId: string, formData: FormData) {
   revalidatePath("/data");
   revalidatePath("/prospects");
   revalidatePath(`/konter/${storeId}`);
+  publishRealtime("data");
   return { ok: true };
 }
 
@@ -434,6 +441,7 @@ export async function setStoreSales(storeId: string, formData: FormData) {
   revalidatePath(`/konter/${storeId}`);
   revalidatePath("/data");
   revalidatePath("/sales");
+  publishRealtime("data");
   return { ok: true };
 }
 
@@ -456,6 +464,7 @@ export async function deleteStore(storeId: string) {
   revalidatePath("/data");
   revalidatePath("/prospects");
   revalidatePath("/dashboard");
+  publishRealtime("data");
   return { ok: true };
 }
 
@@ -484,6 +493,7 @@ export async function updateProductStock(productId: string, formData: FormData) 
   revalidatePath("/data");
   revalidatePath("/request");
   revalidatePath("/katalog");
+  publishRealtime("data");
   return { ok: true };
 }
 
@@ -499,6 +509,7 @@ export async function updateProductImage(productId: string, formData: FormData) 
   await prisma.product.update({ where: { id: productId }, data: { imageUrl } });
   revalidatePath("/data");
   revalidatePath("/katalog");
+  publishRealtime("data");
   return { ok: true };
 }
 
@@ -537,6 +548,7 @@ export async function createStore(formData: FormData) {
   revalidatePath("/prospects");
   revalidatePath("/konter");
   revalidatePath("/beranda");
+  publishRealtime("data");
 }
 
 // Buat prospek baru: barang X di konter Y
@@ -606,4 +618,5 @@ export async function addStageLog(prospectId: string, formData: FormData) {
   revalidatePath(`/prospects/${prospectId}`);
   revalidatePath("/prospects");
   revalidatePath("/dashboard");
+  publishRealtime("prospects");
 }

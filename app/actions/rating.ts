@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+import { publishRealtime } from "@/lib/realtime";
 
 // Owner konter menilai sales pemegang tokonya (bintang 1-5 + keterangan) —
 // form di halaman POS. Satu konter satu rating; simpan ulang = mengubah.
@@ -36,5 +37,6 @@ export async function rateSales(formData: FormData) {
   revalidatePath("/pos");
   revalidatePath("/sales");
   revalidatePath(`/sales/${store.salesId}`);
+  publishRealtime("sales");
   return { ok: true };
 }

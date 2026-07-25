@@ -6,6 +6,7 @@ import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { notifyStockEmpty } from "@/lib/wa-notify";
+import { publishRealtime } from "@/lib/realtime";
 
 // Owner mencatat transaksi penjualan (POS) — bisa beberapa barang sekaligus
 // dalam satu keranjang (key: qty__<productId> + price__<productId>).
@@ -109,6 +110,7 @@ export async function createSale(formData: FormData) {
 
   revalidatePath("/pos");
   revalidatePath("/order");
+  publishRealtime("pos");
   return { ok: true };
 }
 

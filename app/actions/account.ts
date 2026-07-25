@@ -9,6 +9,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { sendWa, isWaEnabled } from "@/lib/wa-notify";
 import { waNumber } from "@/lib/wa";
 import { parseNik, parseHomePoint } from "@/lib/user-fields";
+import { publishRealtime } from "@/lib/realtime";
 
 // Menu akun di header — SEMUA role (klik nama → Ganti Password / Ganti No
 // HP). Ganti password cukup verifikasi password lama; ganti no HP wajib OTP
@@ -205,6 +206,7 @@ export async function updateOwnDetails(formData: FormData) {
   revalidatePath("/data");
   revalidatePath("/beranda");
   revalidatePath("/gudang");
+  publishRealtime("profil");
   return { ok: true };
 }
 
@@ -243,5 +245,6 @@ export async function updateOwnStore(formData: FormData) {
   revalidatePath("/data");
   revalidatePath("/prospects");
   revalidatePath(`/konter/${user.ownedStore.id}`);
+  publishRealtime("profil");
   return { ok: true };
 }

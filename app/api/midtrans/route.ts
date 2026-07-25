@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { notifyOrder } from "@/lib/wa-notify";
+import { publishRealtime } from "@/lib/realtime";
 
 // Webhook notifikasi pembayaran Midtrans.
 // Set URL ini di Midtrans Dashboard -> Settings -> Payment Notification URL:
@@ -53,6 +54,7 @@ export async function POST(req: Request) {
         after(() => notifyOrder(req.id, "paid"));
         revalidatePath("/order");
         revalidatePath("/request");
+        publishRealtime("order");
       }
     }
   }

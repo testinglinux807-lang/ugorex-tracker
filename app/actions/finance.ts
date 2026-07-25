@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { FINANCE_TYPES, type FinanceType } from "@/lib/constants";
+import { publishRealtime } from "@/lib/realtime";
 
 // Validasi + normalisasi field dari form. Return {error} bila tidak valid,
 // atau data siap simpan.
@@ -54,6 +55,7 @@ export async function saveFinanceEntry(formData: FormData) {
     }
     await prisma.financeEntry.update({ where: { id }, data: parsed.data });
     revalidatePath("/keuangan");
+    publishRealtime("keuangan");
     return { ok: true as const, count: 1 };
   }
 
@@ -90,6 +92,7 @@ export async function saveFinanceEntry(formData: FormData) {
     });
   }
   revalidatePath("/keuangan");
+  publishRealtime("keuangan");
   return { ok: true as const, count };
 }
 
@@ -109,4 +112,5 @@ export async function deleteFinanceEntry(id: string) {
 
   await prisma.financeEntry.delete({ where: { id } });
   revalidatePath("/keuangan");
+  publishRealtime("keuangan");
 }

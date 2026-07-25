@@ -7,6 +7,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { kpiTargetKey } from "@/lib/kpi-config";
 import { DEFAULT_TARGETS, KPI_COMPONENTS } from "@/lib/sales-kpi-grade";
 import { markMonthlyBonusRevealed } from "@/lib/target-bonus";
+import { publishRealtime } from "@/lib/realtime";
 
 export async function setMonthlyTarget(formData: FormData) {
   const user = await getCurrentUser();
@@ -22,6 +23,7 @@ export async function setMonthlyTarget(formData: FormData) {
     create: { key: "monthly_target", value: String(target) },
   });
   revalidatePath("/dashboard");
+  publishRealtime("dashboard");
   return { ok: true };
 }
 
@@ -48,6 +50,7 @@ export async function setKpiTargets(formData: FormData) {
   revalidatePath("/sales");
   revalidatePath("/beranda");
   revalidatePath("/tugas");
+  publishRealtime("sales");
   return { ok: true };
 }
 
@@ -74,6 +77,7 @@ export async function setCsContact(formData: FormData) {
   ]);
   revalidatePath("/data");
   revalidatePath("/profil");
+  publishRealtime("data");
   return { ok: true };
 }
 
@@ -102,6 +106,7 @@ export async function setTargetBonus(formData: FormData) {
   });
   revalidatePath("/data");
   revalidatePath("/order");
+  publishRealtime("data");
   return { ok: true };
 }
 
@@ -114,6 +119,7 @@ export async function deleteTargetBonusPeriod(id: string) {
   await prisma.targetBonusPeriod.delete({ where: { id } }).catch(() => {});
   revalidatePath("/data");
   revalidatePath("/order");
+  publishRealtime("data");
 }
 
 // Owner menandai voucher bonus bulan ini sudah "digores"/dibuka (sekali) -
@@ -125,4 +131,5 @@ export async function revealMonthlyBonus() {
   if (user.role !== "OWNER" || !user.ownedStore) return;
   await markMonthlyBonusRevealed(user.ownedStore.id);
   revalidatePath("/order");
+  publishRealtime("order");
 }
