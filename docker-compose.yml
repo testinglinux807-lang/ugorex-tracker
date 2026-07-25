@@ -20,16 +20,29 @@ services:
       dockerfile: Dockerfile
     container_name: ugorex-web
     restart: always
-    ports:
-      - '3000:3000'
     depends_on:
       - db
     environment:
-      # Koneksi internal Docker, web langsung nembak nama service 'db'
       DATABASE_URL: "postgresql://ugorex_user:ugorex_password@db:5432/ugorex"
       DIRECT_URL: "postgresql://ugorex_user:ugorex_password@db:5432/ugorex"
     env_file:
       - .env
 
+  caddy:
+    image: caddy:2-alpine
+    container_name: ugorex-caddy
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+
 volumes:
   pgdata:
+  caddy_data:
+  caddy_config:

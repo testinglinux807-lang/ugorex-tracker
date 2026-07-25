@@ -1,0 +1,3 @@
+ugorex.com, www.ugorex.com {
+    reverse_proxy web:3000
+}

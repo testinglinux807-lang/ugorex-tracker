@@ -75,7 +75,7 @@ export async function middleware(req: NextRequest) {
     res.cookies.set("ugorex_session", freshToken, {
       httpOnly: true,
       sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
+      secure: process.env.NODE_ENV === "production" && process.env.APP_URL?.startsWith("https://"),
       maxAge: 60 * 60 * 24 * SESSION_DAYS,
       path: "/",
     });

@@ -31,7 +31,7 @@ export async function createSession(payload: SessionPayload) {
   store.set(COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: process.env.NODE_ENV === "production" && process.env.APP_URL?.startsWith("https://"),
     maxAge: 60 * 60 * 24 * 30,
     path: "/",
   });
