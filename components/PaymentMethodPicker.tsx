@@ -42,14 +42,15 @@ const METHODS: {
   label: string;
   icon: typeof Landmark;
   hasFee: boolean;
+  isComingSoon?: boolean;
 }[] = [
-  { key: "VA", label: "Transfer Bank", icon: Landmark, hasFee: true },
-  { key: "QRIS", label: "QRIS", icon: QrCode, hasFee: true },
-  { key: "GOPAY", label: "GoPay", icon: Wallet, hasFee: true },
-  { key: "DANA", label: "DANA", icon: WalletCards, hasFee: true },
-  { key: "CARD", label: "Kartu", icon: CreditCard, hasFee: true },
-  { key: "CASH", label: "Cash", icon: Banknote, hasFee: false },
-];
+    { key: "VA", label: "Transfer Bank", icon: Landmark, hasFee: true, isComingSoon: true },
+    { key: "QRIS", label: "QRIS", icon: QrCode, hasFee: true, isComingSoon: true },
+    { key: "GOPAY", label: "GoPay", icon: Wallet, hasFee: true, isComingSoon: true },
+    { key: "DANA", label: "DANA", icon: WalletCards, hasFee: true, isComingSoon: true },
+    { key: "CARD", label: "Kartu", icon: CreditCard, hasFee: true, isComingSoon: true },
+    { key: "CASH", label: "COD", icon: Banknote, hasFee: false },
+  ];
 
 function groupOf(m: PaymentMethod | null): Group | null {
   if (m == null) return null;
@@ -84,24 +85,33 @@ export function PaymentMethodPicker({
             <button
               key={m.key}
               type="button"
+              disabled={m.isComingSoon}
               onClick={() =>
                 onChange(m.key === "VA" ? "VA_BCA" : (m.key as PaymentMethod))
               }
-              className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs font-medium transition-colors ${
-                on
+              className={`relative flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs font-medium transition-colors overflow-hidden ${m.isComingSoon
+                ? "border-neutral-200 bg-neutral-50 text-neutral-400 cursor-not-allowed opacity-80"
+                : on
                   ? "border-neutral-900 bg-neutral-900 text-white"
                   : "border-neutral-300 text-neutral-600 hover:bg-neutral-100"
-              }`}
+                }`}
             >
               <Icon className="h-3.5 w-3.5 shrink-0" />
               <span className="min-w-0 flex-1 truncate text-left">
                 {m.label}
               </span>
-              <span
-                className={`shrink-0 text-[10px] ${on ? "text-white/70" : "text-neutral-400"}`}
-              >
-                {m.hasFee ? `+${rupiah(paymentFee(m.key, amount))}` : "Gratis"}
-              </span>
+              {!m.isComingSoon && (
+                <span
+                  className={`shrink-0 text-[10px] ${on ? "text-white/70" : "text-neutral-400"}`}
+                >
+                  {m.hasFee ? `+${rupiah(paymentFee(m.key, amount))}` : "Gratis"}
+                </span>
+              )}
+              {m.isComingSoon && (
+                <span className="absolute -right-3 -top-0.5 rotate-[30deg] bg-neutral-200 px-3 py-0.5 text-[8px] font-bold text-neutral-600 shadow-sm">
+                  Soon
+                </span>
+              )}
             </button>
           );
         })}
@@ -114,11 +124,10 @@ export function PaymentMethodPicker({
               key={b.method}
               type="button"
               onClick={() => onChange(b.method)}
-              className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
-                method === b.method
-                  ? "border-brand-dark bg-brand text-neutral-900"
-                  : "border-neutral-300 text-neutral-600 hover:bg-neutral-100"
-              }`}
+              className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${method === b.method
+                ? "border-brand-dark bg-brand text-neutral-900"
+                : "border-neutral-300 text-neutral-600 hover:bg-neutral-100"
+                }`}
             >
               {b.label}
             </button>
