@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: ugorex-db
+    restart: always
+    environment:
+      POSTGRES_USER: ugorex_user
+      POSTGRES_PASSWORD: ugorex_password
+      POSTGRES_DB: ugorex
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ugorex-web
+    restart: always
+    ports:
+      - '3000:3000'
+    depends_on:
+      - db
+    environment:
+      # Koneksi internal Docker, web langsung nembak nama service 'db'
+      DATABASE_URL: "postgresql://ugorex_user:ugorex_password@db:5432/ugorex"
+      DIRECT_URL: "postgresql://ugorex_user:ugorex_password@db:5432/ugorex"
+    env_file:
+      - .env
+
+volumes:
+  pgdata:
