@@ -55,9 +55,10 @@ async function main() {
         role: "SALES",
         bankAccount: `BCA ${randInt(100000000, 999999999)} a.n. ${nama}`,
         commissionPct: 5, // 5% komisi
-        // Titik rumah sales tersebar acak di Karawang
-        homeLat: -6.45 + (Math.random() * 0.4),
-        homeLng: 107.20 + (Math.random() * 0.4),
+        // Titik rumah sales tersebar acak di Karawang daratan
+        // Lat: -6.40 s/d -6.20 (biar nggak nyemplung ke laut di -6.05)
+        homeLat: -6.40 + (Math.random() * 0.2),
+        homeLng: 107.25 + (Math.random() * 0.2),
         createdAt: randomDate(new Date(2025, 6, 1), new Date(2025, 11, 31))
       }
     });
@@ -120,10 +121,10 @@ async function main() {
         ownerPhone: owner.phone,
         ownerUserId: owner.id,
         salesId: s.id,
-        // Titik konter tersebar luas ke seluruh kabupaten Karawang
-        // Karawang bounds: Lat -6.45 s/d -6.05 | Lng 107.20 s/d 107.60
-        lat: -6.45 + (Math.random() * 0.4),
-        lng: 107.20 + (Math.random() * 0.4),
+        // Titik konter tersebar luas ke daratan Karawang
+        // Lat: -6.40 s/d -6.20 | Lng 107.25 s/d 107.45
+        lat: -6.40 + (Math.random() * 0.2),
+        lng: 107.25 + (Math.random() * 0.2),
         createdAt: randomDate(new Date(2025, 0, 1), new Date(2026, 2, 1)),
       }
     });
