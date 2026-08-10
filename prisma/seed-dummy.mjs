@@ -136,6 +136,65 @@ async function main() {
     });
   }
 
+  // 5. Seed Penjualan (FinanceEntry - Pemasukan)
+  if (data.penjualan) {
+    console.log(`Seeding ${data.penjualan.length} transaksi penjualan ke Buku Kas...`);
+    for (const trx of data.penjualan) {
+      await prisma.financeEntry.upsert({
+        where: { id: trx.id },
+        update: {
+          type: "INCOME",
+          amount: trx.nilai,
+          category: "Pemasukan Restok",
+          note: `Pembayaran Lunas Order ${trx.order_id}`,
+          date: new Date(trx.tanggal),
+          sourceId: trx.order_id,
+        },
+        create: {
+          id: trx.id,
+          type: "INCOME",
+          amount: trx.nilai,
+          category: "Pemasukan Restok",
+          note: `Pembayaran Lunas Order ${trx.order_id}`,
+          date: new Date(trx.tanggal),
+          sourceId: trx.order_id,
+        }
+      });
+    }
+  }
+
+  // 6. Seed Payroll (CommissionPayout & FinanceEntry - Pengeluaran)
+  if (data.payroll) {
+    console.log(`Seeding ${data.payroll.length} data payroll/komisi...`);
+    for (const pr of data.payroll) {
+      if (pr.status === "dibayar") {
+        const dateObj = new Date(`${pr.bulan}-28`); // Asumsi dibayar tgl 28 akhir bulan
+        
+        // Catat pencairan ke CommissionPayout
+        const payout = await prisma.commissionPayout.create({
+          data: {
+            salesId: pr.sales_id,
+            amount: pr.total_terima,
+            note: `Gaji Pokok + Komisi bulan ${pr.bulan}`,
+            createdAt: dateObj,
+          }
+        });
+
+        // Catat ke pengeluaran buku kas
+        await prisma.financeEntry.create({
+          data: {
+            type: "EXPENSE",
+            amount: pr.total_terima,
+            category: "Gaji & Komisi Sales",
+            note: `Gaji ${pr.nama} (${pr.bulan})`,
+            date: dateObj,
+            sourceId: payout.id, // Terkunci dengan CommissionPayout
+          }
+        });
+      }
+    }
+  }
+
   console.log("Seed selesai!");
 }
 
