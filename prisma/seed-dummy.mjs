@@ -100,6 +100,8 @@ async function main() {
       create: {
         id: o.id,
         storeId: o.konter_id,
+        subject: "Order Restok (Data Dummy)",
+        message: "Otomatis dari seeding data dummy",
         status: o.status_bayar === "lunas" ? "COMPLETED" : "PENDING",
         total: o.total,
         paymentStatus: o.status_bayar === "lunas" ? "PAID" : "UNPAID",
