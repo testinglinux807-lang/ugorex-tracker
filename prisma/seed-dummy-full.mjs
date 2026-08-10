@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import fs from "fs";
 
 const prisma = new PrismaClient();
 
@@ -70,22 +71,30 @@ async function main() {
   for (const s of salesUsers) omzetPerSales[s.id] = 0;
 
   // --- 2. PRODUCTS ---
-  console.log("Seeding Products...");
-  const produkNama = ["Tempered Glass Clear", "TG Anti-Spy", "Softcase Bening", "Kabel Type-C", "Charger 20W", "Headset Bluetooth", "Powerbank 10000mAh", "Holder HP", "Lanyard / Tali HP", "Ring Stand"];
+  console.log("Seeding Products dari catalog-seed.json...");
+  
+  const rawCatalog = fs.readFileSync("prisma/catalog-seed.json", "utf-8");
+  const catalogData = JSON.parse(rawCatalog);
+  
+  // Karena datanya bisa jadi sangat banyak (9000+), kita bersihkan lalu insert sekaligus
+  await prisma.product.deleteMany(); 
+  
+  // Update price dan centralStock karena di JSON nilainya 0
+  const productsToInsert = catalogData.map(p => ({
+    ...p,
+    price: p.price > 0 ? p.price : randInt(15, 80) * 1000,
+    centralStock: p.centralStock > 0 ? p.centralStock : randInt(500, 2000)
+  }));
+
+  await prisma.product.createMany({
+    data: productsToInsert,
+    skipDuplicates: true
+  });
+
+  // Ambil 50 produk acak untuk dijadikan patokan pesanan / prospek di bawah
   const products = [];
-  for (let i = 0; i < produkNama.length; i++) {
-    const hargaJual = randInt(15, 80) * 1000;
-    const p = await prisma.product.upsert({
-      where: { id: `PRD-DUMMY-${i}` },
-      update: {},
-      create: {
-        id: `PRD-DUMMY-${i}`,
-        name: produkNama[i],
-        price: hargaJual,
-        centralStock: randInt(500, 2000)
-      }
-    });
-    products.push(p);
+  for (let i = 0; i < 50; i++) {
+    products.push(randArr(productsToInsert));
   }
 
   // --- 3. STORES, PROSPECTS, ORDERS, & SALES (POS) ---
