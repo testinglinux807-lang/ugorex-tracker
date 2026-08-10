@@ -80,9 +80,27 @@ async function main() {
       },
     });
 
-    // Buat Prospect (karena sistem nge-track funnel) untuk konter ini dari produk yang ada
-    // Untuk dummy, kita ambil 1-2 produk secara acak sebagai contoh prospect
-    // Atau lewati dulu kalau terlalu berat
+    // Buat Prospect (funnel tracking) untuk konter ini 
+    // Kita ambil PRD-01 sebagai produk patokan untuk prospek utamanya
+    const stageName = k.funnel_stage ? k.funnel_stage.toUpperCase() : "AWARENESS";
+    await prisma.prospect.upsert({
+      where: {
+        storeId_productId: {
+          storeId: k.id,
+          productId: "PRD-01",
+        }
+      },
+      update: {
+        stage: stageName,
+        salesId: k.sales_id,
+      },
+      create: {
+        storeId: k.id,
+        productId: "PRD-01",
+        stage: stageName,
+        salesId: k.sales_id,
+      }
+    });
   }
 
   // 4. Seed Orders (Request & RequestItem)
