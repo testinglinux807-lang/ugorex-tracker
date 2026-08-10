@@ -150,14 +150,22 @@ async function main() {
 
       // Hapus log lama dulu jika dijalankan berulang
       await prisma.stageLog.deleteMany({
-        where: { prospectId: prospect.id, note: "Interaksi awal kunjungan sales" }
+        where: { prospectId: prospect.id, note: { startsWith: "Dummy:" } }
       });
+
+      const logResults = ["POSITIVE", "NEUTRAL", "REJECTED"];
+      const res = randArr(logResults);
+      let logNote = "";
+      if (res === "POSITIVE") logNote = "Dummy: Sangat tertarik, siap pajang barang.";
+      else if (res === "NEUTRAL") logNote = "Dummy: Owner masih mikir-mikir, minta brosur dulu.";
+      else logNote = "Dummy: Ditolak karena konter masih numpuk barang sejenis dari distributor lain.";
+
       await prisma.stageLog.create({
         data: {
           prospectId: prospect.id,
           stage: stage,
-          result: "POSITIVE",
-          note: "Interaksi awal kunjungan sales",
+          result: res,
+          note: logNote,
           salesId: s.id,
         }
       });
