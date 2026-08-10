@@ -19,6 +19,16 @@ async function main() {
   console.log("Mempersiapkan data dummy lengkap...");
   const pass = await bcrypt.hash("Ugorex123!", 10);
 
+  // Nama-nama dan alamat realistis
+  const namaDepan = ["Andi", "Budi", "Citra", "Dewi", "Eko", "Fajar", "Gilang", "Hendra", "Indra", "Joko", "Kartika", "Lestari", "Mulyadi", "Nugroho", "Reza", "Sari", "Tono", "Wahyu", "Yoga", "Zainal"];
+  const namaKonter = ["Cahaya Cell", "Berkah Komunika", "Maju Jaya Aksesoris", "Bintang Ponsel", "Raja Case", "Sumber Rejeki", "Global Phone", "Pelangi Cellular", "Sentra Gadget", "Mitra Mandiri", "Makmur Store", "Amanah Cell", "Lancar Jaya", "Kharisma Phone", "Dunia Gadget"];
+  const namaJalan = ["Jl. Pahlawan", "Jl. Jend. Sudirman", "Jl. Ahmad Yani", "Jl. Diponegoro", "Jl. Gajah Mada", "Jl. Merdeka", "Jl. Gatot Subroto", "Jl. Veteran", "Jl. K.H. Dewantara", "Jl. Melati", "Jl. Mawar"];
+  const prefixHp = ["0812", "0852", "0838", "0813", "0819", "0857", "0896"];
+
+  function randPhone() {
+    return randArr(prefixHp) + randInt(10000000, 99999999).toString();
+  }
+
   // --- 1. USERS ---
   console.log("Seeding Users...");
   const admin = await prisma.user.upsert({
@@ -30,17 +40,17 @@ async function main() {
   const gudang = await prisma.user.upsert({
     where: { phone: "08222222222" },
     update: {},
-    create: { name: "Staff Gudang", phone: "08222222222", passwordHash: pass, role: "GUDANG", basePay: 2000000 }
+    create: { name: "Agus (Gudang)", phone: "08222222222", passwordHash: pass, role: "GUDANG", basePay: 2000000 }
   });
 
-  const salesData = ["Andi", "Budi", "Citra"].map((nama, i) => ({
-    name: `Sales ${nama}`,
-    phone: `0833333333${i}`,
+  const salesData = ["Rizky Pratama", "Dedi Kurniawan", "Agus Setiawan"].map((nama, i) => ({
+    name: nama,
+    phone: randPhone(),
     passwordHash: pass,
     role: "SALES",
     commissionPct: 5,
-    homeLat: -6.3 + (Math.random() * 0.1),
-    homeLng: 107.3 + (Math.random() * 0.1)
+    homeLat: -6.2819 + (Math.random() * 0.05 - 0.025),
+    homeLng: 107.3728 + (Math.random() * 0.05 - 0.025)
   }));
   
   const salesUsers = [];
@@ -72,36 +82,41 @@ async function main() {
   // --- 3. STORES & OWNERS ---
   console.log("Seeding Stores & Owners...");
   const stores = [];
-  const wilayahList = ["Karawang Barat", "Telukjambe", "Klari", "Cikampek"];
+  const wilayahList = ["Karawang Barat", "Telukjambe", "Klari", "Cikampek", "Rengasdengklok", "Cilamaya"];
   for (let i = 1; i <= 15; i++) {
     const s = randArr(salesUsers);
     
-    // Bikin User Owner
+    // Bikin User Owner realistis
+    const ownerName = randArr(namaDepan) + " " + randArr(namaDepan);
+    const ownerPhone = randPhone();
     const owner = await prisma.user.upsert({
-      where: { phone: `084444444${i.toString().padStart(2, '0')}` },
+      where: { phone: ownerPhone },
       update: {},
       create: { 
-        name: `Juragan ${i}`, 
-        phone: `084444444${i.toString().padStart(2, '0')}`, 
+        name: ownerName, 
+        phone: ownerPhone, 
         passwordHash: pass, 
         role: "OWNER" 
       }
     });
 
+    const latOffset = (Math.random() * 0.1 - 0.05);
+    const lngOffset = (Math.random() * 0.1 - 0.05);
+
     const store = await prisma.store.upsert({
       where: { ownerUserId: owner.id },
       update: {},
       create: {
-        name: `Konter Maju ${i}`,
+        name: randArr(namaKonter) + (Math.random() > 0.5 ? " " + randInt(1, 9) : ""),
         area: randArr(wilayahList),
-        address: `Jl. Raya Dummy No. ${i}`,
+        address: `${randArr(namaJalan)} No. ${randInt(1, 150)}, ${randArr(wilayahList)}`,
         ownerName: owner.name,
         ownerPhone: owner.phone,
         ownerUserId: owner.id,
         salesId: s.id,
-        lat: -6.3 + (Math.random() * 0.1),
-        lng: 107.3 + (Math.random() * 0.1),
-        createdAt: randomDate(new Date(2026, 0, 1), new Date()),
+        lat: -6.2819 + latOffset,
+        lng: 107.3728 + lngOffset,
+        createdAt: randomDate(new Date(2025, 0, 1), new Date()),
       }
     });
     stores.push(store);
