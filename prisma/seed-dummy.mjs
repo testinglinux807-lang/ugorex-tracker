@@ -58,12 +58,18 @@ async function main() {
   // 3. Seed Konter (Store)
   console.log(`Seeding ${data.konter.length} konter...`);
   for (const k of data.konter) {
+    // Buat data dummy untuk owner karena tidak ada di JSON
+    const fakeOwnerName = `Owner ${k.nama}`;
+    const fakeOwnerPhone = `08${Math.floor(100000000 + Math.random() * 900000000)}`;
+
     await prisma.store.upsert({
       where: { id: k.id },
       update: {
         name: k.nama,
         area: k.wilayah,
         address: k.alamat,
+        ownerName: fakeOwnerName,
+        ownerPhone: fakeOwnerPhone,
         salesId: k.sales_id,
         lat: k.lat,
         lng: k.lng,
@@ -73,6 +79,8 @@ async function main() {
         name: k.nama,
         area: k.wilayah,
         address: k.alamat,
+        ownerName: fakeOwnerName,
+        ownerPhone: fakeOwnerPhone,
         salesId: k.sales_id,
         lat: k.lat,
         lng: k.lng,
@@ -83,7 +91,7 @@ async function main() {
     // Buat Prospect (funnel tracking) untuk konter ini 
     // Kita ambil PRD-01 sebagai produk patokan untuk prospek utamanya
     const stageName = k.funnel_stage ? k.funnel_stage.toUpperCase() : "AWARENESS";
-    await prisma.prospect.upsert({
+    const prospect = await prisma.prospect.upsert({
       where: {
         storeId_productId: {
           storeId: k.id,
@@ -99,6 +107,23 @@ async function main() {
         productId: "PRD-01",
         stage: stageName,
         salesId: k.sales_id,
+        createdAt: new Date(k.tgl_join),
+      }
+    });
+
+    // Masukkan ke StageLog supaya history funnel-nya benar-benar ada di dashboard
+    // Hapus log lama dulu untuk mencegah duplikat kalau dijalankan berulang
+    await prisma.stageLog.deleteMany({
+      where: { prospectId: prospect.id, note: "Data Dummy Initial Import" }
+    });
+    await prisma.stageLog.create({
+      data: {
+        prospectId: prospect.id,
+        stage: stageName,
+        result: "NEUTRAL",
+        note: "Data Dummy Initial Import",
+        salesId: k.sales_id,
+        createdAt: new Date(k.tgl_join)
       }
     });
   }
