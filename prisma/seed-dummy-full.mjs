@@ -54,8 +54,9 @@ async function main() {
         passwordHash: pass,
         role: "SALES",
         commissionPct: 5, // 5% komisi
-        homeLat: -6.2819 + (Math.random() * 0.05 - 0.025),
-        homeLng: 107.3728 + (Math.random() * 0.05 - 0.025),
+        // Titik rumah sales tersebar acak di Karawang
+        homeLat: -6.45 + (Math.random() * 0.4),
+        homeLng: 107.20 + (Math.random() * 0.4),
         createdAt: randomDate(new Date(2025, 6, 1), new Date(2025, 11, 31))
       }
     });
@@ -118,8 +119,10 @@ async function main() {
         ownerPhone: owner.phone,
         ownerUserId: owner.id,
         salesId: s.id,
-        lat: -6.2819 + (Math.random() * 0.1 - 0.05),
-        lng: 107.3728 + (Math.random() * 0.1 - 0.05),
+        // Titik konter tersebar luas ke seluruh kabupaten Karawang
+        // Karawang bounds: Lat -6.45 s/d -6.05 | Lng 107.20 s/d 107.60
+        lat: -6.45 + (Math.random() * 0.4),
+        lng: 107.20 + (Math.random() * 0.4),
         createdAt: randomDate(new Date(2025, 0, 1), new Date(2026, 2, 1)),
       }
     });
