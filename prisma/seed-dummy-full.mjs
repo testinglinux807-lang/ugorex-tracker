@@ -53,6 +53,7 @@ async function main() {
         phone: randPhone(),
         passwordHash: pass,
         role: "SALES",
+        bankAccount: `BCA ${randInt(100000000, 999999999)} a.n. ${nama}`,
         commissionPct: 5, // 5% komisi
         // Titik rumah sales tersebar acak di Karawang
         homeLat: -6.45 + (Math.random() * 0.4),
